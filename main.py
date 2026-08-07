@@ -187,6 +187,7 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         
+        # Wipes subtask cache so they correctly update to the new parent status
         subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         for s in subtasks:
             key = f"subchk_{s['id']}"
@@ -235,8 +236,10 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
+        # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         
+        # Wipes parent task cache so it unchecks itself
         parent_key = f"chk_{task_id}"
         if parent_key in st.session_state:
             del st.session_state[parent_key]
@@ -307,9 +310,12 @@ def update_task(task_id, text, priority, category, due_date, username):
 
 # ----------------------------- Callback Handlers -----------------------------
 
-def handle_task_check(task_id, username):
+def handle_task_check(task_id, current_done, username):
     st.session_state.active_task_id = None 
-    new_done = st.session_state[f"chk_{task_id}"]
+    key = f"chk_{task_id}"
+    val = st.session_state.get(key)
+    # If the key was deleted from session state, intelligently invert the known DB state
+    new_done = not current_done if val is None else val
     set_done(task_id, new_done, username)
 
 def handle_task_delete(task_id, username):
@@ -324,10 +330,12 @@ def handle_subtask_add(task_id, username):
         add_subtask(task_id, new_text, username)
         st.session_state[key] = "" 
 
-def handle_subtask_check(subtask_id, task_id, username):
+def handle_subtask_check(subtask_id, task_id, current_done, username):
     st.session_state.active_task_id = task_id
     key = f"subchk_{subtask_id}"
-    new_done = st.session_state[key]
+    val = st.session_state.get(key)
+    # If the key was deleted from session state, intelligently invert the known DB state
+    new_done = not current_done if val is None else val
     set_subtask_done(subtask_id, task_id, new_done, username)
 
 def handle_subtask_delete(subtask_id, task_id, username):
@@ -381,7 +389,7 @@ st.markdown(
     }
     
     body.custom-light .stApp {
-        background-image: url("https://i.pinimg.com/736x/32/bd/be/32bdbe34b2f0746eebfe784c66cafe0f.jpg") !important;
+        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     body.custom-light [data-testid="stSidebar"] {
         background-color: rgba(255, 255, 255, 0.85) !important;
@@ -895,7 +903,7 @@ else:
                     
                     with col1:
                         st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}", 
-                                    on_change=handle_task_check, args=(t["id"], st.session_state.username))
+                                    on_change=handle_task_check, args=(t["id"], bool(t["done"]), st.session_state.username))
                             
                     with col2:
                         done_class = "is-done" if t["done"] else ""
@@ -946,7 +954,7 @@ else:
                             sc1, sc2, sc3 = st.columns([0.5, 6.5, 1], vertical_alignment="center")
                             with sc1:
                                 st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
-                                            on_change=handle_subtask_check, args=(s["id"], t["id"], st.session_state.username))
+                                            on_change=handle_subtask_check, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username))
                             with sc2:
                                 sub_class = "is-done" if s["done"] else ""
                                 st.markdown(
@@ -962,7 +970,7 @@ else:
                             st.text_input(
                                 "New subtask",
                                 key=f"new_sub_{t['id']}",
-                                placeholder="Add a subtask... (Press / to focus)",
+                                placeholder="Add a subtask... (Press '/' to focus)",
                                 label_visibility="collapsed",
                                 on_change=handle_subtask_add, 
                                 args=(t['id'], st.session_state.username)
