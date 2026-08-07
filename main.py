@@ -187,7 +187,6 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         
-        # Wipes subtask cache so they correctly update to the new parent status
         subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         for s in subtasks:
             key = f"subchk_{s['id']}"
@@ -236,10 +235,8 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
-        # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         
-        # Wipes parent task cache so it unchecks itself
         parent_key = f"chk_{task_id}"
         if parent_key in st.session_state:
             del st.session_state[parent_key]
@@ -960,13 +957,12 @@ else:
                                 st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
                                           on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
 
-                        st.caption("⚡ Press `/` to quickly start typing a subtask")
                         new_sc1, new_sc2 = st.columns([6, 1.5])
                         with new_sc1:
                             st.text_input(
                                 "New subtask",
                                 key=f"new_sub_{t['id']}",
-                                placeholder="Add a subtask... (Press '/' to focus)",
+                                placeholder="Add a subtask... (Press / to focus)",
                                 label_visibility="collapsed",
                                 on_change=handle_subtask_add, 
                                 args=(t['id'], st.session_state.username)
@@ -1211,7 +1207,7 @@ components.html(
                     indicator.innerText = 'Enter to confirm text & set options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter again to create task';
+                    indicator.innerText = 'Enter again to do something else';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
@@ -1264,7 +1260,7 @@ components.html(
 
             if (!isTyping) {
                 if (key === '/') {
-                    const subInputs = Array.from(doc.querySelectorAll('input[placeholder="Add a subtask... (Press '/' to focus)"]'))
+                    const subInputs = Array.from(doc.querySelectorAll('input[placeholder*="Add a subtask"]'))
                         .filter(inp => inp.getBoundingClientRect().height > 0);
                     if (subInputs.length > 0) {
                         e.preventDefault();
@@ -1317,7 +1313,10 @@ components.html(
                     return; 
                 } 
                 else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && taskInput) {
-                    taskInput.focus();
+                    // Only auto-focus the main box if the user has NOT typed anything into it yet.
+                    if (taskInput.value.trim().length === 0) {
+                        taskInput.focus();
+                    }
                 }
             }
 
