@@ -392,7 +392,7 @@ st.markdown(
     }
     
     body.custom-light .stApp {
-        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
+        background-image: url("https://img.magnific.com/free-vector/green-monstera-plant-vector-background-with-blank-space_53876-118628.jpg?semt=ais_test_b&w=740&q=80") !important;
     }
     body.custom-light [data-testid="stSidebar"] {
         background-color: rgba(255, 255, 255, 0.85) !important;
