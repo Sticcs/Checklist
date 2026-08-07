@@ -243,7 +243,9 @@ def add_subtask(task_id, text, username):
             (task_id, text, datetime.now().isoformat()),
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+        
         st.session_state[f"chk_{task_id}"] = False
+            
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
 
@@ -1221,7 +1223,7 @@ components.html(
                     
                     if (container) {
                         const parentRow = container.querySelector('.task-row');
-                        const parentCheck = container.querySelector('input[type="checkbox"]'); // First checkbox in the card
+                        const parentCheck = container.querySelector('input[type="checkbox"]'); 
                         const allSubChecks = Array.from(container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]'));
                         
                         if (!isChecked) {
@@ -1279,20 +1281,6 @@ components.html(
         indicator.id = 'enter-indicator';
         doc.body.appendChild(indicator);
     }
-
-    // Elegant Focus bindings for Subtasks
-    doc.addEventListener('focusin', (e) => {
-        if (e.target && e.target.tagName.toLowerCase() === 'input' && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
-            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (card) card.classList.add('green-focus-border');
-        }
-    });
-    doc.addEventListener('focusout', (e) => {
-        if (e.target && e.target.tagName.toLowerCase() === 'input' && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
-            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (card) card.classList.remove('green-focus-border');
-        }
-    });
 
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
@@ -1388,6 +1376,12 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','c','t','m','l'].includes(key);
 
             if (!isTyping) {
+                // Intercept and destroy Streamlit native hotkeys for our mapped keys
+                if (isHotkey || key === 'c' || key === '/') {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }
+
                 if (key === '/') {
                     e.preventDefault();
                     let targetInput = null;
@@ -1515,7 +1509,7 @@ components.html(
                     }
                 }
             }
-        });
+        }, true); // Enforces capture phase to destroy Streamlit hotkeys before they trigger!
     }
     
     setTimeout(setupMagic, 500);
