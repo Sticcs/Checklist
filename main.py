@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import sqlite3
+import hashlib
 from datetime import date, timedelta, datetime
 from contextlib import closing
 
@@ -10,6 +11,10 @@ DB_PATH = "checklist.db"
 
 st.set_page_config(page_title="Checklist", layout="wide")
 
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
 if "undo_stack" not in st.session_state:
     st.session_state.undo_stack = []
 if "redo_stack" not in st.session_state:
@@ -20,6 +25,27 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
+# ----------------------------- Security & Auth -----------------------------
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def create_user(username, password):
+    with closing(get_conn()) as conn:
+        try:
+            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", 
+                         (username.strip(), hash_password(password)))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False # Username already exists
+
+def verify_user(username, password):
+    with closing(get_conn()) as conn:
+        user = conn.execute("SELECT * FROM users WHERE username = ? AND password = ?", 
+                            (username.strip(), hash_password(password))).fetchone()
+        return user is not None
+
 # ----------------------------- Database layer -----------------------------
 
 def get_conn():
@@ -29,8 +55,15 @@ def get_conn():
 
 def init_db():
     with closing(get_conn()) as conn:
-        conn.execute(
-            """
+        # Create users table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password TEXT NOT NULL
+            )
+        """)
+        # Create tasks table
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 text TEXT NOT NULL,
@@ -38,100 +71,106 @@ def init_db():
                 priority TEXT NOT NULL DEFAULT 'Medium',
                 category TEXT NOT NULL DEFAULT 'General',
                 due_date TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                username TEXT
             )
-            """
-        )
+        """)
+        # DB Migration: Add username column to existing DBs if it doesn't exist
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN username TEXT")
+            conn.execute("UPDATE tasks SET username = 'guest' WHERE username IS NULL")
+        except sqlite3.OperationalError:
+            pass # Column already exists
         conn.commit()
 
-def get_tasks():
+def get_tasks(username):
     with closing(get_conn()) as conn:
-        rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()
+        rows = conn.execute("SELECT * FROM tasks WHERE username = ? ORDER BY created_at DESC", (username,)).fetchall()
     return [dict(r) for r in rows]
 
-def _restore_state(state_tasks):
+def _restore_state(state_tasks, username):
     with closing(get_conn()) as conn:
-        conn.execute("DELETE FROM tasks")
+        conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         for t in state_tasks:
             conn.execute(
-                "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (t['id'], t['text'], t['done'], t['priority'], t['category'], t['due_date'], t['created_at'])
+                "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (t['id'], t['text'], t['done'], t['priority'], t['category'], t['due_date'], t['created_at'], username)
             )
         conn.commit()
 
-def save_state_for_undo():
-    st.session_state.undo_stack.append(get_tasks())
+def save_state_for_undo(username):
+    st.session_state.undo_stack.append(get_tasks(username))
     st.session_state.redo_stack.clear() 
     if len(st.session_state.undo_stack) > 20: 
         st.session_state.undo_stack.pop(0)
 
-def perform_undo():
+def perform_undo(username):
     if st.session_state.undo_stack:
-        st.session_state.redo_stack.append(get_tasks())
+        st.session_state.redo_stack.append(get_tasks(username))
         last_state = st.session_state.undo_stack.pop()
-        _restore_state(last_state)
+        _restore_state(last_state, username)
         st.session_state.pending_toast = "↩️ Undid last action"
 
-def perform_redo():
+def perform_redo(username):
     if st.session_state.redo_stack:
-        st.session_state.undo_stack.append(get_tasks())
+        st.session_state.undo_stack.append(get_tasks(username))
         next_state = st.session_state.redo_stack.pop()
-        _restore_state(next_state)
+        _restore_state(next_state, username)
         st.session_state.pending_toast = "↪️ Redid last action"
 
-def add_task(text, priority, category, due_date):
-    save_state_for_undo()
+def add_task(text, priority, category, due_date, username):
+    save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute(
-            "INSERT INTO tasks (text, done, priority, category, due_date, created_at) "
-            "VALUES (?, 0, ?, ?, ?, ?)",
-            (text, priority, category or "General", due_date, datetime.now().isoformat()),
+            "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username) "
+            "VALUES (?, 0, ?, ?, ?, ?, ?)",
+            (text, priority, category or "General", due_date, datetime.now().isoformat(), username),
         )
         conn.commit()
     st.session_state.pending_toast = "✅ Task added"
 
-def set_done(task_id, done):
-    save_state_for_undo()
+def set_done(task_id, done, username):
+    save_state_for_undo(username)
     with closing(get_conn()) as conn:
-        conn.execute("UPDATE tasks SET done = ? WHERE id = ?", (int(done), task_id))
+        conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.commit()
     status = "completed" if done else "unmarked"
     st.session_state.pending_toast = f"✅ Task {status}"
 
-def delete_task(task_id):
-    save_state_for_undo()
+def delete_task(task_id, username):
+    save_state_for_undo(username)
     with closing(get_conn()) as conn:
-        conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
     st.session_state.pending_toast = "🗑️ Task deleted"
 
-def clear_completed():
-    save_state_for_undo()
+def clear_completed(username):
+    save_state_for_undo(username)
     with closing(get_conn()) as conn:
-        conn.execute("DELETE FROM tasks WHERE done = 1")
+        conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
     st.session_state.pending_toast = "🧹 Cleared completed tasks"
 
-def clear_all():
-    save_state_for_undo()
+def clear_all(username):
+    save_state_for_undo(username)
     with closing(get_conn()) as conn:
-        conn.execute("DELETE FROM tasks")
+        conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
     st.session_state.pending_toast = "🗑️ Cleared all tasks"
 
-def mark_all_completed():
-    save_state_for_undo()
+def mark_all_completed(username):
+    save_state_for_undo(username)
     with closing(get_conn()) as conn:
-        conn.execute("UPDATE tasks SET done = 1")
+        conn.execute("UPDATE tasks SET done = 1 WHERE username = ?", (username,))
         conn.commit()
     st.session_state.pending_toast = "✅ Marked all as completed"
 
-def update_task(task_id, text, priority, category, due_date):
-    save_state_for_undo()
+def update_task(task_id, text, priority, category, due_date, username):
+    save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute(
-            "UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ? WHERE id = ?",
-            (text, priority, category, due_date, task_id),
+            "UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ? WHERE id = ? AND username = ?",
+            (text, priority, category, due_date, task_id, username),
         )
         conn.commit()
     st.session_state.pending_toast = "💾 Task updated"
@@ -241,7 +280,6 @@ st.markdown(
         font-weight: 600;
     }
     
-    /* Urgent Pulse Animation */
     @keyframes pulse-urgent {
         0% { opacity: 1; }
         50% { opacity: 0.6; }
@@ -259,7 +297,6 @@ st.markdown(
         line-height: 1;
     }
     
-    /* Wrap rules for buttons instead of cutoffs */
     .stButton button p, .stButton button * {
         white-space: normal !important;
         line-height: 1.2 !important;
@@ -279,6 +316,14 @@ st.markdown(
         font-weight: 400;
         border: 1px solid rgba(128, 128, 128, 0.2);
     }
+    
+    /* Login Box Centering */
+    .login-container {
+        padding: 2rem;
+        border-radius: 12px;
+        background: rgba(128,128,128,0.1);
+        margin-top: 4rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -286,258 +331,301 @@ st.markdown(
 
 init_db()
 
-# ----------------------------- Quick-add state defaults -----------------------------
+# ----------------------------- Auth Routing -----------------------------
 
-st.session_state.setdefault("task_input", "")
-st.session_state.setdefault("new_category", "House")
-st.session_state.setdefault("new_priority", "Medium")
-st.session_state.setdefault("new_due_preset", "No date")
-st.session_state.setdefault("new_due_custom", None)
-
-def _end_of_week(base):
-    return base + timedelta(days=(4 - base.weekday()) % 7)
-
-DUE_PRESETS = {
-    "Today": lambda: date.today().isoformat(),
-    "Tomorrow": lambda: (date.today() + timedelta(days=1)).isoformat(),
-    "This week": lambda: _end_of_week(date.today()).isoformat(),
-    "Next week": lambda: (_end_of_week(date.today()) + timedelta(days=7)).isoformat(),
-    "Custom": lambda: (
-        st.session_state.new_due_custom.isoformat() if st.session_state.new_due_custom else None
-    ),
-    "No date": lambda: None,
-}
-
-def set_category(cat): st.session_state.new_category = cat
-def set_priority(pri): st.session_state.new_priority = pri
-def set_due_preset(preset): st.session_state.new_due_preset = preset
-
-def submit_new_task():
-    text = st.session_state.task_input.strip()
-    if text:
-        due_date = DUE_PRESETS[st.session_state.new_due_preset]()
-        add_task(text, st.session_state.new_priority, st.session_state.new_category, due_date)
-        st.session_state.task_input = "" 
-
-tasks = get_tasks()
-categories = sorted({t["category"] for t in tasks}) if tasks else []
-
-# ----------------------------- Sidebar -----------------------------
-
-with st.sidebar:
-    st.header("Filters")
-    search = st.text_input("Search", label_visibility="collapsed", placeholder="Search tasks...")
-    status_filter = st.radio("Status", ["All", "Active", "Completed"], horizontal=True, label_visibility="collapsed")
-    category_filter = st.multiselect("Category", categories, default=categories)
-    sort_by = st.selectbox("Sort by", ["Priority", "Due date", "Newest first"])
-    
-    st.write("---")
-    
-    col_u, col_r = st.columns(2)
-    with col_u:
-        if st.button("↩️ Undo", disabled=len(st.session_state.undo_stack) == 0):
-            perform_undo()
-            st.rerun()
-    with col_r:
-        if st.button("↪️ Redo", disabled=len(st.session_state.redo_stack) == 0):
-            perform_redo()
-            st.rerun()
+if not st.session_state.logged_in:
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        st.markdown("<h1 style='text-align: center;'>✅ My Checklist</h1>", unsafe_allow_html=True)
+        st.write("")
         
-    st.write("")
-    if st.button("Mark all completed"):
-        mark_all_completed()
-        st.rerun()
-    if st.button("Clear completed"):
-        clear_completed()
-        st.rerun()
-    if st.button("Clear all"):
-        clear_all()
-        st.rerun()
+        tab1, tab2 = st.tabs(["Login", "Sign Up"])
+        
+        with tab1:
+            l_user = st.text_input("Username", key="login_user")
+            l_pass = st.text_input("Password", type="password", key="login_pass")
+            if st.button("Login", type="primary", use_container_width=True):
+                if verify_user(l_user, l_pass):
+                    st.session_state.logged_in = True
+                    st.session_state.username = l_user.strip()
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
+                    
+        with tab2:
+            s_user = st.text_input("Choose a Username", key="sign_user")
+            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
+            if st.button("Create Account", type="primary", use_container_width=True):
+                if s_user and s_pass:
+                    if create_user(s_user, s_pass):
+                        st.success("Account created! You can now log in.")
+                    else:
+                        st.error("Username already exists. Pick another one.")
+                else:
+                    st.warning("Please fill in both fields.")
 
-    st.write("---")
+else:
+    # ----------------------------- Main App Flow (Logged In) -----------------------------
     
-    with st.expander("Activity Logs"):
-        valid_logs = [t for t in tasks if t['done'] and len(t['text'].strip()) >= 3]
-        if not valid_logs:
-            st.caption("No recent activities.")
+    st.session_state.setdefault("task_input", "")
+    st.session_state.setdefault("new_category", "House")
+    st.session_state.setdefault("new_priority", "Medium")
+    st.session_state.setdefault("new_due_preset", "No date")
+    st.session_state.setdefault("new_due_custom", None)
+
+    def _end_of_week(base):
+        return base + timedelta(days=(4 - base.weekday()) % 7)
+
+    DUE_PRESETS = {
+        "Today": lambda: date.today().isoformat(),
+        "Tomorrow": lambda: (date.today() + timedelta(days=1)).isoformat(),
+        "This week": lambda: _end_of_week(date.today()).isoformat(),
+        "Next week": lambda: (_end_of_week(date.today()) + timedelta(days=7)).isoformat(),
+        "Custom": lambda: (
+            st.session_state.new_due_custom.isoformat() if st.session_state.new_due_custom else None
+        ),
+        "No date": lambda: None,
+    }
+
+    def set_category(cat): st.session_state.new_category = cat
+    def set_priority(pri): st.session_state.new_priority = pri
+    def set_due_preset(preset): st.session_state.new_due_preset = preset
+
+    def submit_new_task():
+        text = st.session_state.task_input.strip()
+        if text:
+            due_date = DUE_PRESETS[st.session_state.new_due_preset]()
+            add_task(text, st.session_state.new_priority, st.session_state.new_category, due_date, st.session_state.username)
+            st.session_state.task_input = "" 
+
+    tasks = get_tasks(st.session_state.username)
+    categories = sorted({t["category"] for t in tasks}) if tasks else []
+
+    # ----------------------------- Sidebar -----------------------------
+
+    with st.sidebar:
+        st.markdown(f"**👤 Logged in as: {st.session_state.username}**")
+        if st.button("Logout", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.undo_stack.clear()
+            st.session_state.redo_stack.clear()
+            st.rerun()
+            
+        st.write("---")
+        
+        st.header("Filters")
+        search = st.text_input("Search", label_visibility="collapsed", placeholder="Search tasks...")
+        status_filter = st.radio("Status", ["All", "Active", "Completed"], horizontal=True, label_visibility="collapsed")
+        category_filter = st.multiselect("Category", categories, default=categories)
+        sort_by = st.selectbox("Sort by", ["Priority", "Due date", "Newest first"])
+        
+        st.write("---")
+        
+        col_u, col_r = st.columns(2)
+        with col_u:
+            if st.button("↩️ Undo", disabled=len(st.session_state.undo_stack) == 0):
+                perform_undo(st.session_state.username)
+                st.rerun()
+        with col_r:
+            if st.button("↪️ Redo", disabled=len(st.session_state.redo_stack) == 0):
+                perform_redo(st.session_state.username)
+                st.rerun()
+            
+        st.write("")
+        if st.button("Mark all completed"):
+            mark_all_completed(st.session_state.username)
+            st.rerun()
+        if st.button("Clear completed"):
+            clear_completed(st.session_state.username)
+            st.rerun()
+        if st.button("Clear all"):
+            clear_all(st.session_state.username)
+            st.rerun()
+
+        st.write("---")
+        
+        with st.expander("Activity Logs"):
+            valid_logs = [t for t in tasks if t['done'] and len(t['text'].strip()) >= 3]
+            if not valid_logs:
+                st.caption("No recent activities.")
+            else:
+                for log in valid_logs[:10]:
+                    st.markdown(f"<span style='opacity: 0.7; font-size: 0.85rem;'>{log['text']}</span>", unsafe_allow_html=True)
+
+    # ----------------------------- Main Layout -----------------------------
+
+    left_col, spacer_col, right_col = st.columns([1, 0.25, 1.4])
+
+    with left_col:
+        st.title("Checklist")
+        st.write("")
+        st.write("")
+
+        st.text_input(
+            "Task",
+            placeholder="E.g., Review Big O time complexity",
+            key="task_input",
+            label_visibility="collapsed",
+        )
+
+        st.caption("Category")
+        cat_cols = st.columns(len(CATEGORIES), gap="small")
+        for col, cat in zip(cat_cols, CATEGORIES):
+            with col:
+                st.button(
+                    f"{cat} [{CAT_KEYS[cat]}]",
+                    key=f"cat_btn_{cat}",
+                    on_click=set_category,
+                    args=(cat,),
+                    type="primary" if st.session_state.new_category == cat else "secondary",
+                )
+
+        st.caption("Priority")
+        pri_cols = st.columns(len(PRIORITIES), gap="small")
+        for col, pri in zip(pri_cols, PRIORITIES):
+            with col:
+                st.button(
+                    f"{pri} [{PRI_KEYS[pri]}]",
+                    key=f"pri_btn_{pri}",
+                    on_click=set_priority,
+                    args=(pri,),
+                    type="primary" if st.session_state.new_priority == pri else "secondary",
+                )
+
+        st.caption("Due")
+        due_cols = st.columns(len(DUE_PRESETS), gap="small")
+        for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
+            with col:
+                st.button(
+                    f"{preset} [{i+1}]",
+                    key=f"due_btn_{preset}",
+                    on_click=set_due_preset,
+                    args=(preset,),
+                    type="primary" if st.session_state.new_due_preset == preset else "secondary",
+                )
+
+        if st.session_state.new_due_preset == "Custom":
+            st.date_input("Pick a date", key="new_due_custom", label_visibility="collapsed")
+
+        st.write("")
+        st.button("Add task", on_click=submit_new_task, type="primary")
+
+    with spacer_col:
+        st.empty()
+
+    with right_col:
+        filtered = tasks
+        if search:
+            filtered = [t for t in filtered if search.lower() in t["text"].lower()]
+        if status_filter == "Active":
+            filtered = [t for t in filtered if not t["done"]]
+        elif status_filter == "Completed":
+            filtered = [t for t in filtered if t["done"]]
+        if categories:
+            filtered = [t for t in filtered if t["category"] in category_filter]
+
+        if sort_by == "Priority":
+            filtered.sort(key=lambda t: PRIORITY_ORDER.get(t["priority"], 1))
+        elif sort_by == "Due date":
+            filtered.sort(key=lambda t: (t["due_date"] is None, t["due_date"]))
+
+        st.write("")
+        st.write("")
+        if tasks:
+            done_count = sum(1 for t in tasks if t["done"])
+            st.progress(done_count / len(tasks), text=f"{done_count} / {len(tasks)} completed")
+        
+        st.write("")
+
+        if not filtered:
+            st.caption("No tasks match your filters yet.")
         else:
-            for log in valid_logs[:10]:
-                st.markdown(f"<span style='opacity: 0.7; font-size: 0.85rem;'>{log['text']}</span>", unsafe_allow_html=True)
-
-# ----------------------------- Main Layout -----------------------------
-
-left_col, spacer_col, right_col = st.columns([1, 0.25, 1.4])
-
-with left_col:
-    st.title("Checklist")
-    st.write("")
-    st.write("")
-
-    st.text_input(
-        "Task",
-        placeholder="E.g., Review Big O time complexity",
-        key="task_input",
-        label_visibility="collapsed",
-    )
-
-    st.caption("Category")
-    cat_cols = st.columns(len(CATEGORIES), gap="small")
-    for col, cat in zip(cat_cols, CATEGORIES):
-        with col:
-            st.button(
-                f"{cat} [{CAT_KEYS[cat]}]",
-                key=f"cat_btn_{cat}",
-                on_click=set_category,
-                args=(cat,),
-                type="primary" if st.session_state.new_category == cat else "secondary",
-            )
-
-    st.caption("Priority")
-    pri_cols = st.columns(len(PRIORITIES), gap="small")
-    for col, pri in zip(pri_cols, PRIORITIES):
-        with col:
-            st.button(
-                f"{pri} [{PRI_KEYS[pri]}]",
-                key=f"pri_btn_{pri}",
-                on_click=set_priority,
-                args=(pri,),
-                type="primary" if st.session_state.new_priority == pri else "secondary",
-            )
-
-    st.caption("Due")
-    due_cols = st.columns(len(DUE_PRESETS), gap="small")
-    for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
-        with col:
-            st.button(
-                f"{preset} [{i+1}]",
-                key=f"due_btn_{preset}",
-                on_click=set_due_preset,
-                args=(preset,),
-                type="primary" if st.session_state.new_due_preset == preset else "secondary",
-            )
-
-    if st.session_state.new_due_preset == "Custom":
-        st.date_input("Pick a date", key="new_due_custom", label_visibility="collapsed")
-
-    st.write("")
-    st.button("Add task", on_click=submit_new_task, type="primary")
-
-with spacer_col:
-    st.empty()
-
-with right_col:
-    filtered = tasks
-    if search:
-        filtered = [t for t in filtered if search.lower() in t["text"].lower()]
-    if status_filter == "Active":
-        filtered = [t for t in filtered if not t["done"]]
-    elif status_filter == "Completed":
-        filtered = [t for t in filtered if t["done"]]
-    if categories:
-        filtered = [t for t in filtered if t["category"] in category_filter]
-
-    if sort_by == "Priority":
-        filtered.sort(key=lambda t: PRIORITY_ORDER.get(t["priority"], 1))
-    elif sort_by == "Due date":
-        filtered.sort(key=lambda t: (t["due_date"] is None, t["due_date"]))
-
-    st.write("")
-    st.write("")
-    if tasks:
-        done_count = sum(1 for t in tasks if t["done"])
-        st.progress(done_count / len(tasks), text=f"{done_count} / {len(tasks)} completed")
-    
-    st.write("")
-
-    if not filtered:
-        st.caption("No tasks match your filters yet.")
-    else:
-        today = date.today().isoformat()
-        now_time = datetime.now()
-        
-        for t in filtered:
-            with st.container():
-                col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
-                
-                with col1:
-                    new_done = st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}")
-                    if new_done != bool(t["done"]):
-                        set_done(t["id"], new_done)
-                        st.rerun()
-                        
-                with col2:
-                    done_class = "is-done" if t["done"] else ""
-                    created_time = datetime.fromisoformat(t["created_at"])
-                    is_new_task = (now_time - created_time).total_seconds() < 2
-                    anim_class = "new-task-anim" if is_new_task else ""
+            today = date.today().isoformat()
+            now_time = datetime.now()
+            
+            for t in filtered:
+                with st.container():
+                    col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
                     
-                    tags_html = f'<span class="badge">{t["category"]}</span>'
-                    
-                    urgent_html = ""
-                    if t["due_date"]:
-                        overdue = (not t["done"]) and t["due_date"] < today
-                        due_class = "badge overdue" if overdue else "badge"
-                        tags_html += f'<span class="{due_class}">{t["due_date"]}</span>'
-                        
-                        # Add Urgent badge if due exactly today and not completed
-                        if t["due_date"] == today and not t["done"]:
-                            urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
-                        
-                    st.markdown(
-                        f"""
-                        <div class="task-row border-{t['priority']} {done_class} {anim_class}">
-                            <div class="task-title {done_class}">
-                                <span>{t['text']}</span>
-                                {urgent_html}
-                            </div>
-                            <div class="meta-tags">{tags_html}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    
-                with col3:
-                    d1, d2 = st.columns(2)
-                    with d1:
-                        if st.button("Edit", key=f"edit_{t['id']}", help="Edit task"):
-                            st.session_state[f"editing_{t['id']}"] = True
-                    with d2:
-                        if st.button("Del", key=f"del_{t['id']}", help="Delete task"):
-                            delete_task(t["id"])
+                    with col1:
+                        new_done = st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}")
+                        if new_done != bool(t["done"]):
+                            set_done(t["id"], new_done, st.session_state.username)
                             st.rerun()
+                            
+                    with col2:
+                        done_class = "is-done" if t["done"] else ""
+                        created_time = datetime.fromisoformat(t["created_at"])
+                        is_new_task = (now_time - created_time).total_seconds() < 2
+                        anim_class = "new-task-anim" if is_new_task else ""
+                        
+                        tags_html = f'<span class="badge">{t["category"]}</span>'
+                        
+                        urgent_html = ""
+                        if t["due_date"]:
+                            overdue = (not t["done"]) and t["due_date"] < today
+                            due_class = "badge overdue" if overdue else "badge"
+                            tags_html += f'<span class="{due_class}">{t["due_date"]}</span>'
+                            
+                            if t["due_date"] == today and not t["done"]:
+                                urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
+                            
+                        st.markdown(
+                            f"""
+                            <div class="task-row border-{t['priority']} {done_class} {anim_class}">
+                                <div class="task-title {done_class}">
+                                    <span>{t['text']}</span>
+                                    {urgent_html}
+                                </div>
+                                <div class="meta-tags">{tags_html}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        
+                    with col3:
+                        d1, d2 = st.columns(2)
+                        with d1:
+                            if st.button("Edit", key=f"edit_{t['id']}", help="Edit task"):
+                                st.session_state[f"editing_{t['id']}"] = True
+                        with d2:
+                            if st.button("Del", key=f"del_{t['id']}", help="Delete task"):
+                                delete_task(t["id"], st.session_state.username)
+                                st.rerun()
 
-                if st.session_state.get(f"editing_{t['id']}"):
-                    with st.form(f"edit_form_{t['id']}"):
-                        e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
-                        e_col1, e_col2, e_col3 = st.columns(3)
-                        with e_col1:
-                            e_priority = st.selectbox(
-                                "Priority", PRIORITIES,
-                                index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
-                            )
-                        with e_col2:
-                            cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
-                            e_category = st.selectbox(
-                                "Category", cat_options, index=cat_options.index(t["category"])
-                            )
-                        with e_col3:
-                            e_due = st.date_input(
-                                "Due date",
-                                value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
-                            )
-                        save_col, cancel_col = st.columns(2)
-                        with save_col:
-                            if st.form_submit_button("Save", use_container_width=True):
-                                update_task(
-                                    t["id"], e_text.strip(), e_priority, e_category,
-                                    e_due.isoformat() if e_due else None,
+                    if st.session_state.get(f"editing_{t['id']}"):
+                        with st.form(f"edit_form_{t['id']}"):
+                            e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
+                            e_col1, e_col2, e_col3 = st.columns(3)
+                            with e_col1:
+                                e_priority = st.selectbox(
+                                    "Priority", PRIORITIES,
+                                    index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
                                 )
-                                st.session_state[f"editing_{t['id']}"] = False
-                                st.rerun()
-                        with cancel_col:
-                            if st.form_submit_button("Cancel", use_container_width=True):
-                                st.session_state[f"editing_{t['id']}"] = False
-                                st.rerun()
+                            with e_col2:
+                                cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
+                                e_category = st.selectbox(
+                                    "Category", cat_options, index=cat_options.index(t["category"])
+                                )
+                            with e_col3:
+                                e_due = st.date_input(
+                                    "Due date",
+                                    value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
+                                )
+                            save_col, cancel_col = st.columns(2)
+                            with save_col:
+                                if st.form_submit_button("Save", use_container_width=True):
+                                    update_task(
+                                        t["id"], e_text.strip(), e_priority, e_category,
+                                        e_due.isoformat() if e_due else None, st.session_state.username
+                                    )
+                                    st.session_state[f"editing_{t['id']}"] = False
+                                    st.rerun()
+                            with cancel_col:
+                                if st.form_submit_button("Cancel", use_container_width=True):
+                                    st.session_state[f"editing_{t['id']}"] = False
+                                    st.rerun()
 
 # ----------------------------- Custom JavaScript Injection -----------------------------
 components.html(
@@ -631,7 +719,6 @@ components.html(
             const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
             const key = e.key.toLowerCase();
             
-            // Note: Hotkeys now include 't' and 'p' replacing the old layout
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
