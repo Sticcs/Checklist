@@ -220,19 +220,41 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
+        # Adding an incomplete subtask means the parent task is no longer complete
+        conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
 
-def set_subtask_done(subtask_id, done, username):
+def set_subtask_done(subtask_id, task_id, done, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("UPDATE subtasks SET done = ? WHERE id = ?", (int(done), subtask_id))
+        
+        # Check if parent task status needs cascading
+        subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
+        if subtasks:
+            all_done = all(s['done'] for s in subtasks)
+            if not done:
+                # Unchecking a subtask forces the parent task to be unchecked
+                conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+            elif all_done:
+                # Checking the last subtask forces the parent task to be checked
+                conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
+                
         conn.commit()
 
-def delete_subtask(subtask_id, username):
+def delete_subtask(subtask_id, task_id, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("DELETE FROM subtasks WHERE id = ?", (subtask_id,))
+        
+        # Check if remaining subtasks are all complete
+        subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
+        if subtasks:
+            all_done = all(s['done'] for s in subtasks)
+            if all_done:
+                conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
+        
         conn.commit()
     st.session_state.pending_toast = "🗑️ Subtask deleted"
 
@@ -280,11 +302,11 @@ def handle_subtask_check(subtask_id, task_id, username):
     st.session_state.active_task_id = task_id
     key = f"subchk_{subtask_id}"
     new_done = st.session_state[key]
-    set_subtask_done(subtask_id, new_done, username)
+    set_subtask_done(subtask_id, task_id, new_done, username)
 
 def handle_subtask_delete(subtask_id, task_id, username):
     st.session_state.active_task_id = task_id
-    delete_subtask(subtask_id, username)
+    delete_subtask(subtask_id, task_id, username)
 
 # ----------------------------- Styles & Theming -----------------------------
 
