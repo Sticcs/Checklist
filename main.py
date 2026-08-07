@@ -175,10 +175,10 @@ def update_task(task_id, text, priority, category, due_date, username):
 # ----------------------------- Styles & Theming -----------------------------
 
 PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
-CATEGORIES = ["House", "Work", "Study", "Personal"]
+CATEGORIES = ["House", "Work", "Study", "Personal", "Custom"]
 PRIORITIES = ["High", "Medium", "Low"]
 
-CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "P"}
+CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "P", "Custom": "C"}
 PRI_KEYS = {"High": "T", "Medium": "M", "Low": "L"}
 
 st.markdown(
@@ -411,9 +411,9 @@ else:
     st.session_state.setdefault("new_due_preset", "No date")
     st.session_state.setdefault("new_due_custom", None)
     st.session_state.setdefault("options_modified", False)
+    st.session_state.setdefault("focus_custom", False)
 
     def _end_of_week(base):
-        # Shifts to Sunday (where Monday is 0 and Sunday is 6)
         return base + timedelta(days=(6 - base.weekday()))
 
     DUE_PRESETS = {
@@ -430,6 +430,8 @@ else:
     def set_category(cat): 
         st.session_state.new_category = cat
         st.session_state.options_modified = True
+        if cat == "Custom":
+            st.session_state.focus_custom = True
         
     def set_priority(pri): 
         st.session_state.new_priority = pri
@@ -443,12 +445,22 @@ else:
         text = st.session_state.task_input.strip()
         if text:
             due_date = DUE_PRESETS[st.session_state.new_due_preset]()
-            add_task(text, st.session_state.new_priority, st.session_state.new_category, due_date, st.session_state.username)
+            cat = st.session_state.new_category
+            if cat == "Custom":
+                cat = st.session_state.get("custom_cat_input", "").strip()
+                if not cat:
+                    cat = "General"
+                    
+            add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
+            
+            # Reset
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
+            if "custom_cat_input" in st.session_state:
+                st.session_state.custom_cat_input = ""
 
     tasks = get_tasks(st.session_state.username)
-    categories = sorted({t["category"] for t in tasks}) if tasks else []
+    sidebar_categories = sorted({t["category"] for t in tasks}) if tasks else []
 
     # ----------------------------- Sidebar -----------------------------
 
@@ -466,7 +478,7 @@ else:
         st.header("Filters")
         search = st.text_input("Search", label_visibility="collapsed", placeholder="Search tasks...")
         status_filter = st.radio("Status", ["All", "Active", "Completed"], horizontal=True, label_visibility="collapsed")
-        category_filter = st.multiselect("Category", categories, default=categories)
+        category_filter = st.multiselect("Category", sidebar_categories, default=sidebar_categories)
         sort_by = st.selectbox("Sort by", ["Priority", "Due date", "Newest first"])
         
         st.write("---")
@@ -528,6 +540,16 @@ else:
                     args=(cat,),
                     type="primary" if st.session_state.new_category == cat else "secondary",
                 )
+                
+        # Custom tag input dynamically reveals itself
+        if st.session_state.new_category == "Custom":
+            st.text_input("Custom Category", placeholder="E.g., Groceries", key="custom_cat_input", label_visibility="collapsed")
+            if st.session_state.focus_custom:
+                components.html(
+                    "<script>setTimeout(() => { const inp = window.parent.document.querySelector('input[placeholder=\"E.g., Groceries\"]'); if(inp) inp.focus(); }, 150);</script>", 
+                    height=0, width=0
+                )
+                st.session_state.focus_custom = False
 
         st.caption("Priority")
         pri_cols = st.columns(len(PRIORITIES), gap="small")
@@ -570,11 +592,11 @@ else:
             filtered = [t for t in filtered if not t["done"]]
         elif status_filter == "Completed":
             filtered = [t for t in filtered if t["done"]]
-        if categories:
+        if category_filter:
             filtered = [t for t in filtered if t["category"] in category_filter]
 
         if sort_by == "Priority":
-            filtered.sort(key=lambda t: PRIORITY_ORDER.get(t["priority"], 1))
+            filtered.sort(key=lambda t: PRIORITY_ORDER.get(t["priority"], 3))
         elif sort_by == "Due date":
             filtered.sort(key=lambda t: (t["due_date"] is None, t["due_date"]))
 
@@ -708,7 +730,7 @@ components.html(
         }
     }, 200);
 
-    // Apply smooth transitions to option buttons visually before server sync
+    // Apply smooth transitions and REMOVE inline styling so native CSS takes over gracefully
     setInterval(() => {
         const optionBtns = doc.querySelectorAll('div[data-testid="stButton"] button');
         optionBtns.forEach(btn => {
@@ -719,9 +741,9 @@ components.html(
                     if (!btnText.includes('Add task') && this.closest('div[data-testid="stHorizontalBlock"]')) {
                         const siblings = this.closest('div[data-testid="stHorizontalBlock"]').querySelectorAll('button');
                         siblings.forEach(sib => {
-                            sib.style.backgroundColor = 'transparent';
-                            sib.style.borderColor = 'rgba(128, 128, 128, 0.2)';
-                            sib.style.color = 'inherit';
+                            sib.style.removeProperty('background-color');
+                            sib.style.removeProperty('border-color');
+                            sib.style.removeProperty('color');
                         });
                         this.style.backgroundColor = '#ff4b4b';
                         this.style.borderColor = '#ff4b4b';
@@ -770,8 +792,10 @@ components.html(
         setInterval(() => {
             const inputs = doc.querySelectorAll('input[type="text"]');
             let taskInput = null;
+            let customInput = null;
             inputs.forEach(inp => {
                 if(inp.placeholder === "E.g., Review Big O time complexity") taskInput = inp;
+                if(inp.placeholder === "E.g., Groceries") customInput = inp;
             });
             
             const optState = doc.getElementById('options-state');
@@ -784,7 +808,11 @@ components.html(
                 addTaskBtn.style.transition = 'background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease';
             }
 
-            if (taskInput && taskInput.value.trim().length > 0) {
+            if (customInput && doc.activeElement === customInput) {
+                indicator.classList.add('visible');
+                indicator.innerText = 'Enter to lock custom tag';
+                indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; // Purple for custom tag phase
+            } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
                 if (doc.activeElement === taskInput) {
@@ -829,8 +857,10 @@ components.html(
         doc.addEventListener('keydown', function(e) {
             const inputs = doc.querySelectorAll('input[type="text"]');
             let taskInput = null;
+            let customInput = null;
             inputs.forEach(inp => {
                 if(inp.placeholder === "E.g., Review Big O time complexity") taskInput = inp;
+                if(inp.placeholder === "E.g., Groceries") customInput = inp;
             });
             
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
@@ -838,7 +868,7 @@ components.html(
             const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
             const key = e.key.toLowerCase();
             
-            const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
+            const isHotkey = ['1','2','3','4','5','6','h','w','s','p','c','t','m','l'].includes(key);
 
             if (!isTyping) {
                 if (hasText && isHotkey) {
@@ -848,14 +878,13 @@ components.html(
                         const buttons = Array.from(doc.querySelectorAll('button'));
                         const btn = buttons.find(b => b.innerText.includes(textFragment));
                         if(btn) {
-                            // Instant visual feedback for hotkeys
                             const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
                             if(parentRow) {
                                 const siblings = parentRow.querySelectorAll('button');
                                 siblings.forEach(sib => {
-                                    sib.style.backgroundColor = 'transparent';
-                                    sib.style.borderColor = 'rgba(128, 128, 128, 0.2)';
-                                    sib.style.color = 'inherit';
+                                    sib.style.removeProperty('background-color');
+                                    sib.style.removeProperty('border-color');
+                                    sib.style.removeProperty('color');
                                 });
                             }
                             btn.style.backgroundColor = '#ff4b4b';
@@ -877,6 +906,7 @@ components.html(
                     if (key === 'w') clickBtn('Work');
                     if (key === 's') clickBtn('Study');
                     if (key === 'p') clickBtn('Personal');
+                    if (key === 'c') clickBtn('Custom');
                     
                     if (key === 't') clickBtn('High');
                     if (key === 'm') clickBtn('Medium');
@@ -903,13 +933,19 @@ components.html(
                 }
             }
 
-            if (e.key === 'Enter' && taskInput) {
-                if (activeTag === 'input' && doc.activeElement !== taskInput) return; 
+            if (e.key === 'Enter') {
+                if (activeTag === 'input' && doc.activeElement !== taskInput && doc.activeElement !== customInput) return; 
                 
-                if (hasText) {
+                if (customInput && doc.activeElement === customInput) {
+                    e.preventDefault();
+                    customInput.blur(); // Escape the custom input without submitting the whole form
+                    return;
+                }
+                
+                if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    if (isTyping && doc.activeElement === taskInput) {
+                    if (doc.activeElement === taskInput) {
                         taskInput.blur(); 
                     } else {
                         setTimeout(() => {
