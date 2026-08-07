@@ -15,6 +15,11 @@ if "undo_stack" not in st.session_state:
 if "redo_stack" not in st.session_state:
     st.session_state.redo_stack = []
 
+# Global Toast Queue (Fires on page load if an action was just performed)
+if "pending_toast" in st.session_state:
+    st.toast(st.session_state.pending_toast)
+    del st.session_state.pending_toast
+
 # ----------------------------- Database layer -----------------------------
 
 def get_conn():
@@ -65,14 +70,14 @@ def perform_undo():
         st.session_state.redo_stack.append(get_tasks())
         last_state = st.session_state.undo_stack.pop()
         _restore_state(last_state)
-        st.toast("↩️ Undid last action")
+        st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo():
     if st.session_state.redo_stack:
         st.session_state.undo_stack.append(get_tasks())
         next_state = st.session_state.redo_stack.pop()
         _restore_state(next_state)
-        st.toast("↪️ Redid last action")
+        st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date):
     save_state_for_undo()
@@ -83,7 +88,7 @@ def add_task(text, priority, category, due_date):
             (text, priority, category or "General", due_date, datetime.now().isoformat()),
         )
         conn.commit()
-    st.toast("✅ Task added")
+    st.session_state.pending_toast = "✅ Task added"
 
 def set_done(task_id, done):
     save_state_for_undo()
@@ -91,35 +96,35 @@ def set_done(task_id, done):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ?", (int(done), task_id))
         conn.commit()
     status = "completed" if done else "unmarked"
-    st.toast(f"✅ Task {status}")
+    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id):
     save_state_for_undo()
     with closing(get_conn()) as conn:
         conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         conn.commit()
-    st.toast("🗑️ Task deleted")
+    st.session_state.pending_toast = "🗑️ Task deleted"
 
 def clear_completed():
     save_state_for_undo()
     with closing(get_conn()) as conn:
         conn.execute("DELETE FROM tasks WHERE done = 1")
         conn.commit()
-    st.toast("🧹 Cleared completed tasks")
+    st.session_state.pending_toast = "🧹 Cleared completed tasks"
 
 def clear_all():
     save_state_for_undo()
     with closing(get_conn()) as conn:
         conn.execute("DELETE FROM tasks")
         conn.commit()
-    st.toast("🗑️ Cleared all tasks")
+    st.session_state.pending_toast = "🗑️ Cleared all tasks"
 
 def mark_all_completed():
     save_state_for_undo()
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = 1")
         conn.commit()
-    st.toast("✅ Marked all as completed")
+    st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date):
     save_state_for_undo()
@@ -129,15 +134,15 @@ def update_task(task_id, text, priority, category, due_date):
             (text, priority, category, due_date, task_id),
         )
         conn.commit()
-    st.toast("💾 Task updated")
+    st.session_state.pending_toast = "💾 Task updated"
 
 # ----------------------------- Styles & Theming -----------------------------
 
 PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
-CATEGORIES = ["House", "Work", "Study"]
+CATEGORIES = ["House", "Work", "Study", "Personal"]
 PRIORITIES = ["High", "Medium", "Low"]
 
-CAT_KEYS = {"House": "H", "Work": "W", "Study": "S"}
+CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "E"}
 PRI_KEYS = {"High": "P", "Medium": "M", "Low": "L"}
 
 st.markdown(
@@ -229,8 +234,22 @@ st.markdown(
         background: rgba(231, 76, 60, 0.15);
         font-weight: 600;
     }
-    div[data-testid="column"] button { width: 100%; }
-    div[data-testid="stHorizontalBlock"] { gap: 0.5rem; }
+    
+    /* Anti-Warping Rules for Buttons */
+    .stButton button p, .stButton button * {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        margin: 0 !important;
+        font-size: 0.85rem !important;
+    }
+    div[data-testid="column"] button { 
+        width: 100%;
+        padding-left: 0.2rem !important;
+        padding-right: 0.2rem !important;
+    }
+    
+    div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
     section[data-testid="stSidebar"] button {
         border-radius: 6px;
         font-weight: 400;
@@ -552,13 +571,12 @@ components.html(
 
             if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
-                // Color mapping for phases
                 if (doc.activeElement === taskInput) {
                     indicator.innerText = 'Enter to lock text & set options';
-                    indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)'; // Orange
+                    indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else {
                     indicator.innerText = 'Enter again to add task';
-                    indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)'; // Green
+                    indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
             } else {
                 indicator.classList.remove('visible');
@@ -579,12 +597,10 @@ components.html(
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
             const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
             const key = e.key.toLowerCase();
-            const isHotkey = ['1','2','3','4','5','6','h','w','s','p','m','l'].includes(key);
+            const isHotkey = ['1','2','3','4','5','6','h','w','s','e','p','m','l'].includes(key);
 
-            // ---------------- HOTKEYS & AUTO-FOCUS ----------------
             if (!isTyping) {
                 if (hasText && isHotkey) {
-                    // PHASE 2: Lock text, apply hotkeys without typing
                     e.preventDefault(); 
                     
                     const clickBtn = (textFragment) => {
@@ -603,6 +619,7 @@ components.html(
                     if (key === 'h') clickBtn('House');
                     if (key === 'w') clickBtn('Work');
                     if (key === 's') clickBtn('Study');
+                    if (key === 'e') clickBtn('Personal');
                     
                     if (key === 'p') clickBtn('High');
                     if (key === 'm') clickBtn('Medium');
@@ -611,12 +628,10 @@ components.html(
                     return; 
                 } 
                 else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && taskInput) {
-                    // PHASE 1: Focus input if nothing is typed yet
                     taskInput.focus();
                 }
             }
 
-            // ---------------- UNDO / REDO ----------------
             if ((e.ctrlKey || e.metaKey) && !isTyping) {
                 if (key === 'z') {
                     e.preventDefault();
@@ -631,7 +646,6 @@ components.html(
                 }
             }
 
-            // ---------------- ENTER KEY ----------------
             if (e.key === 'Enter' && taskInput) {
                 if (activeTag === 'input' && doc.activeElement !== taskInput) return; 
                 
@@ -639,10 +653,8 @@ components.html(
                     e.preventDefault(); 
                     
                     if (isTyping && doc.activeElement === taskInput) {
-                        // PHASE 1 to 2 transition: Remove focus so hotkeys can trigger
                         taskInput.blur(); 
                     } else {
-                        // PHASE 2 to finish: Submit the form
                         setTimeout(() => {
                             const buttons = doc.querySelectorAll('button');
                             buttons.forEach(btn => {
