@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import sqlite3
 import hashlib
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 from contextlib import closing
 
 DB_PATH = "checklist.db"
@@ -202,8 +202,6 @@ def set_done(task_id, done, username):
             st.session_state[f"subchk_{s['id']}"] = bool(done)
                 
         conn.commit()
-    status = "completed" if done else "unmarked"
-    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -427,7 +425,7 @@ st.markdown(
         justify-content: center;
         transition: opacity 0.05s ease;
     }
-    .task-row.is-done { opacity: 0.4; }
+    .task-row.is-done { opacity: 0.75; }
     .task-title {
         font-size: 1.05rem;
         font-weight: 400;
@@ -540,7 +538,6 @@ st.markdown(
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
-        transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     }
     body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         background-color: rgba(255, 255, 255, 0.05) !important;
@@ -585,7 +582,7 @@ st.markdown(
     }
     .subtask-row.is-done {
         text-decoration: line-through;
-        opacity: 0.5;
+        opacity: 0.75;
     }
     
     /* Elegant Minimalist Focus Border for Editing Subtasks */
@@ -634,12 +631,59 @@ st.markdown(
         transform: translateY(0) !important;
         pointer-events: auto !important;
     }
+
+    /* --- Task Card Contextual Backgrounds --- */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) {
+        transition: background-color 0.3s ease, border-color 0.3s ease, opacity 0.3s ease !important;
+    }
+
+    /* Light Mode */
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) {
+        background-color: rgba(250, 219, 216, 0.85) !important;
+        border-color: rgba(231, 76, 60, 0.4) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) {
+        background-color: rgba(253, 235, 208, 0.85) !important;
+        border-color: rgba(243, 156, 18, 0.4) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) {
+        background-color: rgba(214, 234, 248, 0.85) !important;
+        border-color: rgba(52, 152, 219, 0.4) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) {
+        background-color: rgba(46, 204, 113, 1) !important; 
+        border-color: rgba(39, 174, 96, 1) !important;
+    }
+
+    /* Dark Mode */
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) {
+        background-color: rgba(100, 30, 22, 0.85) !important;
+        border-color: rgba(231, 76, 60, 0.4) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) {
+        background-color: rgba(126, 81, 9, 0.85) !important;
+        border-color: rgba(243, 156, 18, 0.4) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) {
+        background-color: rgba(21, 67, 96, 0.85) !important;
+        border-color: rgba(52, 152, 219, 0.4) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) {
+        background-color: rgba(29, 131, 72, 1) !important;
+        border-color: rgba(20, 90, 50, 1) !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 init_db()
+
+# AEST Timezone offset logic
+LOCAL_TZ = timezone(timedelta(hours=10))
+
+def _get_local_today():
+    return datetime.now(LOCAL_TZ).date()
 
 # ----------------------------- Auth Routing -----------------------------
 
@@ -764,10 +808,10 @@ else:
         return base + timedelta(days=(6 - base.weekday()))
 
     DUE_PRESETS = {
-        "Today": lambda: date.today().isoformat(),
-        "Tomorrow": lambda: (date.today() + timedelta(days=1)).isoformat(),
-        "This week": lambda: _end_of_week(date.today()).isoformat(),
-        "Next week": lambda: (_end_of_week(date.today()) + timedelta(days=7)).isoformat(),
+        "Today": lambda: _get_local_today().isoformat(),
+        "Tomorrow": lambda: (_get_local_today() + timedelta(days=1)).isoformat(),
+        "This week": lambda: _end_of_week(_get_local_today()).isoformat(),
+        "Next week": lambda: (_end_of_week(_get_local_today()) + timedelta(days=7)).isoformat(),
         "Custom": lambda: (
             st.session_state.new_due_custom.isoformat() if st.session_state.new_due_custom else None
         ),
@@ -988,7 +1032,7 @@ else:
         if not filtered:
             st.caption("No tasks match your filters yet.")
         else:
-            today = date.today().isoformat()
+            today = _get_local_today().isoformat()
             now_time = datetime.now()
             
             for t in filtered:
@@ -1531,9 +1575,6 @@ components.html(
             
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
-            
-            const addTaskBtn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
-            if (addTaskBtn) addTaskBtn.style.transition = 'background-color 0.05s ease, color 0.05s ease, border-color 0.05s ease';
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
@@ -1559,6 +1600,7 @@ components.html(
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
+                const addTaskBtn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
                 if (addTaskBtn) {
                     if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; 
@@ -1580,6 +1622,7 @@ components.html(
                 indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
             } else {
                 indicator.classList.remove('visible');
+                const addTaskBtn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
                 if (addTaskBtn) {
                     addTaskBtn.style.backgroundColor = 'rgba(128, 128, 128, 0.4)'; 
                     addTaskBtn.style.borderColor = 'transparent';
@@ -1656,7 +1699,7 @@ components.html(
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
-                        const btn = buttons.find(b => b.innerText.includes(textFragment));
+                        const btn = buttons.find(b => b.innerText.includes(textFragment) || b.innerText.trim() === textFragment);
                         if(btn) {
                             const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
                             if(parentRow) {
