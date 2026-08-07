@@ -19,6 +19,8 @@ if "undo_stack" not in st.session_state:
     st.session_state.undo_stack = []
 if "redo_stack" not in st.session_state:
     st.session_state.redo_stack = []
+if "active_task_id" not in st.session_state:
+    st.session_state.active_task_id = None
 
 # Global Toast Queue
 if "pending_toast" in st.session_state:
@@ -250,6 +252,35 @@ def update_task(task_id, text, priority, category, due_date, username):
         conn.commit()
     st.session_state.pending_toast = "💾 Task updated"
 
+# ----------------------------- Callback Handlers -----------------------------
+
+def handle_task_check(task_id, username):
+    st.session_state.active_task_id = None 
+    new_done = st.session_state[f"chk_{task_id}"]
+    set_done(task_id, new_done, username)
+
+def handle_task_delete(task_id, username):
+    st.session_state.active_task_id = None
+    delete_task(task_id, username)
+
+def handle_subtask_add(task_id, username):
+    st.session_state.active_task_id = task_id
+    key = f"new_sub_{task_id}"
+    new_text = st.session_state.get(key, "").strip()
+    if new_text:
+        add_subtask(task_id, new_text, username)
+        st.session_state[key] = "" 
+
+def handle_subtask_check(subtask_id, task_id, username):
+    st.session_state.active_task_id = task_id
+    key = f"subchk_{subtask_id}"
+    new_done = st.session_state[key]
+    set_subtask_done(subtask_id, new_done, username)
+
+def handle_subtask_delete(subtask_id, task_id, username):
+    st.session_state.active_task_id = task_id
+    delete_subtask(subtask_id, username)
+
 # ----------------------------- Styles & Theming -----------------------------
 
 PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
@@ -324,7 +355,6 @@ st.markdown(
         align-items: center;
     }
     
-    /* Make opacity transitions super snappy for responsiveness */
     .task-row {
         padding: 0.8rem 0;
         border-bottom: 1px solid rgba(128, 128, 128, 0.25);
@@ -410,7 +440,6 @@ st.markdown(
         font-size: 0.75rem;
     }
     
-    /* Button Transitions reduced to 0.05s for instant snappy feel */
     div[data-testid="stButton"] button { 
         width: 100%;
         height: auto !important;
@@ -493,7 +522,6 @@ st.markdown(
         opacity: 0.5;
     }
     
-    /* Hide native scrollbar for the isolated right column */
     .no-scrollbar-col::-webkit-scrollbar {
         display: none;
     }
@@ -605,6 +633,7 @@ else:
             st.session_state.username = ""
             st.session_state.undo_stack.clear()
             st.session_state.redo_stack.clear()
+            st.session_state.active_task_id = None
             st.rerun()
             
         st.write("---")
@@ -718,7 +747,6 @@ else:
         st.empty()
 
     with right_col:
-        # Invisible anchor that JS uses to target and scroll this specific column
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
         filtered = tasks
@@ -755,10 +783,8 @@ else:
                     col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
                     
                     with col1:
-                        new_done = st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}")
-                        if new_done != bool(t["done"]):
-                            set_done(t["id"], new_done, st.session_state.username)
-                            st.rerun()
+                        st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}", 
+                                    on_change=handle_task_check, args=(t["id"], st.session_state.username))
                             
                     with col2:
                         done_class = "is-done" if t["done"] else ""
@@ -787,9 +813,8 @@ else:
                             if st.button("Edit", key=f"edit_{t['id']}", help="Edit task"):
                                 st.session_state[f"editing_{t['id']}"] = True
                         with d2:
-                            if st.button("Del", key=f"del_{t['id']}", help="Delete task"):
-                                delete_task(t["id"], st.session_state.username)
-                                st.rerun()
+                            st.button("Del", key=f"del_{t['id']}", help="Delete task",
+                                      on_click=handle_task_delete, args=(t["id"], st.session_state.username))
 
                     # ---------------- Subtasks ----------------
                     subtasks = get_subtasks(t["id"])
@@ -809,10 +834,8 @@ else:
                         for s in subtasks:
                             sc1, sc2, sc3 = st.columns([0.5, 6.5, 1], vertical_alignment="center")
                             with sc1:
-                                s_done = st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}")
-                                if s_done != bool(s["done"]):
-                                    set_subtask_done(s["id"], s_done, st.session_state.username)
-                                    st.rerun()
+                                st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
+                                            on_change=handle_subtask_check, args=(s["id"], t["id"], st.session_state.username))
                             with sc2:
                                 sub_class = "is-done" if s["done"] else ""
                                 st.markdown(
@@ -820,9 +843,8 @@ else:
                                     unsafe_allow_html=True,
                                 )
                             with sc3:
-                                if st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask"):
-                                    delete_subtask(s["id"], st.session_state.username)
-                                    st.rerun()
+                                st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
+                                          on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
 
                         new_sc1, new_sc2 = st.columns([6, 1.5])
                         with new_sc1:
@@ -830,15 +852,13 @@ else:
                                 "New subtask",
                                 key=f"new_sub_{t['id']}",
                                 placeholder="Add a subtask...",
-                                label_visibility="collapsed"
+                                label_visibility="collapsed",
+                                on_change=handle_subtask_add, 
+                                args=(t['id'], st.session_state.username)
                             )
                         with new_sc2:
-                            if st.button("Add", key=f"addsub_{t['id']}", use_container_width=True):
-                                new_text = st.session_state.get(f"new_sub_{t['id']}", "").strip()
-                                if new_text:
-                                    add_subtask(t["id"], new_text, st.session_state.username)
-                                    st.session_state[f"new_sub_{t['id']}"] = ""
-                                    st.rerun()
+                            st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
+                                      on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
 
                     if st.session_state.get(f"editing_{t['id']}"):
                         with st.form(f"edit_form_{t['id']}"):
@@ -900,7 +920,6 @@ components.html(
         }
     }, 8000); 
 
-    // Theme switching tracker
     setInterval(() => {
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\d+/g);
@@ -916,7 +935,6 @@ components.html(
         }
     }, 200);
 
-    // Isolate Right Column Scrolling
     setInterval(() => {
         const anchor = doc.getElementById('right-col-anchor');
         if (anchor) {
@@ -926,14 +944,13 @@ components.html(
                 rightCol.style.overflowY = 'auto';
                 rightCol.style.paddingRight = '12px';
                 rightCol.style.scrollBehavior = 'smooth';
-                rightCol.style.scrollbarWidth = 'none'; // Hide native scrollbar
+                rightCol.style.scrollbarWidth = 'none'; 
                 rightCol.style.msOverflowStyle = 'none';
                 rightCol.classList.add('no-scrollbar-col');
             }
         }
     }, 500);
 
-    // Add UI Scroll Controls
     if (!doc.getElementById('scroll-controls')) {
         const controls = doc.createElement('div');
         controls.id = 'scroll-controls';
@@ -961,7 +978,6 @@ components.html(
         };
     }
 
-    // Apply smooth transitions and remove inline styles for default fade back
     setInterval(() => {
         const optionBtns = doc.querySelectorAll('div[data-testid="stButton"] button');
         optionBtns.forEach(btn => {
@@ -985,7 +1001,6 @@ components.html(
         });
     }, 500);
 
-    // Optimistic UI for Checkboxes (Instant Visual Feedback)
     doc.addEventListener('change', function(e) {
         if (e.target && e.target.type === 'checkbox') {
             const block = e.target.closest('div[data-testid="stHorizontalBlock"]');
