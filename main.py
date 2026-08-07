@@ -27,6 +27,12 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
+def _clear_all_checkbox_states():
+    """Forces Streamlit to forget the visual state of all checkboxes during mass operations."""
+    for key in list(st.session_state.keys()):
+        if key.startswith("chk_") or key.startswith("subchk_"):
+            del st.session_state[key]
+
 # ----------------------------- Security & Auth -----------------------------
 
 def hash_password(password):
@@ -152,6 +158,7 @@ def perform_undo(username):
         last_state = st.session_state.undo_stack.pop()
         _restore_state(last_state["tasks"], username)
         _restore_subtasks(last_state["subtasks"], username)
+        _clear_all_checkbox_states()
         st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo(username):
@@ -160,6 +167,7 @@ def perform_redo(username):
         next_state = st.session_state.redo_stack.pop()
         _restore_state(next_state["tasks"], username)
         _restore_subtasks(next_state["subtasks"], username)
+        _clear_all_checkbox_states()
         st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date, username):
@@ -178,6 +186,14 @@ def set_done(task_id, done, username):
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
+        
+        # Wipes subtask cache so they correctly update to the new parent status
+        subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
+        for s in subtasks:
+            key = f"subchk_{s['id']}"
+            if key in st.session_state:
+                del st.session_state[key]
+                
         conn.commit()
     status = "completed" if done else "unmarked"
     st.session_state.pending_toast = f"✅ Task {status}"
@@ -222,6 +238,12 @@ def add_subtask(task_id, text, username):
         )
         # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+        
+        # Wipes parent task cache so it unchecks itself
+        parent_key = f"chk_{task_id}"
+        if parent_key in st.session_state:
+            del st.session_state[parent_key]
+            
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
 
@@ -230,17 +252,20 @@ def set_subtask_done(subtask_id, task_id, done, username):
     with closing(get_conn()) as conn:
         conn.execute("UPDATE subtasks SET done = ? WHERE id = ?", (int(done), subtask_id))
         
-        # Check if parent task status needs cascading
         subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         if subtasks:
             all_done = all(s['done'] for s in subtasks)
+            parent_key = f"chk_{task_id}"
+            
             if not done:
-                # Unchecking a subtask forces the parent task to be unchecked
                 conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+                if parent_key in st.session_state:
+                    del st.session_state[parent_key]
             elif all_done:
-                # Checking the last subtask forces the parent task to be checked
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                
+                if parent_key in st.session_state:
+                    del st.session_state[parent_key]
+                    
         conn.commit()
 
 def delete_subtask(subtask_id, task_id, username):
@@ -248,13 +273,15 @@ def delete_subtask(subtask_id, task_id, username):
     with closing(get_conn()) as conn:
         conn.execute("DELETE FROM subtasks WHERE id = ?", (subtask_id,))
         
-        # Check if remaining subtasks are all complete
         subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         if subtasks:
             all_done = all(s['done'] for s in subtasks)
             if all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-        
+                parent_key = f"chk_{task_id}"
+                if parent_key in st.session_state:
+                    del st.session_state[parent_key]
+                    
         conn.commit()
     st.session_state.pending_toast = "🗑️ Subtask deleted"
 
@@ -267,6 +294,8 @@ def mark_all_completed(username):
             (username,)
         )
         conn.commit()
+    
+    _clear_all_checkbox_states()
     st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
@@ -324,6 +353,14 @@ st.markdown(
         padding-top: 2rem !important;
     }
 
+    /* Smooth transitions for main content when sidebar collapses */
+    section.main, [data-testid="stMain"] {
+        transition: margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    }
+    .block-container {
+        transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    }
+
     .stApp {
         background-attachment: fixed !important;
         background-size: cover !important;
@@ -332,11 +369,12 @@ st.markdown(
     }
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
-        transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, background-color 0.3s ease !important;
     }
     [data-testid="stHeader"] {
         background: transparent !important;
     }
+    
     body.custom-dark .stApp {
         background-image: url("https://images.unsplash.com/photo-1518800524495-b963b722bd92?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTh8fG1pbmltYWwlMjBkYXJrfGVufDB8fDB8fHww") !important;
     }
@@ -351,6 +389,7 @@ st.markdown(
         margin-top: 2rem;
         backdrop-filter: blur(8px);
     }
+    
     body.custom-light .stApp {
         background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
@@ -359,13 +398,17 @@ st.markdown(
         box-shadow: 5px 0 25px rgba(0,0,0,0.15);
         backdrop-filter: blur(10px);
     }
+    
+    /* Higher opacity, blur, and contrast in light mode to fix legibility issues */
     body.custom-light .main .block-container {
-        background-color: rgba(255, 255, 255, 0.85);
+        background-color: rgba(255, 255, 255, 0.96) !important;
         border-radius: 16px;
         padding: 2rem;
         margin-top: 2rem;
-        backdrop-filter: blur(8px);
+        backdrop-filter: blur(12px) !important; 
+        box-shadow: 0 4px 24px rgba(0,0,0,0.08) !important;
     }
+    
     h1, h2, h3, h4 {
         font-weight: 500 !important;
         letter-spacing: -0.5px;
@@ -547,10 +590,6 @@ st.markdown(
     .subtask-row.is-done {
         text-decoration: line-through;
         opacity: 0.5;
-    }
-    
-    .no-scrollbar-col::-webkit-scrollbar {
-        display: none;
     }
     </style>
     """,
