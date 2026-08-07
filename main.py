@@ -521,6 +521,20 @@ st.markdown(
         text-decoration: line-through;
         opacity: 0.5;
     }
+    
+    /* Isolated Scroll Container for Right Column */
+    div[data-testid="column"]:has(#right-col-anchor) {
+        height: 88vh !important;
+        max-height: 88vh !important;
+        overflow-y: auto !important;
+        scroll-behavior: smooth !important;
+        padding-right: 15px !important;
+        scrollbar-width: none !important; 
+        -ms-overflow-style: none !important; 
+    }
+    div[data-testid="column"]:has(#right-col-anchor)::-webkit-scrollbar {
+        display: none !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -562,28 +576,6 @@ if not st.session_state.logged_in:
                     st.warning("Please fill in both fields.")
 
 else:
-    # Aggressively enforce scrolling logic via CSS only for the main app layout
-    st.markdown(
-        """
-        <style>
-        /* Force right column to be an isolated scroll container */
-        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) {
-            height: 88vh !important;
-            max-height: 88vh !important;
-            overflow-y: scroll !important;
-            scroll-behavior: smooth !important;
-            padding-right: 15px !important;
-            -ms-overflow-style: none !important; 
-            scrollbar-width: none !important; 
-        }
-        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3)::-webkit-scrollbar {
-            display: none !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
@@ -765,6 +757,9 @@ else:
         st.empty()
 
     with right_col:
+        # Invisible anchor that safe-targets this exact column and not any nested columns
+        st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
+        
         filtered = tasks
         if search:
             filtered = [t for t in filtered if search.lower() in t["text"].lower()]
@@ -966,8 +961,11 @@ components.html(
 
         doc.body.appendChild(controls);
 
-        // Targeted Scroll logic mapped directly to your 3rd column via CSS nth-of-type
-        const getScrollCol = () => doc.querySelector('section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3)');
+        // Targeted Scroll logic mapped directly to the anchor
+        const getScrollCol = () => {
+            const anchor = doc.getElementById('right-col-anchor');
+            return anchor ? anchor.closest('div[data-testid="column"]') : null;
+        };
 
         controls.querySelector('#scroll-up').onclick = () => {
             const col = getScrollCol();
