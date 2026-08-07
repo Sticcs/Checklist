@@ -202,6 +202,8 @@ def set_done(task_id, done, username):
             st.session_state[f"subchk_{s['id']}"] = bool(done)
                 
         conn.commit()
+    status = "completed" if done else "unmarked"
+    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -209,6 +211,7 @@ def delete_task(task_id, username):
         conn.execute("DELETE FROM subtasks WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
+    st.session_state.pending_toast = "🗑️ Task deleted"
 
 def clear_completed(username):
     save_state_for_undo(username)
@@ -221,6 +224,7 @@ def clear_completed(username):
             conn.execute(f"DELETE FROM subtasks WHERE task_id IN ({placeholders})", done_ids)
         conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
+    st.session_state.pending_toast = "🧹 Cleared completed tasks"
 
 def clear_all(username):
     save_state_for_undo(username)
@@ -230,6 +234,7 @@ def clear_all(username):
         )
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
+    st.session_state.pending_toast = "🗑️ Cleared all tasks"
 
 def add_subtask(task_id, text, username):
     save_state_for_undo(username)
@@ -241,6 +246,7 @@ def add_subtask(task_id, text, username):
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         st.session_state[f"chk_{task_id}"] = False
         conn.commit()
+    st.session_state.pending_toast = "➕ Subtask added"
 
 def set_subtask_done(subtask_id, task_id, done, username):
     save_state_for_undo(username)
@@ -274,6 +280,7 @@ def delete_subtask(subtask_id, task_id, username):
                 st.session_state[f"chk_{task_id}"] = True
                     
         conn.commit()
+    st.session_state.pending_toast = "🗑️ Subtask deleted"
 
 def mark_all_completed(username):
     save_state_for_undo(username)
@@ -285,6 +292,7 @@ def mark_all_completed(username):
         )
         conn.commit()
     _sync_checkboxes_with_db(username)
+    st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
     save_state_for_undo(username)
@@ -534,18 +542,23 @@ st.markdown(
         margin-top: 4rem;
     }
 
-    /* Target Task Container Explicitly */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
-        transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     }
 
-    /* Subtask Expander Styling */
+    /* Force transparency on Streamlit Expander to allow parent background to bleed through */
     div[data-testid="stExpander"] {
         border: none !important;
         background: transparent !important;
+        background-color: transparent !important;
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stExpanderDetails"] {
+        background: transparent !important;
+        background-color: transparent !important;
+        animation: expandFade 0.3s ease;
         transition: all 0.3s ease;
     }
     div[data-testid="stExpander"] summary {
@@ -554,10 +567,6 @@ st.markdown(
     }
     div[data-testid="stExpander"] summary svg {
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-    div[data-testid="stExpanderDetails"] {
-        animation: expandFade 0.3s ease;
-        transition: all 0.3s ease;
     }
     @keyframes expandFade {
         0% { opacity: 0; transform: translateY(-6px); }
@@ -1139,7 +1148,7 @@ components.html(
         }
     }, 8000); 
 
-    // Sync Background Mode & Guarantee Task Card Colors
+    // Sync Background Mode & Bulletproof Task Card Colors
     setInterval(() => {
         const isDark = doc.body.classList.contains('custom-dark');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
@@ -1155,34 +1164,34 @@ components.html(
             }
         }
         
-        // --- BULLETPROOF JAVASCRIPT BACKGROUND COLORING ---
-        const cards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
-        cards.forEach(card => {
-            // Only apply this to actual task cards
-            if (!card.querySelector('.task-card-marker')) return;
+        // Use JavaScript .setProperty with '!important' to destroy Streamlit's overriding classes
+        const markers = doc.querySelectorAll('.task-card-marker');
+        markers.forEach(marker => {
+            let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
+            if (!card) return;
             
             const isDone = card.querySelector('.task-row.is-done') !== null;
             const hasHigh = card.querySelector('.border-High') !== null;
             const hasMed = card.querySelector('.border-Medium') !== null;
             const hasLow = card.querySelector('.border-Low') !== null;
             
-            card.style.transition = 'background-color 0.3s ease, border-color 0.3s ease';
+            card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
             
             if (isDone) {
-                card.style.backgroundColor = isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)';
-                card.style.borderColor = isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)';
+                card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
+                card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
             } else if (hasHigh) {
-                card.style.backgroundColor = isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)';
-                card.style.borderColor = 'rgba(231, 76, 60, 0.4)';
+                card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
+                card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
             } else if (hasMed) {
-                card.style.backgroundColor = isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)';
-                card.style.borderColor = 'rgba(243, 156, 18, 0.4)';
+                card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
+                card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
             } else if (hasLow) {
-                card.style.backgroundColor = isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)';
-                card.style.borderColor = 'rgba(52, 152, 219, 0.4)';
+                card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
+                card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
             }
         });
-        
     }, 100);
 
     // Persist Scroll memory
@@ -1365,8 +1374,11 @@ components.html(
         
         // Optimistic Delete
         if (txt === 'Del') {
-            const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (card) card.classList.add('optimistic-fade');
+            const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
+            if (marker) {
+                const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
+                if (card) card.classList.add('optimistic-fade');
+            }
         }
         else if (txt === '✕') {
             const row = btn.closest('div[data-testid="stHorizontalBlock"]');
@@ -1400,8 +1412,11 @@ components.html(
         }
         // Mass Actions
         else if (txt.includes('Clear completed') || txt.includes('Clear all')) {
-            const cards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
-            cards.forEach(c => c.classList.add('optimistic-fade'));
+            const markers = doc.querySelectorAll('.task-card-marker');
+            markers.forEach(m => {
+                const c = m.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || m.closest('div[data-testid="stVerticalBlock"]');
+                if (c) c.classList.add('optimistic-fade');
+            });
         }
         
         // Optimistic Option Highlighting & Disclosure Triggers
@@ -1436,7 +1451,8 @@ components.html(
         if (e.target && e.target.type === 'checkbox') {
             const block = e.target.closest('div[data-testid="stHorizontalBlock"]');
             const isSubtask = e.target.closest('div[data-testid="stExpanderDetails"]') !== null;
-            const container = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            const containerMarker = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
+            const container = containerMarker ? (containerMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || containerMarker.closest('div[data-testid="stVerticalBlock"]')) : null;
             const isChecked = e.target.checked;
             
             if (block) {
@@ -1522,14 +1538,17 @@ components.html(
 
     // Elegant Focus bindings for Subtasks (Robust Poller)
     setInterval(() => {
-        const allCards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
+        const allCards = doc.querySelectorAll('.task-card-marker');
         let activeCard = null;
 
         if (doc.activeElement && doc.activeElement.tagName.toLowerCase() === 'input' && doc.activeElement.placeholder && doc.activeElement.placeholder.includes('Add a subtask')) {
-            activeCard = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            const m = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
+            if (m) activeCard = m.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || m.closest('div[data-testid="stVerticalBlock"]');
         }
 
-        allCards.forEach(card => {
+        allCards.forEach(marker => {
+            const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
+            if (!card) return;
             if (card === activeCard) {
                 card.classList.add('green-focus-border');
             } else {
@@ -1648,7 +1667,7 @@ components.html(
                     if (window.latestTaskId) {
                         const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${window.latestTaskId}"]`);
                         if (cardMarker) {
-                            const targetCard = cardMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                            const targetCard = cardMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || cardMarker.closest('div[data-testid="stVerticalBlock"]');
                             if (targetCard) {
                                 const subInputs = targetCard.querySelectorAll('input[placeholder*="Add a subtask"]');
                                 if (subInputs.length > 0) targetInput = subInputs[0];
