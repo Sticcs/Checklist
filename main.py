@@ -309,7 +309,7 @@ def update_task(task_id, text, priority, category, due_date, username):
 # ----------------------------- Callback Handlers -----------------------------
 
 def handle_task_check(task_id, current_done, username):
-    # Notice: active_task_id is NOT set here. This stops the subtask expander from randomly opening!
+    # active_task_id is NOT touched here, ensuring checking a box never forces the subtask expander to open.
     key = f"chk_{task_id}"
     val = st.session_state.get(key)
     new_done = not current_done if val is None else val
@@ -994,12 +994,13 @@ else:
                                 st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
                                           on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
 
+                        st.caption("⚡ Press `/` to quickly start typing a subtask")
                         new_sc1, new_sc2 = st.columns([6, 1.5])
                         with new_sc1:
                             st.text_input(
                                 "New subtask",
                                 key=f"new_sub_{t['id']}",
-                                placeholder="Add a subtask...",
+                                placeholder="Add a subtask... (Press '/' to focus)",
                                 label_visibility="collapsed",
                                 on_change=handle_subtask_add, 
                                 args=(t['id'], st.session_state.username)
@@ -1232,19 +1233,23 @@ components.html(
         doc.body.appendChild(indicator);
     }
 
-    // Elegant Focus border bindings for Subtasks
-    doc.addEventListener('focusin', (e) => {
-        if (e.target && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
-            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (card) card.classList.add('green-focus-border');
+    // Elegant Focus border bindings for Subtasks (Robust Poller)
+    setInterval(() => {
+        const allCards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
+        let activeCard = null;
+
+        if (doc.activeElement && doc.activeElement.tagName.toLowerCase() === 'input' && doc.activeElement.placeholder && doc.activeElement.placeholder.includes('Add a subtask')) {
+            activeCard = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
         }
-    });
-    doc.addEventListener('focusout', (e) => {
-        if (e.target && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
-            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (card) card.classList.remove('green-focus-border');
-        }
-    });
+
+        allCards.forEach(card => {
+            if (card === activeCard) {
+                card.classList.add('green-focus-border');
+            } else {
+                card.classList.remove('green-focus-border');
+            }
+        });
+    }, 50);
 
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
@@ -1258,11 +1263,10 @@ components.html(
                 if(inp.placeholder === "E.g., Groceries") customInput = inp;
             });
             
-            // Check for new task tracker
             const tracker = doc.getElementById('latest-task-tracker');
             if (tracker) {
                 window.latestTaskId = tracker.getAttribute('data-task-id');
-                tracker.removeAttribute('id'); // Ensure it only reads once
+                tracker.removeAttribute('id'); 
             }
             
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
@@ -1310,7 +1314,6 @@ components.html(
                 }
                 
             } else if (!isTyping && window.latestTaskId) {
-                // New Task Subtask Prompt
                 indicator.classList.add('visible');
                 indicator.innerText = 'Press / to add subtasks to your new task';
                 indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
@@ -1350,7 +1353,6 @@ components.html(
                     e.preventDefault();
                     let targetInput = null;
                     
-                    // Prioritize the newly created task if the prompt is active
                     if (window.latestTaskId) {
                         const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${window.latestTaskId}"]`);
                         if (cardMarker) {
@@ -1362,7 +1364,6 @@ components.html(
                         }
                     }
                     
-                    // Fallback: focus any available subtask input
                     if (!targetInput) {
                         const subInputs = Array.from(doc.querySelectorAll('input[placeholder*="Add a subtask"]'))
                             .filter(inp => inp.getBoundingClientRect().height > 0);
@@ -1371,7 +1372,6 @@ components.html(
                     
                     if (targetInput) {
                         const detailsEl = targetInput.closest('details');
-                        // Force open the expander if it was collapsed
                         if (detailsEl && !detailsEl.open) {
                             const summary = detailsEl.querySelector('summary');
                             if (summary) summary.click();
@@ -1382,7 +1382,7 @@ components.html(
                         }, 50);
                     }
                     
-                    window.latestTaskId = null; // Consume the prompt
+                    window.latestTaskId = null; 
                     return;
                 }
 
