@@ -184,7 +184,6 @@ PRI_KEYS = {"High": "T", "Medium": "M", "Low": "L"}
 st.markdown(
     """
     <style>
-    /* Reduce top empty space in the sidebar */
     section[data-testid="stSidebar"] > div:first-child {
         padding-top: 2rem !important;
     }
@@ -235,6 +234,19 @@ st.markdown(
         font-weight: 500 !important;
         letter-spacing: -0.5px;
     }
+    
+    /* Dynamic Header Styles */
+    #dynamic-header {
+        font-size: 2.75rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        margin-top: 0.5rem;
+        transition: opacity 0.6s ease-in-out;
+        min-height: 4rem; /* Prevents layout jump when fading */
+        display: flex;
+        align-items: center;
+    }
+    
     .task-row {
         padding: 0.8rem 0;
         border-bottom: 1px solid rgba(128, 128, 128, 0.25);
@@ -299,7 +311,6 @@ st.markdown(
         line-height: 1;
     }
     
-    /* Modern minimalist profile indicator */
     .profile-indicator {
         font-size: 0.85rem;
         font-weight: 500;
@@ -338,6 +349,13 @@ st.markdown(
         border-radius: 6px;
         font-weight: 400;
         border: 1px solid rgba(128, 128, 128, 0.2);
+    }
+    
+    .login-container {
+        padding: 2rem;
+        border-radius: 12px;
+        background: rgba(128,128,128,0.1);
+        margin-top: 4rem;
     }
     </style>
     """,
@@ -387,6 +405,7 @@ else:
     st.session_state.setdefault("new_priority", "Medium")
     st.session_state.setdefault("new_due_preset", "No date")
     st.session_state.setdefault("new_due_custom", None)
+    st.session_state.setdefault("options_modified", False)
 
     def _end_of_week(base):
         return base + timedelta(days=(4 - base.weekday()) % 7)
@@ -402,9 +421,18 @@ else:
         "No date": lambda: None,
     }
 
-    def set_category(cat): st.session_state.new_category = cat
-    def set_priority(pri): st.session_state.new_priority = pri
-    def set_due_preset(preset): st.session_state.new_due_preset = preset
+    # Tracking button state logic
+    def set_category(cat): 
+        st.session_state.new_category = cat
+        st.session_state.options_modified = True
+        
+    def set_priority(pri): 
+        st.session_state.new_priority = pri
+        st.session_state.options_modified = True
+        
+    def set_due_preset(preset): 
+        st.session_state.new_due_preset = preset
+        st.session_state.options_modified = True
 
     def submit_new_task():
         text = st.session_state.task_input.strip()
@@ -412,6 +440,7 @@ else:
             due_date = DUE_PRESETS[st.session_state.new_due_preset]()
             add_task(text, st.session_state.new_priority, st.session_state.new_category, due_date, st.session_state.username)
             st.session_state.task_input = "" 
+            st.session_state.options_modified = False
 
     tasks = get_tasks(st.session_state.username)
     categories = sorted({t["category"] for t in tasks}) if tasks else []
@@ -419,7 +448,6 @@ else:
     # ----------------------------- Sidebar -----------------------------
 
     with st.sidebar:
-        # Minimalist profile block
         st.markdown(f"<div class='profile-indicator'><span>👤</span> {st.session_state.username}</div>", unsafe_allow_html=True)
         if st.button("Sign out", use_container_width=True):
             st.session_state.logged_in = False
@@ -474,9 +502,9 @@ else:
     left_col, spacer_col, right_col = st.columns([1, 0.25, 1.4])
 
     with left_col:
-        st.title("Checklist")
-        st.write("")
-        st.write("")
+        # Dynamic Quote Header & Hidden state tracking for JS
+        st.markdown("<div id='dynamic-header'>Let's get DOing.</div>", unsafe_allow_html=True)
+        st.markdown(f"<div id='options-state' data-modified='{str(st.session_state.options_modified).lower()}' style='display:none;'></div>", unsafe_allow_html=True)
 
         st.text_input(
             "Task",
@@ -587,7 +615,6 @@ else:
                             if t["due_date"] == today and not t["done"]:
                                 urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
                         
-                        # Collapsed into a single line to prevent Streamlit markdown parser breakage
                         html_string = f"""<div class="task-row border-{t['priority']} {done_class} {anim_class}"><div class="task-title {done_class}"><span>{t['text']}</span>{urgent_html}</div><div class="meta-tags">{tags_html}</div></div>"""
                         
                         st.markdown(html_string, unsafe_allow_html=True)
@@ -641,6 +668,22 @@ components.html(
     <script>
     const doc = window.parent.document;
     
+    // Dynamic Quotes logic
+    const quotes = ["Let's get DOing.", "Get things done.", "Conquer the day.", "Make it happen.", "Time to execute."];
+    let qIdx = 0;
+    setInterval(() => {
+        const header = doc.getElementById('dynamic-header');
+        if (header) {
+            header.style.opacity = 0; // Fade out
+            setTimeout(() => {
+                qIdx = (qIdx + 1) % quotes.length;
+                header.innerText = quotes[qIdx];
+                header.style.opacity = 1; // Fade in
+            }, 600); // Wait for transition to finish
+        }
+    }, 8000); 
+
+    // Theme switching tracker
     setInterval(() => {
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\d+/g);
@@ -697,9 +740,22 @@ components.html(
             inputs.forEach(inp => {
                 if(inp.placeholder === "E.g., Review Big O time complexity") taskInput = inp;
             });
+            
+            // Check Python options state
+            const optState = doc.getElementById('options-state');
+            const isModified = optState ? optState.getAttribute('data-modified') === 'true' : false;
+            
+            // Find Add Task button
+            const buttons = Array.from(doc.querySelectorAll('button'));
+            const addTaskBtn = buttons.find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
+            
+            if (addTaskBtn) {
+                addTaskBtn.style.transition = 'background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease';
+            }
 
             if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
+                
                 if (doc.activeElement === taskInput) {
                     indicator.innerText = 'Enter to lock text & set options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
@@ -707,8 +763,34 @@ components.html(
                     indicator.innerText = 'Enter again to add task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
+                
+                // Color the Add Task Button
+                if (addTaskBtn) {
+                    if (isModified) {
+                        addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; // Green
+                        addTaskBtn.style.borderColor = 'rgba(46, 204, 113, 1)';
+                        addTaskBtn.style.color = 'white';
+                        addTaskBtn.style.pointerEvents = 'auto';
+                        addTaskBtn.style.opacity = '1';
+                    } else {
+                        addTaskBtn.style.backgroundColor = 'rgba(243, 156, 18, 1)'; // Yellow
+                        addTaskBtn.style.borderColor = 'rgba(243, 156, 18, 1)';
+                        addTaskBtn.style.color = 'white';
+                        addTaskBtn.style.pointerEvents = 'auto';
+                        addTaskBtn.style.opacity = '1';
+                    }
+                }
+                
             } else {
                 indicator.classList.remove('visible');
+                
+                // Grey out the Add Task button
+                if (addTaskBtn) {
+                    addTaskBtn.style.backgroundColor = 'rgba(128, 128, 128, 0.4)'; 
+                    addTaskBtn.style.borderColor = 'transparent';
+                    addTaskBtn.style.color = 'rgba(255, 255, 255, 0.5)';
+                    addTaskBtn.style.pointerEvents = 'none';
+                }
             }
         }, 200);
 
