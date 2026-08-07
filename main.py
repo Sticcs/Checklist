@@ -38,7 +38,7 @@ def create_user(username, password):
             conn.commit()
             return True
         except sqlite3.IntegrityError:
-            return False # Username already exists
+            return False 
 
 def verify_user(username, password):
     with closing(get_conn()) as conn:
@@ -55,14 +55,12 @@ def get_conn():
 
 def init_db():
     with closing(get_conn()) as conn:
-        # Create users table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
                 password TEXT NOT NULL
             )
         """)
-        # Create tasks table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,12 +73,11 @@ def init_db():
                 username TEXT
             )
         """)
-        # DB Migration: Add username column to existing DBs if it doesn't exist
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN username TEXT")
             conn.execute("UPDATE tasks SET username = 'guest' WHERE username IS NULL")
         except sqlite3.OperationalError:
-            pass # Column already exists
+            pass 
         conn.commit()
 
 def get_tasks(username):
@@ -187,6 +184,11 @@ PRI_KEYS = {"High": "T", "Medium": "M", "Low": "L"}
 st.markdown(
     """
     <style>
+    /* Reduce top empty space in the sidebar */
+    section[data-testid="stSidebar"] > div:first-child {
+        padding-top: 2rem !important;
+    }
+
     .stApp {
         background-attachment: fixed !important;
         background-size: cover !important;
@@ -297,6 +299,27 @@ st.markdown(
         line-height: 1;
     }
     
+    /* Modern minimalist profile indicator */
+    .profile-indicator {
+        font-size: 0.85rem;
+        font-weight: 500;
+        opacity: 0.75;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 0.8rem;
+    }
+    .profile-indicator span {
+        background: rgba(128, 128, 128, 0.2);
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+    }
+    
     .stButton button p, .stButton button * {
         white-space: normal !important;
         line-height: 1.2 !important;
@@ -316,14 +339,6 @@ st.markdown(
         font-weight: 400;
         border: 1px solid rgba(128, 128, 128, 0.2);
     }
-    
-    /* Login Box Centering */
-    .login-container {
-        padding: 2rem;
-        border-radius: 12px;
-        background: rgba(128,128,128,0.1);
-        margin-top: 4rem;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -336,7 +351,7 @@ init_db()
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        st.markdown("<h1 style='text-align: center;'>✅ My Checklist</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; margin-top: 2rem;'>✅ My Checklist</h1>", unsafe_allow_html=True)
         st.write("")
         
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
@@ -404,8 +419,9 @@ else:
     # ----------------------------- Sidebar -----------------------------
 
     with st.sidebar:
-        st.markdown(f"**👤 Logged in as: {st.session_state.username}**")
-        if st.button("Logout", use_container_width=True):
+        # Minimalist profile block
+        st.markdown(f"<div class='profile-indicator'><span>👤</span> {st.session_state.username}</div>", unsafe_allow_html=True)
+        if st.button("Sign out", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.undo_stack.clear()
@@ -570,19 +586,11 @@ else:
                             
                             if t["due_date"] == today and not t["done"]:
                                 urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
-                            
-                        st.markdown(
-                            f"""
-                            <div class="task-row border-{t['priority']} {done_class} {anim_class}">
-                                <div class="task-title {done_class}">
-                                    <span>{t['text']}</span>
-                                    {urgent_html}
-                                </div>
-                                <div class="meta-tags">{tags_html}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+                        
+                        # Collapsed into a single line to prevent Streamlit markdown parser breakage
+                        html_string = f"""<div class="task-row border-{t['priority']} {done_class} {anim_class}"><div class="task-title {done_class}"><span>{t['text']}</span>{urgent_html}</div><div class="meta-tags">{tags_html}</div></div>"""
+                        
+                        st.markdown(html_string, unsafe_allow_html=True)
                         
                     with col3:
                         d1, d2 = st.columns(2)
