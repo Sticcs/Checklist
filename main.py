@@ -202,6 +202,8 @@ def set_done(task_id, done, username):
             st.session_state[f"subchk_{s['id']}"] = bool(done)
                 
         conn.commit()
+    status = "completed" if done else "unmarked"
+    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -1113,6 +1115,12 @@ components.html(
     <script>
     const doc = window.parent.document;
     
+    // Setup Progressive States
+    window.textLocked = false;
+    window.categorySelected = false;
+    window.prioritySelected = false;
+    window.dueSelected = false;
+    
     const quotes = [
         "Stay locked in.", 
         "September is coming.", 
@@ -1258,7 +1266,7 @@ components.html(
         }
     }, 200);
 
-    // Progressive Disclosure Engine
+    // Strict Step-By-Step Progressive Disclosure Engine
     setInterval(() => {
         const taskInput = doc.querySelector('input[placeholder="E.g., Review Big O time complexity"]');
         const catMarker = doc.getElementById('step-cat-marker');
@@ -1279,10 +1287,16 @@ components.html(
             }
         });
 
-        // Toggle logic based on state flags set by clicks and typing
-        const hasText = taskInput && taskInput.value.trim().length > 0;
-        
-        if (hasText || window.forceShowAllProgressive) {
+        // Hard Reset if empty
+        if (taskInput && taskInput.value.trim().length === 0) {
+            window.textLocked = false;
+            window.categorySelected = false;
+            window.prioritySelected = false;
+            window.dueSelected = false;
+        }
+
+        // Toggle logic based STRICTLY on sequential step completion
+        if (window.textLocked) {
             catBlock?.classList.add('progressive-visible');
             catBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1290,7 +1304,7 @@ components.html(
             catBlock?.classList.remove('progressive-visible');
         }
 
-        if (window.categorySelected || window.forceShowAllProgressive) {
+        if (window.textLocked && window.categorySelected) {
             priBlock?.classList.add('progressive-visible');
             priBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1298,7 +1312,7 @@ components.html(
             priBlock?.classList.remove('progressive-visible');
         }
 
-        if (window.prioritySelected || window.forceShowAllProgressive) {
+        if (window.textLocked && window.categorySelected && window.prioritySelected) {
             dueBlock?.classList.add('progressive-visible');
             dueBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1306,7 +1320,7 @@ components.html(
             dueBlock?.classList.remove('progressive-visible');
         }
 
-        if (window.dueSelected || window.forceShowAllProgressive) {
+        if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
             addBlock?.classList.add('progressive-visible');
             addBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1337,10 +1351,10 @@ components.html(
             btn.innerText = 'Adding...';
             
             // Instantly clear text box, hide sections, wipe state
+            window.textLocked = false;
             window.categorySelected = false;
             window.prioritySelected = false;
             window.dueSelected = false;
-            window.forceShowAllProgressive = false;
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1517,6 +1531,9 @@ components.html(
             
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
+            
+            const addTaskBtn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
+            if (addTaskBtn) addTaskBtn.style.transition = 'background-color 0.05s ease, color 0.05s ease, border-color 0.05s ease';
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
@@ -1525,12 +1542,36 @@ components.html(
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
-                if (doc.activeElement === taskInput) {
-                    indicator.innerText = 'Enter to lock text & bypass sections';
+                if (!window.textLocked) {
+                    indicator.innerText = 'Enter to lock text & open options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
+                } else if (!window.categorySelected) {
+                    indicator.innerText = 'Select a category (Use hotkeys)';
+                    indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
+                } else if (!window.prioritySelected) {
+                    indicator.innerText = 'Select a priority';
+                    indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
+                } else if (!window.dueSelected) {
+                    indicator.innerText = 'Select a due date';
+                    indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter again to quickly add task';
+                    indicator.innerText = 'Enter to finish adding task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
+                }
+                
+                if (addTaskBtn) {
+                    if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
+                        addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; 
+                        addTaskBtn.style.borderColor = 'rgba(46, 204, 113, 1)';
+                        addTaskBtn.style.color = 'white';
+                        addTaskBtn.style.pointerEvents = 'auto';
+                        addTaskBtn.style.opacity = '1';
+                    } else {
+                        addTaskBtn.style.backgroundColor = 'rgba(128, 128, 128, 0.4)'; 
+                        addTaskBtn.style.borderColor = 'transparent';
+                        addTaskBtn.style.color = 'rgba(255, 255, 255, 0.5)';
+                        addTaskBtn.style.pointerEvents = 'none';
+                    }
                 }
                 
             } else if (!isTyping && window.latestTaskId) {
@@ -1539,6 +1580,12 @@ components.html(
                 indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
             } else {
                 indicator.classList.remove('visible');
+                if (addTaskBtn) {
+                    addTaskBtn.style.backgroundColor = 'rgba(128, 128, 128, 0.4)'; 
+                    addTaskBtn.style.borderColor = 'transparent';
+                    addTaskBtn.style.color = 'rgba(255, 255, 255, 0.5)';
+                    addTaskBtn.style.pointerEvents = 'none';
+                }
             }
         }, 200);
 
@@ -1562,6 +1609,7 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
+                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1604,6 +1652,7 @@ components.html(
                     return;
                 }
 
+                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
@@ -1677,19 +1726,22 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    if (doc.activeElement === taskInput) {
-                        window.forceShowAllProgressive = true;
+                    // Lock text on first Enter
+                    if (!window.textLocked) {
+                        window.textLocked = true;
                         taskInput.blur(); 
-                    } else {
+                    } 
+                    // Add Task on subsequent Enter ONLY IF all sections are filled
+                    else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
                             if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
                                 btn.classList.add('optimistic-btn');
                                 btn.innerText = 'Adding...';
+                                window.textLocked = false;
                                 window.categorySelected = false;
                                 window.prioritySelected = false;
                                 window.dueSelected = false;
-                                window.forceShowAllProgressive = false;
                                 taskInput.value = '';
                                 setTimeout(() => {
                                     btn.classList.remove('optimistic-btn');
