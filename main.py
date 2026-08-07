@@ -15,7 +15,7 @@ if "undo_stack" not in st.session_state:
 if "redo_stack" not in st.session_state:
     st.session_state.redo_stack = []
 
-# Global Toast Queue (Fires on page load if an action was just performed)
+# Global Toast Queue
 if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
@@ -142,8 +142,8 @@ PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
 CATEGORIES = ["House", "Work", "Study", "Personal"]
 PRIORITIES = ["High", "Medium", "Low"]
 
-CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "E"}
-PRI_KEYS = {"High": "P", "Medium": "M", "Low": "L"}
+CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "P"}
+PRI_KEYS = {"High": "T", "Medium": "M", "Low": "L"}
 
 st.markdown(
     """
@@ -207,16 +207,22 @@ st.markdown(
         font-size: 1.05rem;
         font-weight: 400;
         margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
     .task-title.is-done { text-decoration: line-through; }
+    
     @keyframes slideInDown {
         0% { opacity: 0; transform: translateY(-20px); }
         100% { opacity: 1; transform: translateY(0); }
     }
     .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    
     .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
     .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
     .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
+    
     .meta-tags {
         display: flex;
         gap: 8px;
@@ -235,18 +241,36 @@ st.markdown(
         font-weight: 600;
     }
     
-    /* Anti-Warping Rules for Buttons */
+    /* Urgent Pulse Animation */
+    @keyframes pulse-urgent {
+        0% { opacity: 1; }
+        50% { opacity: 0.6; }
+        100% { opacity: 1; }
+    }
+    .urgent-badge {
+        color: #e74c3c;
+        font-weight: bold;
+        font-size: 0.75rem;
+        border: 1px solid #e74c3c;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        animation: pulse-urgent 1.5s infinite;
+        line-height: 1;
+    }
+    
+    /* Wrap rules for buttons instead of cutoffs */
     .stButton button p, .stButton button * {
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
+        white-space: normal !important;
+        line-height: 1.2 !important;
         margin: 0 !important;
         font-size: 0.85rem !important;
+        text-align: center;
     }
     div[data-testid="column"] button { 
         width: 100%;
-        padding-left: 0.2rem !important;
-        padding-right: 0.2rem !important;
+        height: auto !important;
+        padding: 0.4rem 0.2rem !important;
     }
     
     div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
@@ -448,15 +472,24 @@ with right_col:
                     anim_class = "new-task-anim" if is_new_task else ""
                     
                     tags_html = f'<span class="badge">{t["category"]}</span>'
+                    
+                    urgent_html = ""
                     if t["due_date"]:
                         overdue = (not t["done"]) and t["due_date"] < today
                         due_class = "badge overdue" if overdue else "badge"
                         tags_html += f'<span class="{due_class}">{t["due_date"]}</span>'
                         
+                        # Add Urgent badge if due exactly today and not completed
+                        if t["due_date"] == today and not t["done"]:
+                            urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
+                        
                     st.markdown(
                         f"""
                         <div class="task-row border-{t['priority']} {done_class} {anim_class}">
-                            <div class="task-title {done_class}">{t['text']}</div>
+                            <div class="task-title {done_class}">
+                                <span>{t['text']}</span>
+                                {urgent_html}
+                            </div>
                             <div class="meta-tags">{tags_html}</div>
                         </div>
                         """,
@@ -597,7 +630,9 @@ components.html(
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
             const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
             const key = e.key.toLowerCase();
-            const isHotkey = ['1','2','3','4','5','6','h','w','s','e','p','m','l'].includes(key);
+            
+            // Note: Hotkeys now include 't' and 'p' replacing the old layout
+            const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
                 if (hasText && isHotkey) {
@@ -619,9 +654,9 @@ components.html(
                     if (key === 'h') clickBtn('House');
                     if (key === 'w') clickBtn('Work');
                     if (key === 's') clickBtn('Study');
-                    if (key === 'e') clickBtn('Personal');
+                    if (key === 'p') clickBtn('Personal');
                     
-                    if (key === 'p') clickBtn('High');
+                    if (key === 't') clickBtn('High');
                     if (key === 'm') clickBtn('Medium');
                     if (key === 'l') clickBtn('Low');
                     
