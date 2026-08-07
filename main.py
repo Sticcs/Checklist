@@ -27,11 +27,15 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
-def _clear_all_checkbox_states():
-    """Forces Streamlit to forget the visual state of all checkboxes during mass operations."""
-    for key in list(st.session_state.keys()):
-        if key.startswith("chk_") or key.startswith("subchk_"):
-            del st.session_state[key]
+def _sync_checkboxes_with_db(username):
+    """Explicitly forces Streamlit to overwrite its checkbox cache with the true DB state."""
+    tasks = get_tasks(username)
+    for t in tasks:
+        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
+        
+    subtasks = get_all_subtasks(username)
+    for s in subtasks:
+        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
 
 # ----------------------------- Security & Auth -----------------------------
 
@@ -158,7 +162,7 @@ def perform_undo(username):
         last_state = st.session_state.undo_stack.pop()
         _restore_state(last_state["tasks"], username)
         _restore_subtasks(last_state["subtasks"], username)
-        _clear_all_checkbox_states()
+        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo(username):
@@ -167,7 +171,7 @@ def perform_redo(username):
         next_state = st.session_state.redo_stack.pop()
         _restore_state(next_state["tasks"], username)
         _restore_subtasks(next_state["subtasks"], username)
-        _clear_all_checkbox_states()
+        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date, username):
@@ -187,12 +191,10 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         
-        # Wipes subtask cache so they correctly update to the new parent status
+        # Explicitly force Streamlit cache to adopt the new subtask state
         subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         for s in subtasks:
-            key = f"subchk_{s['id']}"
-            if key in st.session_state:
-                del st.session_state[key]
+            st.session_state[f"subchk_{s['id']}"] = bool(done)
                 
         conn.commit()
     status = "completed" if done else "unmarked"
@@ -239,10 +241,8 @@ def add_subtask(task_id, text, username):
         # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         
-        # Wipes parent task cache so it unchecks itself
-        parent_key = f"chk_{task_id}"
-        if parent_key in st.session_state:
-            del st.session_state[parent_key]
+        # Force Streamlit cache to uncheck the parent task
+        st.session_state[f"chk_{task_id}"] = False
             
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
@@ -259,12 +259,10 @@ def set_subtask_done(subtask_id, task_id, done, username):
             
             if not done:
                 conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-                if parent_key in st.session_state:
-                    del st.session_state[parent_key]
+                st.session_state[parent_key] = False
             elif all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                if parent_key in st.session_state:
-                    del st.session_state[parent_key]
+                st.session_state[parent_key] = True
                     
         conn.commit()
 
@@ -278,9 +276,7 @@ def delete_subtask(subtask_id, task_id, username):
             all_done = all(s['done'] for s in subtasks)
             if all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                parent_key = f"chk_{task_id}"
-                if parent_key in st.session_state:
-                    del st.session_state[parent_key]
+                st.session_state[f"chk_{task_id}"] = True
                     
         conn.commit()
     st.session_state.pending_toast = "🗑️ Subtask deleted"
@@ -295,7 +291,7 @@ def mark_all_completed(username):
         )
         conn.commit()
     
-    _clear_all_checkbox_states()
+    _sync_checkboxes_with_db(username)
     st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
@@ -311,10 +307,9 @@ def update_task(task_id, text, priority, category, due_date, username):
 # ----------------------------- Callback Handlers -----------------------------
 
 def handle_task_check(task_id, current_done, username):
-    st.session_state.active_task_id = task_id  # Ensures the subtask expander stays open when parent is checked!
+    st.session_state.active_task_id = task_id 
     key = f"chk_{task_id}"
     val = st.session_state.get(key)
-    # Intelligently flip based on fallback if Streamlit dropped the state
     new_done = not current_done if val is None else val
     set_done(task_id, new_done, username)
 
@@ -403,7 +398,7 @@ st.markdown(
     
     /* --- Streamlit Checkbox Alignment Fix --- */
     div[data-testid="stCheckbox"] label p {
-        display: none !important; /* Hides the invisible text block entirely */
+        display: none !important; 
     }
     div[data-testid="stCheckbox"] label {
         min-height: auto !important;
@@ -430,7 +425,7 @@ st.markdown(
         align-items: center;
         gap: 8px;
         transition: color 0.05s ease;
-        transform: translateY(4px); /* Vertical alignment sync with checkbox */
+        transform: translateY(4px); 
     }
     .task-title.is-done { text-decoration: line-through; }
     
@@ -575,7 +570,7 @@ st.markdown(
         display: flex;
         align-items: center;
         transition: opacity 0.05s ease;
-        transform: translateY(5px); /* Vertical alignment sync with checkbox */
+        transform: translateY(5px); 
     }
     .subtask-row.is-done {
         text-decoration: line-through;
@@ -1156,7 +1151,6 @@ components.html(
                         if (title) title.classList.remove('is-done');
                     }
                     
-                    // Cascade to subtasks
                     if (container) {
                         const subRows = container.querySelectorAll('.subtask-row');
                         subRows.forEach(sr => {
@@ -1173,7 +1167,6 @@ components.html(
                         subRow.classList.remove('is-done');
                     }
                     
-                    // Optimistically cascade up to parent
                     if (!isChecked && container) {
                         const parentRow = container.querySelector('.task-row');
                         if (parentRow) {
