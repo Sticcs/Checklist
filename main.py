@@ -425,7 +425,7 @@ st.markdown(
         justify-content: center;
         transition: opacity 0.05s ease;
     }
-    .task-row.is-done { opacity: 0.75; }
+    .task-row.is-done { opacity: 0.4; }
     .task-title {
         font-size: 1.05rem;
         font-weight: 400;
@@ -534,21 +534,15 @@ st.markdown(
         margin-top: 4rem;
     }
 
+    /* Target Task Container Explicitly */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
-    }
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
-        background-color: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    }
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
-        background-color: rgba(255, 255, 255, 0.92) !important;
-        border: 1px solid rgba(0, 0, 0, 0.06) !important;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     }
 
+    /* Subtask Expander Styling */
     div[data-testid="stExpander"] {
         border: none !important;
         background: transparent !important;
@@ -582,7 +576,7 @@ st.markdown(
     }
     .subtask-row.is-done {
         text-decoration: line-through;
-        opacity: 0.75;
+        opacity: 0.5;
     }
     
     /* Elegant Minimalist Focus Border for Editing Subtasks */
@@ -630,47 +624,6 @@ st.markdown(
         opacity: 1 !important;
         transform: translateY(0) !important;
         pointer-events: auto !important;
-    }
-
-    /* --- Task Card Contextual Backgrounds --- */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) {
-        transition: background-color 0.3s ease, border-color 0.3s ease, opacity 0.3s ease !important;
-    }
-
-    /* Light Mode */
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) {
-        background-color: rgba(250, 219, 216, 0.85) !important;
-        border-color: rgba(231, 76, 60, 0.4) !important;
-    }
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) {
-        background-color: rgba(253, 235, 208, 0.85) !important;
-        border-color: rgba(243, 156, 18, 0.4) !important;
-    }
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) {
-        background-color: rgba(214, 234, 248, 0.85) !important;
-        border-color: rgba(52, 152, 219, 0.4) !important;
-    }
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) {
-        background-color: rgba(46, 204, 113, 1) !important; 
-        border-color: rgba(39, 174, 96, 1) !important;
-    }
-
-    /* Dark Mode */
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) {
-        background-color: rgba(100, 30, 22, 0.85) !important;
-        border-color: rgba(231, 76, 60, 0.4) !important;
-    }
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) {
-        background-color: rgba(126, 81, 9, 0.85) !important;
-        border-color: rgba(243, 156, 18, 0.4) !important;
-    }
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) {
-        background-color: rgba(21, 67, 96, 0.85) !important;
-        border-color: rgba(52, 152, 219, 0.4) !important;
-    }
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) {
-        background-color: rgba(29, 131, 72, 1) !important;
-        border-color: rgba(20, 90, 50, 1) !important;
     }
     </style>
     """,
@@ -1186,21 +1139,51 @@ components.html(
         }
     }, 8000); 
 
-    // Sync Background Mode
+    // Sync Background Mode & Guarantee Task Card Colors
     setInterval(() => {
+        const isDark = doc.body.classList.contains('custom-dark');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\d+/g);
         if (rgb && rgb.length >= 3) {
             const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-            if (luma < 128) {
+            if (luma < 128 && !isDark) {
                 doc.body.classList.add('custom-dark');
                 doc.body.classList.remove('custom-light');
-            } else {
+            } else if (luma >= 128 && isDark) {
                 doc.body.classList.add('custom-light');
                 doc.body.classList.remove('custom-dark');
             }
         }
-    }, 500);
+        
+        // --- BULLETPROOF JAVASCRIPT BACKGROUND COLORING ---
+        const cards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
+        cards.forEach(card => {
+            // Only apply this to actual task cards
+            if (!card.querySelector('.task-card-marker')) return;
+            
+            const isDone = card.querySelector('.task-row.is-done') !== null;
+            const hasHigh = card.querySelector('.border-High') !== null;
+            const hasMed = card.querySelector('.border-Medium') !== null;
+            const hasLow = card.querySelector('.border-Low') !== null;
+            
+            card.style.transition = 'background-color 0.3s ease, border-color 0.3s ease';
+            
+            if (isDone) {
+                card.style.backgroundColor = isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)';
+                card.style.borderColor = isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)';
+            } else if (hasHigh) {
+                card.style.backgroundColor = isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)';
+                card.style.borderColor = 'rgba(231, 76, 60, 0.4)';
+            } else if (hasMed) {
+                card.style.backgroundColor = isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)';
+                card.style.borderColor = 'rgba(243, 156, 18, 0.4)';
+            } else if (hasLow) {
+                card.style.backgroundColor = isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)';
+                card.style.borderColor = 'rgba(52, 152, 219, 0.4)';
+            }
+        });
+        
+    }, 100);
 
     // Persist Scroll memory
     if (!doc.getElementById('scroll-controls')) {
