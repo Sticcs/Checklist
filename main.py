@@ -187,6 +187,7 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         
+        # Wipes subtask cache so they correctly update to the new parent status
         subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         for s in subtasks:
             key = f"subchk_{s['id']}"
@@ -235,8 +236,10 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
+        # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         
+        # Wipes parent task cache so it unchecks itself
         parent_key = f"chk_{task_id}"
         if parent_key in st.session_state:
             del st.session_state[parent_key]
@@ -379,13 +382,6 @@ st.markdown(
         background-color: rgba(14, 17, 23, 0.75) !important;
         backdrop-filter: blur(10px);
     }
-    body.custom-dark .main .block-container {
-        background-color: rgba(14, 17, 23, 0.65);
-        border-radius: 16px;
-        padding: 2rem;
-        margin-top: 2rem;
-        backdrop-filter: blur(8px);
-    }
     
     body.custom-light .stApp {
         background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
@@ -399,17 +395,6 @@ st.markdown(
     h1, h2, h3, h4 {
         font-weight: 500 !important;
         letter-spacing: -0.5px;
-    }
-    
-    #dynamic-header {
-        font-size: 2.75rem;
-        font-weight: 700;
-        margin-bottom: 1.5rem;
-        margin-top: 0.5rem;
-        transition: opacity 0.6s ease-in-out;
-        min-height: 4rem; 
-        display: flex;
-        align-items: center;
     }
     
     .task-row {
@@ -629,7 +614,7 @@ else:
         """
         <style>
         /* --- Right List Column Scrolling --- */
-        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) {
+        div[data-testid="column"]:has(#right-col-anchor) {
             height: 88vh !important;
             max-height: 88vh !important;
             overflow-y: scroll !important;
@@ -638,28 +623,29 @@ else:
             -ms-overflow-style: none !important; 
             scrollbar-width: none !important; 
         }
-        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3)::-webkit-scrollbar {
+        div[data-testid="column"]:has(#right-col-anchor)::-webkit-scrollbar {
             display: none !important;
         }
 
         /* --- Left Control Panel (Glassmorphism & Legibility) --- */
-        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
-            background: rgba(255, 255, 255, 0.7);
-            padding: 1.5rem;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            height: fit-content; /* prevents stretching to match the right column */
+        div[data-testid="column"]:has(#left-panel-marker) {
+            background: rgba(255, 255, 255, 0.65) !important;
+            padding: 1.5rem !important;
+            border-radius: 16px !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+            backdrop-filter: blur(12px) !important;
+            -webkit-backdrop-filter: blur(12px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.4) !important;
+            height: fit-content !important;
         }
-        body.custom-dark section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
-            background: rgba(14, 17, 23, 0.55);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        body.custom-dark div[data-testid="column"]:has(#left-panel-marker) {
+            background: rgba(14, 17, 23, 0.55) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
         }
 
         /* Captions: Category, Priority, Due */
-        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) div[data-testid="stCaptionContainer"] p {
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #2c3e50 !important;
             font-weight: 700 !important;
             font-size: 0.85rem !important;
@@ -667,8 +653,26 @@ else:
             letter-spacing: 0.5px;
             margin-top: 0.5rem;
         }
-        body.custom-dark section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) div[data-testid="stCaptionContainer"] p {
+        body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #ecf0f1 !important;
+        }
+        
+        /* Fixed-Height Quote Wrapper for 0 Layout Shift */
+        .quote-wrapper {
+            height: 90px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        #dynamic-header {
+            position: absolute;
+            width: 100%;
+            font-size: clamp(1.8rem, 3vw, 2.75rem);
+            font-weight: 700;
+            line-height: 1.1;
+            transition: opacity 0.5s ease-in-out;
+            margin: 0;
         }
         </style>
         """,
@@ -791,7 +795,8 @@ else:
     left_col, spacer_col, right_col = st.columns([1, 0.25, 1.4])
 
     with left_col:
-        st.markdown("<div id='dynamic-header'>Stay locked in.</div>", unsafe_allow_html=True)
+        st.markdown("<div id='left-panel-marker'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='quote-wrapper'><div id='dynamic-header'>Stay locked in.</div></div>", unsafe_allow_html=True)
         st.markdown(f"<div id='options-state' data-modified='{str(st.session_state.options_modified).lower()}' style='display:none;'></div>", unsafe_allow_html=True)
 
         st.text_input(
@@ -955,12 +960,13 @@ else:
                                 st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
                                           on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
 
+                        st.caption("⚡ Press `/` to quickly start typing a subtask")
                         new_sc1, new_sc2 = st.columns([6, 1.5])
                         with new_sc1:
                             st.text_input(
                                 "New subtask",
                                 key=f"new_sub_{t['id']}",
-                                placeholder="Add a subtask...",
+                                placeholder="Add a subtask... (Press '/' to focus)",
                                 label_visibility="collapsed",
                                 on_change=handle_subtask_add, 
                                 args=(t['id'], st.session_state.username)
@@ -1025,7 +1031,7 @@ components.html(
                 qIdx = (qIdx + 1) % quotes.length;
                 header.innerText = quotes[qIdx];
                 header.style.opacity = 1; 
-            }, 600); 
+            }, 500); 
         }
     }, 8000); 
 
@@ -1196,16 +1202,16 @@ components.html(
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
-                indicator.innerText = 'Enter to lock custom tag';
+                indicator.innerText = 'Enter to confirm custom tag';
                 indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; 
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
                 if (doc.activeElement === taskInput) {
-                    indicator.innerText = 'Enter to lock text & set options';
+                    indicator.innerText = 'Enter to confirm text & set options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter again to add task';
+                    indicator.innerText = 'Enter again to create task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
@@ -1258,7 +1264,7 @@ components.html(
 
             if (!isTyping) {
                 if (key === '/') {
-                    const subInputs = Array.from(doc.querySelectorAll('input[placeholder="Add a subtask..."]'))
+                    const subInputs = Array.from(doc.querySelectorAll('input[placeholder="Add a subtask... (Press '/' to focus)"]'))
                         .filter(inp => inp.getBoundingClientRect().height > 0);
                     if (subInputs.length > 0) {
                         e.preventDefault();
