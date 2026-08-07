@@ -21,17 +21,23 @@ if "redo_stack" not in st.session_state:
     st.session_state.redo_stack = []
 if "active_task_id" not in st.session_state:
     st.session_state.active_task_id = None
+if "just_added_task_id" not in st.session_state:
+    st.session_state.just_added_task_id = None
 
 # Global Toast Queue
 if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
-def _clear_all_checkbox_states():
-    """Forces Streamlit to forget the visual state of all checkboxes during mass operations."""
-    for key in list(st.session_state.keys()):
-        if key.startswith("chk_") or key.startswith("subchk_"):
-            del st.session_state[key]
+def _sync_checkboxes_with_db(username):
+    """Explicitly forces Streamlit to overwrite its checkbox cache with the true DB state."""
+    tasks = get_tasks(username)
+    for t in tasks:
+        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
+        
+    subtasks = get_all_subtasks(username)
+    for s in subtasks:
+        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
 
 # ----------------------------- Security & Auth -----------------------------
 
@@ -173,13 +179,16 @@ def perform_redo(username):
 def add_task(text, priority, category, due_date, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
-        conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username) "
             "VALUES (?, 0, ?, ?, ?, ?, ?)",
             (text, priority, category or "General", due_date, datetime.now().isoformat(), username),
         )
+        new_id = cur.lastrowid
         conn.commit()
     st.session_state.pending_toast = "✅ Task added"
+    return new_id
 
 def set_done(task_id, done, username):
     save_state_for_undo(username)
@@ -300,7 +309,7 @@ def update_task(task_id, text, priority, category, due_date, username):
 # ----------------------------- Callback Handlers -----------------------------
 
 def handle_task_check(task_id, current_done, username):
-    st.session_state.active_task_id = task_id 
+    # Notice: active_task_id is NOT set here. This stops the subtask expander from randomly opening!
     key = f"chk_{task_id}"
     val = st.session_state.get(key)
     new_done = not current_done if val is None else val
@@ -571,6 +580,13 @@ st.markdown(
         text-decoration: line-through;
         opacity: 0.5;
     }
+    
+    /* Elegant Minimalist Focus Border for Editing Subtasks */
+    .green-focus-border {
+        border-color: rgba(46, 204, 113, 0.8) !important;
+        box-shadow: 0 0 0 1px rgba(46, 204, 113, 0.5), 0 4px 12px rgba(46, 204, 113, 0.1) !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -735,7 +751,8 @@ else:
                 if not cat:
                     cat = "General"
                     
-            add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
+            new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
+            st.session_state.just_added_task_id = new_id
             
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
@@ -871,6 +888,12 @@ else:
     with right_col:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
+        # Deploy tracker if task was just added
+        just_added = st.session_state.get("just_added_task_id")
+        if just_added:
+            st.markdown(f"<div id='latest-task-tracker' data-task-id='{just_added}'></div>", unsafe_allow_html=True)
+            st.session_state.just_added_task_id = None
+        
         filtered = tasks
         if search:
             filtered = [t for t in filtered if search.lower() in t["text"].lower()]
@@ -902,6 +925,9 @@ else:
             
             for t in filtered:
                 with st.container(border=True):
+                    # Hidden marker to let JS find this exact task wrapper
+                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
+                    
                     col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
                     
                     with col1:
@@ -968,13 +994,12 @@ else:
                                 st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
                                           on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
 
-                        st.caption("⚡ Press `/` to quickly start typing a subtask")
                         new_sc1, new_sc2 = st.columns([6, 1.5])
                         with new_sc1:
                             st.text_input(
                                 "New subtask",
                                 key=f"new_sub_{t['id']}",
-                                placeholder="Add a subtask... (Press '/' to focus)",
+                                placeholder="Add a subtask...",
                                 label_visibility="collapsed",
                                 on_change=handle_subtask_add, 
                                 args=(t['id'], st.session_state.username)
@@ -1207,6 +1232,20 @@ components.html(
         doc.body.appendChild(indicator);
     }
 
+    // Elegant Focus border bindings for Subtasks
+    doc.addEventListener('focusin', (e) => {
+        if (e.target && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
+            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (card) card.classList.add('green-focus-border');
+        }
+    });
+    doc.addEventListener('focusout', (e) => {
+        if (e.target && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
+            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (card) card.classList.remove('green-focus-border');
+        }
+    });
+
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
         
@@ -1219,6 +1258,16 @@ components.html(
                 if(inp.placeholder === "E.g., Groceries") customInput = inp;
             });
             
+            // Check for new task tracker
+            const tracker = doc.getElementById('latest-task-tracker');
+            if (tracker) {
+                window.latestTaskId = tracker.getAttribute('data-task-id');
+                tracker.removeAttribute('id'); // Ensure it only reads once
+            }
+            
+            const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
+            const isTyping = (activeTag === 'input' || activeTag === 'textarea');
+
             const optState = doc.getElementById('options-state');
             const isModified = optState ? optState.getAttribute('data-modified') === 'true' : false;
             
@@ -1260,6 +1309,11 @@ components.html(
                     }
                 }
                 
+            } else if (!isTyping && window.latestTaskId) {
+                // New Task Subtask Prompt
+                indicator.classList.add('visible');
+                indicator.innerText = 'Press / to add subtasks to your new task';
+                indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
             } else {
                 indicator.classList.remove('visible');
                 
@@ -1293,13 +1347,43 @@ components.html(
 
             if (!isTyping) {
                 if (key === '/') {
-                    const subInputs = Array.from(doc.querySelectorAll('input[placeholder*="Add a subtask"]'))
-                        .filter(inp => inp.getBoundingClientRect().height > 0);
-                    if (subInputs.length > 0) {
-                        e.preventDefault();
-                        subInputs[0].focus();
-                        return;
+                    e.preventDefault();
+                    let targetInput = null;
+                    
+                    // Prioritize the newly created task if the prompt is active
+                    if (window.latestTaskId) {
+                        const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${window.latestTaskId}"]`);
+                        if (cardMarker) {
+                            const targetCard = cardMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                            if (targetCard) {
+                                const subInputs = targetCard.querySelectorAll('input[placeholder*="Add a subtask"]');
+                                if (subInputs.length > 0) targetInput = subInputs[0];
+                            }
+                        }
                     }
+                    
+                    // Fallback: focus any available subtask input
+                    if (!targetInput) {
+                        const subInputs = Array.from(doc.querySelectorAll('input[placeholder*="Add a subtask"]'))
+                            .filter(inp => inp.getBoundingClientRect().height > 0);
+                        if (subInputs.length > 0) targetInput = subInputs[0];
+                    }
+                    
+                    if (targetInput) {
+                        const detailsEl = targetInput.closest('details');
+                        // Force open the expander if it was collapsed
+                        if (detailsEl && !detailsEl.open) {
+                            const summary = detailsEl.querySelector('summary');
+                            if (summary) summary.click();
+                        }
+                        
+                        setTimeout(() => {
+                            targetInput.focus();
+                        }, 50);
+                    }
+                    
+                    window.latestTaskId = null; // Consume the prompt
+                    return;
                 }
 
                 if (hasText && isHotkey) {
