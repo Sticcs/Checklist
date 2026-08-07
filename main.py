@@ -202,6 +202,8 @@ def set_done(task_id, done, username):
             st.session_state[f"subchk_{s['id']}"] = bool(done)
                 
         conn.commit()
+    status = "completed" if done else "unmarked"
+    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -637,6 +639,19 @@ st.markdown(
         transform: translateY(0) !important;
         pointer-events: auto !important;
     }
+    
+    /* Minimalist Ctrl+Click Tip Badge */
+    .ctrl-tip-badge {
+        font-size: 0.8rem;
+        opacity: 0.7;
+        background: rgba(128, 128, 128, 0.12);
+        padding: 4px 10px;
+        border-radius: 6px;
+        display: inline-block;
+        margin-bottom: 1rem;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -960,6 +975,9 @@ else:
     with right_col:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
+        # Minimalist Ctrl+Click Tip Badge
+        st.markdown("<div class='ctrl-tip-badge'>💡 Tip: Hold Ctrl and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
+        
         # New UI Task Data payload for the Custom Toast Notification
         new_task_toast = st.session_state.get("newly_added_task")
         if new_task_toast:
@@ -1004,7 +1022,6 @@ else:
                 with st.container(border=True):
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
-                    # Adjusted Columns: Stacked action buttons on the right
                     col_main, col_btns = st.columns([9, 0.7], vertical_alignment="center")
                     
                     with col_main:
@@ -1112,7 +1129,6 @@ else:
                                         st.rerun()
                                         
                     with col_btns:
-                        # Stacked action buttons
                         if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
                             st.session_state[f"editing_{t['id']}"] = True
                         st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
@@ -1124,7 +1140,7 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Track Ctrl Key State
+    // Track Ctrl Key State for Cursor Hint
     doc.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey) doc.body.classList.add('ctrl-pressed');
     });
@@ -1132,30 +1148,39 @@ components.html(
         if (!e.ctrlKey && !e.metaKey) doc.body.classList.remove('ctrl-pressed');
     });
     
-    // Detect Ctrl+Click System for Checkboxes
+    // Bulletproof Ctrl+Click System for Checkboxes
     doc.addEventListener('click', function(e) {
         if (e.ctrlKey || e.metaKey) {
             const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
             if (!card) return;
             
-            // Prevent expander from triggering if they click the header
+            // Allow expander chevron summary click
             if (e.target.tagName.toLowerCase() === 'summary' || e.target.closest('summary')) return;
+            // Allow action buttons
+            if (e.target.closest('button')) return;
 
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
 
             const subtaskRow = e.target.closest('.subtask-row');
             if (subtaskRow) {
-                // Toggle subtask
-                const col = subtaskRow.closest('div[data-testid="column"]');
-                if (col) {
-                    const chk = col.querySelector('input[type="checkbox"]');
-                    if (chk) chk.click();
+                const expanderDetails = subtaskRow.closest('div[data-testid="stExpanderDetails"]');
+                if (expanderDetails) {
+                    // Find matching checkbox in the subtask row container
+                    const container = subtaskRow.closest('div[data-testid="column"]')?.parentElement;
+                    const chk = container ? container.querySelector('input[type="checkbox"]') : null;
+                    if (chk) {
+                        chk.click();
+                        return;
+                    }
                 }
             } else {
-                // Toggle main task
+                // Find main task hidden checkbox inside the card
                 const mainChk = card.querySelector('input[type="checkbox"]');
-                if (mainChk) mainChk.click();
+                if (mainChk) {
+                    mainChk.click();
+                }
             }
         }
     }, true);
@@ -1203,7 +1228,6 @@ components.html(
             }
         }
         
-        // Use JavaScript .setProperty with '!important' to destroy Streamlit's overriding classes
         const markers = doc.querySelectorAll('.task-card-marker');
         markers.forEach(marker => {
             let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
@@ -1285,7 +1309,6 @@ components.html(
             const due = toastData.getAttribute('data-due');
             toastData.removeAttribute('id'); 
             
-            // Due date calculation logic
             let dueStr = "No due date";
             if (due && due !== 'None') {
                 const today = new Date();
@@ -1300,12 +1323,10 @@ components.html(
                 else dueStr = `Overdue by ${Math.abs(diffDays)} days`;
             }
 
-            // Assign color logic 
-            let bg = '#3498db'; // Low priority (Blue)
-            if (priority === 'High') bg = '#e74c3c'; // Red
-            else if (priority === 'Medium') bg = '#f39c12'; // Yellow/Orange
+            let bg = '#3498db'; 
+            if (priority === 'High') bg = '#e74c3c'; 
+            else if (priority === 'Medium') bg = '#f39c12'; 
 
-            // Create notification
             const customToast = doc.createElement('div');
             customToast.innerHTML = `<strong>${priority} Priority</strong> &bull; ${dueStr}`;
             customToast.style.cssText = `
@@ -1326,13 +1347,11 @@ components.html(
             `;
             doc.body.appendChild(customToast);
 
-            // Animate In
             requestAnimationFrame(() => {
                 customToast.style.opacity = '1';
                 customToast.style.transform = 'translateX(-50%) translateY(0)';
             });
 
-            // Animate Out & Destroy
             setTimeout(() => {
                 customToast.style.opacity = '0';
                 customToast.style.transform = 'translateX(-50%) translateY(20px)';
@@ -1409,7 +1428,6 @@ components.html(
         const txt = btn.innerText.trim();
         
         if (txt === '🗑️') {
-            // Check if it's main task or subtask
             const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
             if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
                 const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1473,64 +1491,6 @@ components.html(
             }
         }
     }, true);
-
-    // Fast Checkbox Cascade
-    doc.addEventListener('change', function(e) {
-        if (e.target && e.target.type === 'checkbox') {
-            const block = e.target.closest('div[data-testid="column"]')?.parentElement;
-            const isSubtask = e.target.closest('div[data-testid="stExpanderDetails"]') !== null;
-            const containerMarker = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
-            const container = containerMarker ? (containerMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || containerMarker.closest('div[data-testid="stVerticalBlock"]')) : null;
-            const isChecked = e.target.checked;
-            
-            if (block) {
-                const row = block.querySelector('.task-row');
-                const subRow = block.querySelector('.subtask-row');
-                
-                if (row && !isSubtask) {
-                    row.classList.toggle('is-done', isChecked);
-                    const title = row.querySelector('.task-title');
-                    if (title) title.classList.toggle('is-done', isChecked);
-                    
-                    if (container) {
-                        const subRows = container.querySelectorAll('.subtask-row');
-                        subRows.forEach(sr => sr.classList.toggle('is-done', isChecked));
-                        const subChecks = container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]');
-                        subChecks.forEach(sc => sc.checked = isChecked);
-                    }
-                }
-                
-                if (subRow && isSubtask) {
-                    subRow.classList.toggle('is-done', isChecked);
-                    
-                    if (container) {
-                        const parentRow = container.querySelector('.task-row');
-                        const parentCheck = container.querySelector('input[type="checkbox"]'); 
-                        const allSubChecks = Array.from(container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]'));
-                        
-                        if (!isChecked) {
-                            if (parentRow) {
-                                parentRow.classList.remove('is-done');
-                                const title = parentRow.querySelector('.task-title');
-                                if (title) title.classList.remove('is-done');
-                            }
-                            if (parentCheck) parentCheck.checked = false;
-                        } else {
-                            const allDone = allSubChecks.every(c => c.checked);
-                            if (allDone) {
-                                if (parentRow) {
-                                    parentRow.classList.add('is-done');
-                                    const title = parentRow.querySelector('.task-title');
-                                    if (title) title.classList.add('is-done');
-                                }
-                                if (parentCheck) parentCheck.checked = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
 
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
@@ -1682,7 +1642,6 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1725,7 +1684,6 @@ components.html(
                     return;
                 }
 
-                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
@@ -1799,12 +1757,10 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    // Lock text on first Enter
                     if (!window.textLocked) {
                         window.textLocked = true;
                         taskInput.blur(); 
                     } 
-                    // Add Task on subsequent Enter ONLY IF all sections are filled
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
