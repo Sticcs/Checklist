@@ -23,6 +23,8 @@ if "active_task_id" not in st.session_state:
     st.session_state.active_task_id = None
 if "just_added_task_id" not in st.session_state:
     st.session_state.just_added_task_id = None
+if "newly_added_task" not in st.session_state:
+    st.session_state.newly_added_task = None
 
 # Global Toast Queue
 if "pending_toast" in st.session_state:
@@ -187,7 +189,6 @@ def add_task(text, priority, category, due_date, username):
         )
         new_id = cur.lastrowid
         conn.commit()
-    st.session_state.pending_toast = "✅ Task added"
     return new_id
 
 def set_done(task_id, done, username):
@@ -201,8 +202,6 @@ def set_done(task_id, done, username):
             st.session_state[f"subchk_{s['id']}"] = bool(done)
                 
         conn.commit()
-    status = "completed" if done else "unmarked"
-    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -210,7 +209,6 @@ def delete_task(task_id, username):
         conn.execute("DELETE FROM subtasks WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Task deleted"
 
 def clear_completed(username):
     save_state_for_undo(username)
@@ -223,7 +221,6 @@ def clear_completed(username):
             conn.execute(f"DELETE FROM subtasks WHERE task_id IN ({placeholders})", done_ids)
         conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
-    st.session_state.pending_toast = "🧹 Cleared completed tasks"
 
 def clear_all(username):
     save_state_for_undo(username)
@@ -233,7 +230,6 @@ def clear_all(username):
         )
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Cleared all tasks"
 
 def add_subtask(task_id, text, username):
     save_state_for_undo(username)
@@ -243,11 +239,8 @@ def add_subtask(task_id, text, username):
             (task_id, text, datetime.now().isoformat()),
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-        
         st.session_state[f"chk_{task_id}"] = False
-            
         conn.commit()
-    st.session_state.pending_toast = "➕ Subtask added"
 
 def set_subtask_done(subtask_id, task_id, done, username):
     save_state_for_undo(username)
@@ -281,7 +274,6 @@ def delete_subtask(subtask_id, task_id, username):
                 st.session_state[f"chk_{task_id}"] = True
                     
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Subtask deleted"
 
 def mark_all_completed(username):
     save_state_for_undo(username)
@@ -292,9 +284,7 @@ def mark_all_completed(username):
             (username,)
         )
         conn.commit()
-    
     _sync_checkboxes_with_db(username)
-    st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
     save_state_for_undo(username)
@@ -343,7 +333,6 @@ PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
 CATEGORIES = ["House", "Work", "Study", "Personal", "Custom"]
 PRIORITIES = ["High", "Medium", "Low"]
 
-# Removed 'C' from Custom to prevent Streamlit cache menu clash
 CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "P", "Custom": ""}
 PRI_KEYS = {"High": "T", "Medium": "M", "Low": "L"}
 
@@ -621,6 +610,28 @@ st.markdown(
         0%, 100% { transform: translateY(0); }
         50% { transform: translateY(3px); }
     }
+
+    /* CSS Progressive Disclosure Logic */
+    .progressive-base {
+        transition: max-height 0.4s ease-in-out, opacity 0.4s ease-in-out, transform 0.4s ease-in-out !important;
+    }
+    .progressive-hidden {
+        max-height: 0px !important;
+        opacity: 0 !important;
+        overflow: hidden !important;
+        transform: translateY(-10px) !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        pointer-events: none !important;
+    }
+    .progressive-visible {
+        max-height: 300px !important;
+        opacity: 1 !important;
+        transform: translateY(0) !important;
+        pointer-events: auto !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -787,6 +798,10 @@ else:
                     
             new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
             st.session_state.just_added_task_id = new_id
+            st.session_state.newly_added_task = {
+                "priority": st.session_state.new_priority,
+                "due": due_date
+            }
             
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
@@ -866,65 +881,79 @@ else:
         )
         
         if not tasks:
-            st.markdown("<div class='first-task-prompt'>↑ Type your first task here and press Enter</div>", unsafe_allow_html=True)
+            st.markdown("<div class='first-task-prompt'>↑ Type your first task here</div>", unsafe_allow_html=True)
 
-        st.caption("Category")
-        cat_cols = st.columns(len(CATEGORIES), gap="small")
-        for col, cat in zip(cat_cols, CATEGORIES):
-            with col:
-                btn_label = f"{cat} [{CAT_KEYS[cat]}]" if CAT_KEYS[cat] else cat
-                st.button(
-                    btn_label,
-                    key=f"cat_btn_{cat}",
-                    on_click=set_category,
-                    args=(cat,),
-                    type="primary" if st.session_state.new_category == cat else "secondary",
-                )
-                
-        if st.session_state.new_category == "Custom":
-            st.text_input("Custom Category", placeholder="E.g., Groceries", key="custom_cat_input", label_visibility="collapsed")
-            if st.session_state.focus_custom:
-                components.html(
-                    "<script>setTimeout(() => { const inp = window.parent.document.querySelector('input[placeholder=\"E.g., Groceries\"]'); if(inp) inp.focus(); }, 150);</script>", 
-                    height=0, width=0
-                )
-                st.session_state.focus_custom = False
+        with st.container():
+            st.markdown("<div id='step-cat-marker'></div>", unsafe_allow_html=True)
+            st.caption("Category")
+            cat_cols = st.columns(len(CATEGORIES), gap="small")
+            for col, cat in zip(cat_cols, CATEGORIES):
+                with col:
+                    btn_label = f"{cat} [{CAT_KEYS[cat]}]" if CAT_KEYS[cat] else cat
+                    st.button(
+                        btn_label,
+                        key=f"cat_btn_{cat}",
+                        on_click=set_category,
+                        args=(cat,),
+                        type="primary" if st.session_state.new_category == cat else "secondary",
+                    )
+                    
+            if st.session_state.new_category == "Custom":
+                st.text_input("Custom Category", placeholder="E.g., Groceries", key="custom_cat_input", label_visibility="collapsed")
+                if st.session_state.focus_custom:
+                    components.html(
+                        "<script>setTimeout(() => { const inp = window.parent.document.querySelector('input[placeholder=\"E.g., Groceries\"]'); if(inp) inp.focus(); }, 150);</script>", 
+                        height=0, width=0
+                    )
+                    st.session_state.focus_custom = False
 
-        st.caption("Priority")
-        pri_cols = st.columns(len(PRIORITIES), gap="small")
-        for col, pri in zip(pri_cols, PRIORITIES):
-            with col:
-                st.button(
-                    f"{pri} [{PRI_KEYS[pri]}]",
-                    key=f"pri_btn_{pri}",
-                    on_click=set_priority,
-                    args=(pri,),
-                    type="primary" if st.session_state.new_priority == pri else "secondary",
-                )
+        with st.container():
+            st.markdown("<div id='step-pri-marker'></div>", unsafe_allow_html=True)
+            st.caption("Priority")
+            pri_cols = st.columns(len(PRIORITIES), gap="small")
+            for col, pri in zip(pri_cols, PRIORITIES):
+                with col:
+                    st.button(
+                        f"{pri} [{PRI_KEYS[pri]}]",
+                        key=f"pri_btn_{pri}",
+                        on_click=set_priority,
+                        args=(pri,),
+                        type="primary" if st.session_state.new_priority == pri else "secondary",
+                    )
 
-        st.caption("Due")
-        due_cols = st.columns(len(DUE_PRESETS), gap="small")
-        for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
-            with col:
-                st.button(
-                    f"{preset} [{i+1}]",
-                    key=f"due_btn_{preset}",
-                    on_click=set_due_preset,
-                    args=(preset,),
-                    type="primary" if st.session_state.new_due_preset == preset else "secondary",
-                )
+        with st.container():
+            st.markdown("<div id='step-due-marker'></div>", unsafe_allow_html=True)
+            st.caption("Due")
+            due_cols = st.columns(len(DUE_PRESETS), gap="small")
+            for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
+                with col:
+                    st.button(
+                        f"{preset} [{i+1}]",
+                        key=f"due_btn_{preset}",
+                        on_click=set_due_preset,
+                        args=(preset,),
+                        type="primary" if st.session_state.new_due_preset == preset else "secondary",
+                    )
 
-        if st.session_state.new_due_preset == "Custom":
-            st.date_input("Pick a date", key="new_due_custom", label_visibility="collapsed")
+            if st.session_state.new_due_preset == "Custom":
+                st.date_input("Pick a date", key="new_due_custom", label_visibility="collapsed")
 
-        st.write("")
-        st.button("Add task", on_click=submit_new_task, type="primary")
+        with st.container():
+            st.markdown("<div id='step-add-marker'></div>", unsafe_allow_html=True)
+            st.write("")
+            st.button("Add task", on_click=submit_new_task, type="primary")
 
     with spacer_col:
         st.empty()
 
     with right_col:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
+        
+        # New UI Task Data payload for the Custom Toast Notification
+        new_task_toast = st.session_state.get("newly_added_task")
+        if new_task_toast:
+            st.markdown(f"<div id='custom-toast-data' data-priority='{new_task_toast['priority']}' data-due='{new_task_toast['due'] or ''}' style='display:none;'></div>", unsafe_allow_html=True)
+            st.session_state.newly_added_task = None
         
         just_added = st.session_state.get("just_added_task_id")
         if just_added:
@@ -1165,6 +1194,127 @@ components.html(
         }, 300);
     }
 
+    // Custom Minimalist Notification Toast Trigger
+    setInterval(() => {
+        const toastData = doc.getElementById('custom-toast-data');
+        if (toastData) {
+            const priority = toastData.getAttribute('data-priority');
+            const due = toastData.getAttribute('data-due');
+            toastData.removeAttribute('id'); // Consume payload instantly
+            
+            // Due date calculation logic
+            let dueStr = "No due date";
+            if (due && due !== 'None') {
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const dueDate = new Date(due + 'T00:00:00'); // Force correct day parsing
+                const diffTime = dueDate - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays === 0) dueStr = "Due today";
+                else if (diffDays === 1) dueStr = "Due tomorrow";
+                else if (diffDays > 1) dueStr = `Due in ${diffDays} days`;
+                else dueStr = `Overdue by ${Math.abs(diffDays)} days`;
+            }
+
+            // Assign color logic 
+            let bg = '#3498db'; // Low priority (Blue)
+            if (priority === 'High') bg = '#e74c3c'; // Red
+            else if (priority === 'Medium') bg = '#f39c12'; // Yellow/Orange
+
+            // Create notification
+            const customToast = doc.createElement('div');
+            customToast.innerHTML = `<strong>${priority} Priority</strong> &bull; ${dueStr}`;
+            customToast.style.cssText = `
+                position: fixed;
+                bottom: 40px;
+                left: 50%;
+                transform: translateX(-50%) translateY(20px);
+                background: ${bg};
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 0.95rem;
+                font-weight: 500;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+                opacity: 0;
+                transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+                z-index: 999999;
+            `;
+            doc.body.appendChild(customToast);
+
+            // Animate In
+            requestAnimationFrame(() => {
+                customToast.style.opacity = '1';
+                customToast.style.transform = 'translateX(-50%) translateY(0)';
+            });
+
+            // Animate Out & Destroy
+            setTimeout(() => {
+                customToast.style.opacity = '0';
+                customToast.style.transform = 'translateX(-50%) translateY(20px)';
+                setTimeout(() => customToast.remove(), 400);
+            }, 4000);
+        }
+    }, 200);
+
+    // Progressive Disclosure Engine
+    setInterval(() => {
+        const taskInput = doc.querySelector('input[placeholder="E.g., Review Big O time complexity"]');
+        const catMarker = doc.getElementById('step-cat-marker');
+        const priMarker = doc.getElementById('step-pri-marker');
+        const dueMarker = doc.getElementById('step-due-marker');
+        const addMarker = doc.getElementById('step-add-marker');
+        
+        const catBlock = catMarker ? catMarker.closest('div[data-testid="stVerticalBlock"]') : null;
+        const priBlock = priMarker ? priMarker.closest('div[data-testid="stVerticalBlock"]') : null;
+        const dueBlock = dueMarker ? dueMarker.closest('div[data-testid="stVerticalBlock"]') : null;
+        const addBlock = addMarker ? addMarker.closest('div[data-testid="stVerticalBlock"]') : null;
+        
+        // Initialize CSS transitions safely
+        [catBlock, priBlock, dueBlock, addBlock].forEach(block => {
+            if (block && !block.classList.contains('progressive-base')) {
+                block.classList.add('progressive-base');
+                block.classList.add('progressive-hidden');
+            }
+        });
+
+        // Toggle logic based on state flags set by clicks and typing
+        const hasText = taskInput && taskInput.value.trim().length > 0;
+        
+        if (hasText || window.forceShowAllProgressive) {
+            catBlock?.classList.add('progressive-visible');
+            catBlock?.classList.remove('progressive-hidden');
+        } else {
+            catBlock?.classList.add('progressive-hidden');
+            catBlock?.classList.remove('progressive-visible');
+        }
+
+        if (window.categorySelected || window.forceShowAllProgressive) {
+            priBlock?.classList.add('progressive-visible');
+            priBlock?.classList.remove('progressive-hidden');
+        } else {
+            priBlock?.classList.add('progressive-hidden');
+            priBlock?.classList.remove('progressive-visible');
+        }
+
+        if (window.prioritySelected || window.forceShowAllProgressive) {
+            dueBlock?.classList.add('progressive-visible');
+            dueBlock?.classList.remove('progressive-hidden');
+        } else {
+            dueBlock?.classList.add('progressive-hidden');
+            dueBlock?.classList.remove('progressive-visible');
+        }
+
+        if (window.dueSelected || window.forceShowAllProgressive) {
+            addBlock?.classList.add('progressive-visible');
+            addBlock?.classList.remove('progressive-hidden');
+        } else {
+            addBlock?.classList.add('progressive-hidden');
+            addBlock?.classList.remove('progressive-visible');
+        }
+    }, 100);
+
     // --- TRUE OPTIMISTIC UI: Event Delegation ---
     doc.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
@@ -1185,9 +1335,23 @@ components.html(
         else if (txt === 'Add task') {
             btn.classList.add('optimistic-btn');
             btn.innerText = 'Adding...';
-            // Blur the input to hide Streamlit payload sync visual jank
+            
+            // Instantly clear text box, hide sections, wipe state
+            window.categorySelected = false;
+            window.prioritySelected = false;
+            window.dueSelected = false;
+            window.forceShowAllProgressive = false;
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
-            if(inputs.length) inputs[0].blur();
+            if(inputs.length) {
+                inputs[0].value = ''; 
+                inputs[0].blur();
+            }
+            
+            // Destruct fallback to remove "Adding..." safely if server lags
+            setTimeout(() => {
+                btn.classList.remove('optimistic-btn');
+                btn.innerText = 'Add task';
+            }, 1000);
         }
         else if (txt === 'Add') {
             btn.classList.add('optimistic-btn');
@@ -1199,11 +1363,16 @@ components.html(
             cards.forEach(c => c.classList.add('optimistic-fade'));
         }
         
-        // Optimistic Category / Priority Highlighting
-        const isOptionBtn = ['House', 'Work', 'Study', 'Personal', 'Custom', 'High', 'Medium', 'Low', 'Today', 'Tomorrow', 'This week', 'Next week', 'No date'].some(kw => txt.includes(kw));
+        // Optimistic Option Highlighting & Disclosure Triggers
+        const isCat = ['House', 'Work', 'Study', 'Personal', 'Custom'].some(kw => txt.includes(kw));
+        const isPri = ['High', 'Medium', 'Low'].some(kw => txt.includes(kw));
+        const isDue = ['Today', 'Tomorrow', 'This week', 'Next week', 'No date'].some(kw => txt.includes(kw));
+        
+        const isOptionBtn = (isCat || isPri || isDue);
         if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
             const block = btn.closest('div[data-testid="stHorizontalBlock"]');
             if (block) {
+                // Instantly apply active colors to button
                 block.querySelectorAll('button').forEach(b => {
                     b.style.backgroundColor = '';
                     b.style.borderColor = 'rgba(128, 128, 128, 0.2)';
@@ -1212,6 +1381,11 @@ components.html(
                 btn.style.backgroundColor = '#ff4b4b';
                 btn.style.borderColor = '#ff4b4b';
                 btn.style.color = 'white';
+                
+                // Trigger smooth disclosure cascade
+                if (isCat) window.categorySelected = true;
+                if (isPri) window.prioritySelected = true;
+                if (isDue) window.dueSelected = true;
             }
         }
     }, true);
@@ -1344,12 +1518,6 @@ components.html(
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
 
-            const optState = doc.getElementById('options-state');
-            const isModified = optState ? optState.getAttribute('data-modified') === 'true' : false;
-            
-            const buttons = Array.from(doc.querySelectorAll('button'));
-            const addTaskBtn = buttons.find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
-            
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
                 indicator.innerText = 'Enter to confirm custom tag';
@@ -1358,27 +1526,11 @@ components.html(
                 indicator.classList.add('visible');
                 
                 if (doc.activeElement === taskInput) {
-                    indicator.innerText = 'Enter to confirm text & set options';
+                    indicator.innerText = 'Enter to lock text & bypass sections';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter again to do something else';
+                    indicator.innerText = 'Enter again to quickly add task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
-                }
-                
-                if (addTaskBtn) {
-                    if (isModified) {
-                        addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; 
-                        addTaskBtn.style.borderColor = 'rgba(46, 204, 113, 1)';
-                        addTaskBtn.style.color = 'white';
-                        addTaskBtn.style.pointerEvents = 'auto';
-                        addTaskBtn.style.opacity = '1';
-                    } else {
-                        addTaskBtn.style.backgroundColor = 'rgba(243, 156, 18, 1)'; 
-                        addTaskBtn.style.borderColor = 'rgba(243, 156, 18, 1)';
-                        addTaskBtn.style.color = 'white';
-                        addTaskBtn.style.pointerEvents = 'auto';
-                        addTaskBtn.style.opacity = '1';
-                    }
                 }
                 
             } else if (!isTyping && window.latestTaskId) {
@@ -1387,13 +1539,6 @@ components.html(
                 indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
             } else {
                 indicator.classList.remove('visible');
-                
-                if (addTaskBtn) {
-                    addTaskBtn.style.backgroundColor = 'rgba(128, 128, 128, 0.4)'; 
-                    addTaskBtn.style.borderColor = 'transparent';
-                    addTaskBtn.style.color = 'rgba(255, 255, 255, 0.5)';
-                    addTaskBtn.style.pointerEvents = 'none';
-                }
             }
         }, 200);
 
@@ -1414,11 +1559,9 @@ components.html(
             const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
             const key = e.key.toLowerCase();
             
-            // "c" is completely eliminated from the hotkey list!
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1464,7 +1607,6 @@ components.html(
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
-                        // Exact match handling to avoid conflicts
                         const btn = buttons.find(b => b.innerText.includes(textFragment));
                         if(btn) {
                             const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
@@ -1484,21 +1626,21 @@ components.html(
                         }
                     };
 
-                    if (key === '1') clickBtn('Today [1]');
-                    if (key === '2') clickBtn('Tomorrow [2]');
-                    if (key === '3') clickBtn('This week [3]');
-                    if (key === '4') clickBtn('Next week [4]');
-                    if (key === '5') clickBtn('Custom [5]');
-                    if (key === '6') clickBtn('No date [6]');
+                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; }
+                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
+                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
+                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
+                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
+                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
                     
-                    if (key === 'h') clickBtn('House [H]');
-                    if (key === 'w') clickBtn('Work [W]');
-                    if (key === 's') clickBtn('Study [S]');
-                    if (key === 'p') clickBtn('Personal [P]');
+                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
+                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; }
+                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; }
+                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; }
                     
-                    if (key === 't') clickBtn('High [T]');
-                    if (key === 'm') clickBtn('Medium [M]');
-                    if (key === 'l') clickBtn('Low [L]');
+                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; }
+                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; }
+                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; }
                     
                     return; 
                 } 
@@ -1536,20 +1678,30 @@ components.html(
                     e.preventDefault(); 
                     
                     if (doc.activeElement === taskInput) {
+                        window.forceShowAllProgressive = true;
                         taskInput.blur(); 
                     } else {
-                        setTimeout(() => {
-                            const buttons = doc.querySelectorAll('button');
-                            buttons.forEach(btn => {
-                                if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
-                                    btn.click();
-                                }
-                            });
-                        }, 150); 
+                        const buttons = doc.querySelectorAll('button');
+                        buttons.forEach(btn => {
+                            if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
+                                btn.classList.add('optimistic-btn');
+                                btn.innerText = 'Adding...';
+                                window.categorySelected = false;
+                                window.prioritySelected = false;
+                                window.dueSelected = false;
+                                window.forceShowAllProgressive = false;
+                                taskInput.value = '';
+                                setTimeout(() => {
+                                    btn.classList.remove('optimistic-btn');
+                                    btn.innerText = 'Add task';
+                                }, 1000);
+                                btn.click();
+                            }
+                        });
                     }
                 }
             }
-        }, true); // Enforces capture phase to destroy Streamlit hotkeys before they trigger!
+        }, true); 
     }
     
     setTimeout(setupMagic, 500);
