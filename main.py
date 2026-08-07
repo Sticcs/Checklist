@@ -27,15 +27,11 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
-def _sync_checkboxes_with_db(username):
-    """Explicitly forces Streamlit to overwrite its checkbox cache with the true DB state."""
-    tasks = get_tasks(username)
-    for t in tasks:
-        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
-        
-    subtasks = get_all_subtasks(username)
-    for s in subtasks:
-        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
+def _clear_all_checkbox_states():
+    """Forces Streamlit to forget the visual state of all checkboxes during mass operations."""
+    for key in list(st.session_state.keys()):
+        if key.startswith("chk_") or key.startswith("subchk_"):
+            del st.session_state[key]
 
 # ----------------------------- Security & Auth -----------------------------
 
@@ -191,7 +187,6 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         
-        # Explicitly force Streamlit cache to adopt the new subtask state
         subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         for s in subtasks:
             st.session_state[f"subchk_{s['id']}"] = bool(done)
@@ -238,10 +233,8 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
-        # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         
-        # Force Streamlit cache to uncheck the parent task
         st.session_state[f"chk_{task_id}"] = False
             
         conn.commit()
@@ -401,11 +394,13 @@ st.markdown(
         display: none !important; 
     }
     div[data-testid="stCheckbox"] label {
-        min-height: auto !important;
+        min-height: 1.5rem !important;
         padding-bottom: 0 !important;
     }
     div[data-testid="stCheckbox"] {
-        min-height: auto !important;
+        min-height: 1.5rem !important;
+        display: flex;
+        align-items: center;
     }
 
     .task-row {
@@ -420,12 +415,11 @@ st.markdown(
     .task-title {
         font-size: 1.05rem;
         font-weight: 400;
-        margin-bottom: 4px;
+        margin-bottom: 0;
         display: flex;
         align-items: center;
         gap: 8px;
         transition: color 0.05s ease;
-        transform: translateY(4px); 
     }
     .task-title.is-done { text-decoration: line-through; }
     
@@ -570,7 +564,8 @@ st.markdown(
         display: flex;
         align-items: center;
         transition: opacity 0.05s ease;
-        transform: translateY(5px); 
+        margin: 0 !important;
+        padding: 0 !important;
     }
     .subtask-row.is-done {
         text-decoration: line-through;
