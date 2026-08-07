@@ -177,6 +177,7 @@ def set_done(task_id, done, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
+        conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         conn.commit()
     status = "completed" if done else "unmarked"
     st.session_state.pending_toast = f"✅ Task {status}"
@@ -239,6 +240,10 @@ def mark_all_completed(username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = 1 WHERE username = ?", (username,))
+        conn.execute(
+            "UPDATE subtasks SET done = 1 WHERE task_id IN (SELECT id FROM tasks WHERE username = ?)", 
+            (username,)
+        )
         conn.commit()
     st.session_state.pending_toast = "✅ Marked all as completed"
 
@@ -522,18 +527,8 @@ st.markdown(
         opacity: 0.5;
     }
     
-    /* Isolated Scroll Container for Right Column */
-    div[data-testid="column"]:has(#right-col-anchor) {
-        height: 88vh !important;
-        max-height: 88vh !important;
-        overflow-y: auto !important;
-        scroll-behavior: smooth !important;
-        padding-right: 15px !important;
-        scrollbar-width: none !important; 
-        -ms-overflow-style: none !important; 
-    }
-    div[data-testid="column"]:has(#right-col-anchor)::-webkit-scrollbar {
-        display: none !important;
+    .no-scrollbar-col::-webkit-scrollbar {
+        display: none;
     }
     </style>
     """,
@@ -574,8 +569,34 @@ if not st.session_state.logged_in:
                         st.error("Username already exists. Pick another one.")
                 else:
                     st.warning("Please fill in both fields.")
+                    
+        st.write("---")
+        if st.button("Continue as Guest", type="secondary", use_container_width=True):
+            st.session_state.logged_in = True
+            st.session_state.username = "guest"
+            st.rerun()
 
 else:
+    st.markdown(
+        """
+        <style>
+        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) {
+            height: 88vh !important;
+            max-height: 88vh !important;
+            overflow-y: scroll !important;
+            scroll-behavior: smooth !important;
+            padding-right: 15px !important;
+            -ms-overflow-style: none !important; 
+            scrollbar-width: none !important; 
+        }
+        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3)::-webkit-scrollbar {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
@@ -757,7 +778,6 @@ else:
         st.empty()
 
     with right_col:
-        # Invisible anchor that safe-targets this exact column and not any nested columns
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
         filtered = tasks
@@ -946,7 +966,6 @@ components.html(
         }
     }, 200);
 
-    // Build functional floating scroll buttons pointing directly to the right column
     if (!doc.getElementById('scroll-controls')) {
         const controls = doc.createElement('div');
         controls.id = 'scroll-controls';
@@ -961,7 +980,6 @@ components.html(
 
         doc.body.appendChild(controls);
 
-        // Targeted Scroll logic mapped directly to the anchor
         const getScrollCol = () => {
             const anchor = doc.getElementById('right-col-anchor');
             return anchor ? anchor.closest('div[data-testid="column"]') : null;
@@ -976,7 +994,6 @@ components.html(
             if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
         };
         
-        // Track the column's scroll position and lock it in so the page doesn't jump violently when Streamlit refreshes
         setInterval(() => {
             const col = getScrollCol();
             if (col && !col.dataset.scrollBound) {
