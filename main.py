@@ -331,14 +331,12 @@ st.markdown(
         font-size: 0.75rem;
     }
     
-    /* Smooth Transitions for ALL Streamlit Buttons */
     div[data-testid="stButton"] button { 
         width: 100%;
         height: auto !important;
         padding: 0.4rem 0.2rem !important;
         transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.1s ease !important;
     }
-    
     div[data-testid="stButton"] button:active {
         transform: scale(0.97) !important;
     }
@@ -415,7 +413,8 @@ else:
     st.session_state.setdefault("options_modified", False)
 
     def _end_of_week(base):
-        return base + timedelta(days=(4 - base.weekday()) % 7)
+        # Shifts to Sunday (where Monday is 0 and Sunday is 6)
+        return base + timedelta(days=(6 - base.weekday()))
 
     DUE_PRESETS = {
         "Today": lambda: date.today().isoformat(),
@@ -673,7 +672,6 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Dynamic Quotes logic
     const quotes = [
         "Stay locked in.", 
         "September is coming.", 
@@ -709,6 +707,30 @@ components.html(
             }
         }
     }, 200);
+
+    // Apply smooth transitions to option buttons visually before server sync
+    setInterval(() => {
+        const optionBtns = doc.querySelectorAll('div[data-testid="stButton"] button');
+        optionBtns.forEach(btn => {
+            if (!btn.dataset.magicClick) {
+                btn.dataset.magicClick = "true";
+                btn.addEventListener('mousedown', function() {
+                    const btnText = this.innerText;
+                    if (!btnText.includes('Add task') && this.closest('div[data-testid="stHorizontalBlock"]')) {
+                        const siblings = this.closest('div[data-testid="stHorizontalBlock"]').querySelectorAll('button');
+                        siblings.forEach(sib => {
+                            sib.style.backgroundColor = 'transparent';
+                            sib.style.borderColor = 'rgba(128, 128, 128, 0.2)';
+                            sib.style.color = 'inherit';
+                        });
+                        this.style.backgroundColor = '#ff4b4b';
+                        this.style.borderColor = '#ff4b4b';
+                        this.style.color = 'white';
+                    }
+                });
+            }
+        });
+    }, 500);
 
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
@@ -825,7 +847,23 @@ components.html(
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
                         const btn = buttons.find(b => b.innerText.includes(textFragment));
-                        if(btn) btn.click();
+                        if(btn) {
+                            // Instant visual feedback for hotkeys
+                            const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
+                            if(parentRow) {
+                                const siblings = parentRow.querySelectorAll('button');
+                                siblings.forEach(sib => {
+                                    sib.style.backgroundColor = 'transparent';
+                                    sib.style.borderColor = 'rgba(128, 128, 128, 0.2)';
+                                    sib.style.color = 'inherit';
+                                });
+                            }
+                            btn.style.backgroundColor = '#ff4b4b';
+                            btn.style.borderColor = '#ff4b4b';
+                            btn.style.color = 'white';
+                            
+                            btn.click();
+                        }
                     };
 
                     if (key === '1') clickBtn('Today');
