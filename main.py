@@ -78,11 +78,39 @@ def init_db():
             conn.execute("UPDATE tasks SET username = 'guest' WHERE username IS NULL")
         except sqlite3.OperationalError:
             pass 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subtasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                done INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
         conn.commit()
 
 def get_tasks(username):
     with closing(get_conn()) as conn:
         rows = conn.execute("SELECT * FROM tasks WHERE username = ? ORDER BY created_at DESC", (username,)).fetchall()
+    return [dict(r) for r in rows]
+
+def get_subtasks(task_id):
+    with closing(get_conn()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM subtasks WHERE task_id = ? ORDER BY created_at ASC", (task_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def get_all_subtasks(username):
+    with closing(get_conn()) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.* FROM subtasks s
+            JOIN tasks t ON s.task_id = t.id
+            WHERE t.username = ?
+            """,
+            (username,),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 def _restore_state(state_tasks, username):
@@ -95,24 +123,41 @@ def _restore_state(state_tasks, username):
             )
         conn.commit()
 
+def _restore_subtasks(state_subtasks, username):
+    with closing(get_conn()) as conn:
+        task_ids = [r['id'] for r in conn.execute(
+            "SELECT id FROM tasks WHERE username = ?", (username,)
+        ).fetchall()]
+        if task_ids:
+            placeholders = ",".join(["?"] * len(task_ids))
+            conn.execute(f"DELETE FROM subtasks WHERE task_id IN ({placeholders})", task_ids)
+        for s in state_subtasks:
+            conn.execute(
+                "INSERT INTO subtasks (id, task_id, text, done, created_at) VALUES (?, ?, ?, ?, ?)",
+                (s['id'], s['task_id'], s['text'], s['done'], s['created_at'])
+            )
+        conn.commit()
+
 def save_state_for_undo(username):
-    st.session_state.undo_stack.append(get_tasks(username))
+    st.session_state.undo_stack.append({"tasks": get_tasks(username), "subtasks": get_all_subtasks(username)})
     st.session_state.redo_stack.clear() 
     if len(st.session_state.undo_stack) > 20: 
         st.session_state.undo_stack.pop(0)
 
 def perform_undo(username):
     if st.session_state.undo_stack:
-        st.session_state.redo_stack.append(get_tasks(username))
+        st.session_state.redo_stack.append({"tasks": get_tasks(username), "subtasks": get_all_subtasks(username)})
         last_state = st.session_state.undo_stack.pop()
-        _restore_state(last_state, username)
+        _restore_state(last_state["tasks"], username)
+        _restore_subtasks(last_state["subtasks"], username)
         st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo(username):
     if st.session_state.redo_stack:
-        st.session_state.undo_stack.append(get_tasks(username))
+        st.session_state.undo_stack.append({"tasks": get_tasks(username), "subtasks": get_all_subtasks(username)})
         next_state = st.session_state.redo_stack.pop()
-        _restore_state(next_state, username)
+        _restore_state(next_state["tasks"], username)
+        _restore_subtasks(next_state["subtasks"], username)
         st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date, username):
@@ -137,6 +182,7 @@ def set_done(task_id, done, username):
 def delete_task(task_id, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        conn.execute("DELETE FROM subtasks WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
     st.session_state.pending_toast = "🗑️ Task deleted"
@@ -144,6 +190,12 @@ def delete_task(task_id, username):
 def clear_completed(username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        done_ids = [r['id'] for r in conn.execute(
+            "SELECT id FROM tasks WHERE done = 1 AND username = ?", (username,)
+        ).fetchall()]
+        if done_ids:
+            placeholders = ",".join(["?"] * len(done_ids))
+            conn.execute(f"DELETE FROM subtasks WHERE task_id IN ({placeholders})", done_ids)
         conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
     st.session_state.pending_toast = "🧹 Cleared completed tasks"
@@ -151,9 +203,35 @@ def clear_completed(username):
 def clear_all(username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        conn.execute(
+            "DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE username = ?)", (username,)
+        )
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
     st.session_state.pending_toast = "🗑️ Cleared all tasks"
+
+def add_subtask(task_id, text, username):
+    save_state_for_undo(username)
+    with closing(get_conn()) as conn:
+        conn.execute(
+            "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
+            (task_id, text, datetime.now().isoformat()),
+        )
+        conn.commit()
+    st.session_state.pending_toast = "➕ Subtask added"
+
+def set_subtask_done(subtask_id, done, username):
+    save_state_for_undo(username)
+    with closing(get_conn()) as conn:
+        conn.execute("UPDATE subtasks SET done = ? WHERE id = ?", (int(done), subtask_id))
+        conn.commit()
+
+def delete_subtask(subtask_id, username):
+    save_state_for_undo(username)
+    with closing(get_conn()) as conn:
+        conn.execute("DELETE FROM subtasks WHERE id = ?", (subtask_id,))
+        conn.commit()
+    st.session_state.pending_toast = "🗑️ Subtask deleted"
 
 def mark_all_completed(username):
     save_state_for_undo(username)
@@ -361,6 +439,57 @@ st.markdown(
         border-radius: 12px;
         background: rgba(128,128,128,0.1);
         margin-top: 4rem;
+    }
+
+    /* Task card container (wraps task row + its subtasks) */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
+        border-radius: 14px !important;
+        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
+        margin-bottom: 0.7rem !important;
+        transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
+        background-color: rgba(255, 255, 255, 0.92) !important;
+        border: 1px solid rgba(0, 0, 0, 0.06) !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    /* Smooth accordion feel for the subtasks dropdown */
+    div[data-testid="stExpander"] {
+        border: none !important;
+        background: transparent !important;
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stExpander"] summary {
+        transition: opacity 0.2s ease;
+        padding: 0.3rem 0 !important;
+    }
+    div[data-testid="stExpander"] summary svg {
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    div[data-testid="stExpanderDetails"] {
+        animation: expandFade 0.3s ease;
+        transition: all 0.3s ease;
+    }
+    @keyframes expandFade {
+        0% { opacity: 0; transform: translateY(-6px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    .subtask-progress-wrap {
+        margin: 0.35rem 0 0.15rem 0;
+    }
+    .subtask-row {
+        font-size: 0.92rem;
+        display: flex;
+        align-items: center;
+    }
+    .subtask-row.is-done {
+        text-decoration: line-through;
+        opacity: 0.5;
     }
     </style>
     """,
@@ -615,7 +744,7 @@ else:
             now_time = datetime.now()
             
             for t in filtered:
-                with st.container():
+                with st.container(border=True):
                     col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
                     
                     with col1:
@@ -654,6 +783,52 @@ else:
                             if st.button("Del", key=f"del_{t['id']}", help="Delete task"):
                                 delete_task(t["id"], st.session_state.username)
                                 st.rerun()
+
+                    # ---------------- Subtasks ----------------
+                    subtasks = get_subtasks(t["id"])
+                    sub_total = len(subtasks)
+                    sub_done = sum(1 for s in subtasks if s["done"])
+
+                    if sub_total > 0:
+                        st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
+                        st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                    expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
+                    with st.expander(expander_label, expanded=False):
+                        for s in subtasks:
+                            sc1, sc2, sc3 = st.columns([0.5, 6.5, 1], vertical_alignment="center")
+                            with sc1:
+                                s_done = st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}")
+                                if s_done != bool(s["done"]):
+                                    set_subtask_done(s["id"], s_done, st.session_state.username)
+                                    st.rerun()
+                            with sc2:
+                                sub_class = "is-done" if s["done"] else ""
+                                st.markdown(
+                                    f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            with sc3:
+                                if st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask"):
+                                    delete_subtask(s["id"], st.session_state.username)
+                                    st.rerun()
+
+                        new_sc1, new_sc2 = st.columns([6, 1.5])
+                        with new_sc1:
+                            st.text_input(
+                                "New subtask",
+                                key=f"new_sub_{t['id']}",
+                                placeholder="Add a subtask...",
+                                label_visibility="collapsed",
+                            )
+                        with new_sc2:
+                            if st.button("Add", key=f"addsub_{t['id']}", use_container_width=True):
+                                new_text = st.session_state.get(f"new_sub_{t['id']}", "").strip()
+                                if new_text:
+                                    add_subtask(t["id"], new_text, st.session_state.username)
+                                    st.session_state[f"new_sub_{t['id']}"] = ""
+                                    st.rerun()
 
                     if st.session_state.get(f"editing_{t['id']}"):
                         with st.form(f"edit_form_{t['id']}"):
@@ -717,7 +892,7 @@ components.html(
 
     setInterval(() => {
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-        const rgb = bg.match(/\d+/g);
+        const rgb = bg.match(/\\d+/g);
         if (rgb && rgb.length >= 3) {
             const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
             if (luma < 128) {
