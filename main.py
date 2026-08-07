@@ -243,9 +243,7 @@ def add_subtask(task_id, text, username):
             (task_id, text, datetime.now().isoformat()),
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-        
         st.session_state[f"chk_{task_id}"] = False
-            
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
 
@@ -1282,6 +1280,24 @@ components.html(
         doc.body.appendChild(indicator);
     }
 
+    // Elegant Focus bindings for Subtasks (Robust Poller)
+    setInterval(() => {
+        const allCards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
+        let activeCard = null;
+
+        if (doc.activeElement && doc.activeElement.tagName.toLowerCase() === 'input' && doc.activeElement.placeholder && doc.activeElement.placeholder.includes('Add a subtask')) {
+            activeCard = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+        }
+
+        allCards.forEach(card => {
+            if (card === activeCard) {
+                card.classList.add('green-focus-border');
+            } else {
+                card.classList.remove('green-focus-border');
+            }
+        });
+    }, 50);
+
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
         
@@ -1378,12 +1394,12 @@ components.html(
             if (!isTyping) {
                 // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === 'c' || key === '/') {
+                    e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                 }
 
                 if (key === '/') {
-                    e.preventDefault();
                     let targetInput = null;
                     
                     if (window.latestTaskId) {
@@ -1420,11 +1436,9 @@ components.html(
                 }
 
                 if (hasText && isHotkey) {
-                    e.preventDefault(); 
-                    
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
-                        const btn = buttons.find(b => b.innerText.includes(textFragment));
+                        const btn = buttons.find(b => b.innerText.includes(textFragment) || b.innerText.trim() === textFragment);
                         if(btn) {
                             const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
                             if(parentRow) {
@@ -1443,22 +1457,22 @@ components.html(
                         }
                     };
 
-                    if (key === '1') clickBtn('Today');
-                    if (key === '2') clickBtn('Tomorrow');
-                    if (key === '3') clickBtn('This week');
-                    if (key === '4') clickBtn('Next week');
-                    if (key === '5') clickBtn('Custom');
-                    if (key === '6') clickBtn('No date');
+                    if (key === '1') clickBtn('Today [1]');
+                    if (key === '2') clickBtn('Tomorrow [2]');
+                    if (key === '3') clickBtn('This week [3]');
+                    if (key === '4') clickBtn('Next week [4]');
+                    if (key === '5') clickBtn('Custom [5]');
+                    if (key === '6') clickBtn('No date [6]');
                     
-                    if (key === 'h') clickBtn('House');
-                    if (key === 'w') clickBtn('Work');
-                    if (key === 's') clickBtn('Study');
-                    if (key === 'p') clickBtn('Personal');
-                    if (key === 'c') clickBtn('Custom');
+                    if (key === 'h') clickBtn('House [H]');
+                    if (key === 'w') clickBtn('Work [W]');
+                    if (key === 's') clickBtn('Study [S]');
+                    if (key === 'p') clickBtn('Personal [P]');
+                    if (key === 'c') clickBtn('Custom [C]');
                     
-                    if (key === 't') clickBtn('High');
-                    if (key === 'm') clickBtn('Medium');
-                    if (key === 'l') clickBtn('Low');
+                    if (key === 't') clickBtn('High [T]');
+                    if (key === 'm') clickBtn('Medium [M]');
+                    if (key === 'l') clickBtn('Low [L]');
                     
                     return; 
                 } 
