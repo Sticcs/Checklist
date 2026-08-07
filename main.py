@@ -521,10 +521,6 @@ st.markdown(
         text-decoration: line-through;
         opacity: 0.5;
     }
-    
-    .no-scrollbar-col::-webkit-scrollbar {
-        display: none;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -566,6 +562,28 @@ if not st.session_state.logged_in:
                     st.warning("Please fill in both fields.")
 
 else:
+    # Aggressively enforce scrolling logic via CSS only for the main app layout
+    st.markdown(
+        """
+        <style>
+        /* Force right column to be an isolated scroll container */
+        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) {
+            height: 88vh !important;
+            max-height: 88vh !important;
+            overflow-y: scroll !important;
+            scroll-behavior: smooth !important;
+            padding-right: 15px !important;
+            -ms-overflow-style: none !important; 
+            scrollbar-width: none !important; 
+        }
+        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3)::-webkit-scrollbar {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
@@ -747,8 +765,6 @@ else:
         st.empty()
 
     with right_col:
-        st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
-        
         filtered = tasks
         if search:
             filtered = [t for t in filtered if search.lower() in t["text"].lower()]
@@ -935,22 +951,7 @@ components.html(
         }
     }, 200);
 
-    setInterval(() => {
-        const anchor = doc.getElementById('right-col-anchor');
-        if (anchor) {
-            const rightCol = anchor.closest('div[data-testid="column"]');
-            if (rightCol && rightCol.style.overflowY !== 'auto') {
-                rightCol.style.height = '85vh';
-                rightCol.style.overflowY = 'auto';
-                rightCol.style.paddingRight = '12px';
-                rightCol.style.scrollBehavior = 'smooth';
-                rightCol.style.scrollbarWidth = 'none'; 
-                rightCol.style.msOverflowStyle = 'none';
-                rightCol.classList.add('no-scrollbar-col');
-            }
-        }
-    }, 500);
-
+    // Build functional floating scroll buttons pointing directly to the right column
     if (!doc.getElementById('scroll-controls')) {
         const controls = doc.createElement('div');
         controls.id = 'scroll-controls';
@@ -965,17 +966,32 @@ components.html(
 
         doc.body.appendChild(controls);
 
-        doc.getElementById('scroll-up').onclick = () => {
-            const anchor = doc.getElementById('right-col-anchor');
-            if(anchor) anchor.closest('div[data-testid="column"]').scrollTo({top: 0, behavior: 'smooth'});
+        // Targeted Scroll logic mapped directly to your 3rd column via CSS nth-of-type
+        const getScrollCol = () => doc.querySelector('section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3)');
+
+        controls.querySelector('#scroll-up').onclick = () => {
+            const col = getScrollCol();
+            if(col) col.scrollTo({top: 0, behavior: 'smooth'});
         };
-        doc.getElementById('scroll-down').onclick = () => {
-            const anchor = doc.getElementById('right-col-anchor');
-            if(anchor) {
-                const col = anchor.closest('div[data-testid="column"]');
-                col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
+        controls.querySelector('#scroll-down').onclick = () => {
+            const col = getScrollCol();
+            if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
+        };
+        
+        // Track the column's scroll position and lock it in so the page doesn't jump violently when Streamlit refreshes
+        setInterval(() => {
+            const col = getScrollCol();
+            if (col && !col.dataset.scrollBound) {
+                col.dataset.scrollBound = "true";
+                const savedScroll = sessionStorage.getItem('rightColScroll');
+                if (savedScroll !== null) {
+                    col.scrollTop = parseInt(savedScroll);
+                }
+                col.addEventListener('scroll', () => {
+                    sessionStorage.setItem('rightColScroll', col.scrollTop);
+                });
             }
-        };
+        }, 300);
     }
 
     setInterval(() => {
@@ -1148,7 +1164,6 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','c','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Focus into an active Subtask box automatically
                 if (key === '/') {
                     const subInputs = Array.from(doc.querySelectorAll('input[placeholder="Add a subtask..."]'))
                         .filter(inp => inp.getBoundingClientRect().height > 0);
