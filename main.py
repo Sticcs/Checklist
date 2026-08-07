@@ -243,9 +243,7 @@ def add_subtask(task_id, text, username):
             (task_id, text, datetime.now().isoformat()),
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-        
         st.session_state[f"chk_{task_id}"] = False
-            
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
 
@@ -309,7 +307,6 @@ def update_task(task_id, text, priority, category, due_date, username):
 # ----------------------------- Callback Handlers -----------------------------
 
 def handle_task_check(task_id, current_done, username):
-    # active_task_id is NOT touched here, ensuring checking a box never forces the subtask expander to open.
     key = f"chk_{task_id}"
     val = st.session_state.get(key)
     new_done = not current_done if val is None else val
@@ -354,7 +351,23 @@ st.markdown(
         padding-top: 2rem !important;
     }
 
-    /* Smooth transitions for main content when sidebar collapses */
+    /* Destroy Streamlit's janky skeleton loading animations */
+    div[data-testid="stSkeleton"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
+    
+    /* Smooth transitions for optimistic UI feedback */
+    .optimistic-fade {
+        transform: scale(0.95) !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    }
+    .optimistic-btn {
+        opacity: 0.6 !important;
+        pointer-events: none !important;
+        filter: grayscale(1) !important;
+        transition: all 0.1s ease !important;
+    }
+
     section.main, [data-testid="stMain"] {
         transition: margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
     }
@@ -888,7 +901,6 @@ else:
     with right_col:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
-        # Deploy tracker if task was just added
         just_added = st.session_state.get("just_added_task_id")
         if just_added:
             st.markdown(f"<div id='latest-task-tracker' data-task-id='{just_added}'></div>", unsafe_allow_html=True)
@@ -925,7 +937,6 @@ else:
             
             for t in filtered:
                 with st.container(border=True):
-                    # Hidden marker to let JS find this exact task wrapper
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
                     col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
@@ -1069,6 +1080,7 @@ components.html(
         }
     }, 8000); 
 
+    // Sync Background Mode
     setInterval(() => {
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\d+/g);
@@ -1082,8 +1094,9 @@ components.html(
                 doc.body.classList.remove('custom-dark');
             }
         }
-    }, 200);
+    }, 500);
 
+    // Persist Scroll memory
     if (!doc.getElementById('scroll-controls')) {
         const controls = doc.createElement('div');
         controls.id = 'scroll-controls';
@@ -1127,29 +1140,58 @@ components.html(
         }, 300);
     }
 
-    setInterval(() => {
-        const optionBtns = doc.querySelectorAll('div[data-testid="stButton"] button');
-        optionBtns.forEach(btn => {
-            if (!btn.dataset.magicClick) {
-                btn.dataset.magicClick = "true";
-                btn.addEventListener('mousedown', function() {
-                    const btnText = this.innerText;
-                    if (!btnText.includes('Add task') && this.closest('div[data-testid="stHorizontalBlock"]')) {
-                        const siblings = this.closest('div[data-testid="stHorizontalBlock"]').querySelectorAll('button');
-                        siblings.forEach(sib => {
-                            sib.style.removeProperty('background-color');
-                            sib.style.removeProperty('border-color');
-                            sib.style.removeProperty('color');
-                        });
-                        this.style.backgroundColor = '#ff4b4b';
-                        this.style.borderColor = '#ff4b4b';
-                        this.style.color = 'white';
-                    }
+    // --- TRUE OPTIMISTIC UI: Event Delegation ---
+    doc.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        
+        const txt = btn.innerText.trim();
+        
+        // Optimistic Delete
+        if (txt === 'Del') {
+            const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (card) card.classList.add('optimistic-fade');
+        }
+        else if (txt === '✕') {
+            const row = btn.closest('div[data-testid="stHorizontalBlock"]');
+            if (row) row.classList.add('optimistic-fade');
+        }
+        // Optimistic Add Buttons
+        else if (txt === 'Add task') {
+            btn.classList.add('optimistic-btn');
+            btn.innerText = 'Adding...';
+            // Blur the input to hide Streamlit payload sync visual jank
+            const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
+            if(inputs.length) inputs[0].blur();
+        }
+        else if (txt === 'Add') {
+            btn.classList.add('optimistic-btn');
+            btn.innerText = '...';
+        }
+        // Mass Actions
+        else if (txt.includes('Clear completed') || txt.includes('Clear all')) {
+            const cards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
+            cards.forEach(c => c.classList.add('optimistic-fade'));
+        }
+        
+        // Optimistic Category / Priority Highlighting
+        const isOptionBtn = ['House', 'Work', 'Study', 'Personal', 'Custom', 'High', 'Medium', 'Low', 'Today', 'Tomorrow', 'This week', 'Next week', 'No date'].some(kw => txt.includes(kw));
+        if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
+            const block = btn.closest('div[data-testid="stHorizontalBlock"]');
+            if (block) {
+                block.querySelectorAll('button').forEach(b => {
+                    b.style.backgroundColor = '';
+                    b.style.borderColor = 'rgba(128, 128, 128, 0.2)';
+                    b.style.color = '';
                 });
+                btn.style.backgroundColor = '#ff4b4b';
+                btn.style.borderColor = '#ff4b4b';
+                btn.style.color = 'white';
             }
-        });
-    }, 500);
+        }
+    }, true);
 
+    // Fast Checkbox Cascade
     doc.addEventListener('change', function(e) {
         if (e.target && e.target.type === 'checkbox') {
             const block = e.target.closest('div[data-testid="stHorizontalBlock"]');
@@ -1162,38 +1204,43 @@ components.html(
                 const subRow = block.querySelector('.subtask-row');
                 
                 if (row && !isSubtask) {
-                    if (isChecked) {
-                        row.classList.add('is-done');
-                        const title = row.querySelector('.task-title');
-                        if (title) title.classList.add('is-done');
-                    } else {
-                        row.classList.remove('is-done');
-                        const title = row.querySelector('.task-title');
-                        if (title) title.classList.remove('is-done');
-                    }
+                    row.classList.toggle('is-done', isChecked);
+                    const title = row.querySelector('.task-title');
+                    if (title) title.classList.toggle('is-done', isChecked);
                     
                     if (container) {
                         const subRows = container.querySelectorAll('.subtask-row');
-                        subRows.forEach(sr => {
-                            if (isChecked) sr.classList.add('is-done');
-                            else sr.classList.remove('is-done');
-                        });
+                        subRows.forEach(sr => sr.classList.toggle('is-done', isChecked));
+                        const subChecks = container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]');
+                        subChecks.forEach(sc => sc.checked = isChecked);
                     }
                 }
                 
                 if (subRow && isSubtask) {
-                    if (isChecked) {
-                        subRow.classList.add('is-done');
-                    } else {
-                        subRow.classList.remove('is-done');
-                    }
+                    subRow.classList.toggle('is-done', isChecked);
                     
-                    if (!isChecked && container) {
+                    if (container) {
                         const parentRow = container.querySelector('.task-row');
-                        if (parentRow) {
-                            parentRow.classList.remove('is-done');
-                            const title = parentRow.querySelector('.task-title');
-                            if (title) title.classList.remove('is-done');
+                        const parentCheck = container.querySelector('input[type="checkbox"]'); // First checkbox in the card
+                        const allSubChecks = Array.from(container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]'));
+                        
+                        if (!isChecked) {
+                            if (parentRow) {
+                                parentRow.classList.remove('is-done');
+                                const title = parentRow.querySelector('.task-title');
+                                if (title) title.classList.remove('is-done');
+                            }
+                            if (parentCheck) parentCheck.checked = false;
+                        } else {
+                            const allDone = allSubChecks.every(c => c.checked);
+                            if (allDone) {
+                                if (parentRow) {
+                                    parentRow.classList.add('is-done');
+                                    const title = parentRow.querySelector('.task-title');
+                                    if (title) title.classList.add('is-done');
+                                }
+                                if (parentCheck) parentCheck.checked = true;
+                            }
                         }
                     }
                 }
@@ -1233,23 +1280,19 @@ components.html(
         doc.body.appendChild(indicator);
     }
 
-    // Elegant Focus border bindings for Subtasks (Robust Poller)
-    setInterval(() => {
-        const allCards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
-        let activeCard = null;
-
-        if (doc.activeElement && doc.activeElement.tagName.toLowerCase() === 'input' && doc.activeElement.placeholder && doc.activeElement.placeholder.includes('Add a subtask')) {
-            activeCard = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+    // Elegant Focus bindings for Subtasks
+    doc.addEventListener('focusin', (e) => {
+        if (e.target && e.target.tagName.toLowerCase() === 'input' && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
+            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (card) card.classList.add('green-focus-border');
         }
-
-        allCards.forEach(card => {
-            if (card === activeCard) {
-                card.classList.add('green-focus-border');
-            } else {
-                card.classList.remove('green-focus-border');
-            }
-        });
-    }, 50);
+    });
+    doc.addEventListener('focusout', (e) => {
+        if (e.target && e.target.tagName.toLowerCase() === 'input' && e.target.placeholder && e.target.placeholder.includes('Add a subtask')) {
+            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (card) card.classList.remove('green-focus-border');
+        }
+    });
 
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
@@ -1278,10 +1321,6 @@ components.html(
             const buttons = Array.from(doc.querySelectorAll('button'));
             const addTaskBtn = buttons.find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
             
-            if (addTaskBtn) {
-                addTaskBtn.style.transition = 'background-color 0.05s ease, color 0.05s ease, border-color 0.05s ease';
-            }
-
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
                 indicator.innerText = 'Enter to confirm custom tag';
