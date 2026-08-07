@@ -1148,6 +1148,17 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','c','t','m','l'].includes(key);
 
             if (!isTyping) {
+                // Focus into an active Subtask box automatically
+                if (key === '/') {
+                    const subInputs = Array.from(doc.querySelectorAll('input[placeholder="Add a subtask..."]'))
+                        .filter(inp => inp.getBoundingClientRect().height > 0);
+                    if (subInputs.length > 0) {
+                        e.preventDefault();
+                        subInputs[0].focus();
+                        return;
+                    }
+                }
+
                 if (hasText && isHotkey) {
                     e.preventDefault(); 
                     
