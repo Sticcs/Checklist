@@ -1007,11 +1007,6 @@ components.html(
     """
     <script>
     const doc = window.parent.document;
-    const taskEntryInput = doc.querySelector('input[placeholder="E.g., Review Big O time complexity"]');
-    if (!taskEntryInput) {
-        // Only enable the Enter helper on the main task entry view.
-        return;
-    }
     
     const quotes = [
         "Stay locked in.", 
