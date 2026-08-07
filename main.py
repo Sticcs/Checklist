@@ -27,19 +27,11 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
-def _sync_checkboxes_with_db(username):
-    """Explicitly forces Streamlit to overwrite its checkbox cache with the true DB state."""
-    tasks = get_tasks(username)
-    for t in tasks:
-        key = f"chk_{t['id']}"
-        if key in st.session_state:
-            st.session_state[key] = bool(t['done'])
-            
-    subtasks = get_all_subtasks(username)
-    for s in subtasks:
-        key = f"subchk_{s['id']}"
-        if key in st.session_state:
-            st.session_state[key] = bool(s['done'])
+def _clear_all_checkbox_states():
+    """Forces Streamlit to forget the visual state of all checkboxes during mass operations."""
+    for key in list(st.session_state.keys()):
+        if key.startswith("chk_") or key.startswith("subchk_"):
+            del st.session_state[key]
 
 # ----------------------------- Security & Auth -----------------------------
 
@@ -166,7 +158,7 @@ def perform_undo(username):
         last_state = st.session_state.undo_stack.pop()
         _restore_state(last_state["tasks"], username)
         _restore_subtasks(last_state["subtasks"], username)
-        _sync_checkboxes_with_db(username)
+        _clear_all_checkbox_states()
         st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo(username):
@@ -175,7 +167,7 @@ def perform_redo(username):
         next_state = st.session_state.redo_stack.pop()
         _restore_state(next_state["tasks"], username)
         _restore_subtasks(next_state["subtasks"], username)
-        _sync_checkboxes_with_db(username)
+        _clear_all_checkbox_states()
         st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date, username):
@@ -195,11 +187,12 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         
-        # Explicitly force Streamlit cache to adopt the new subtask state
+        # Wipes subtask cache so they correctly update to the new parent status
         subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         for s in subtasks:
             key = f"subchk_{s['id']}"
-            st.session_state[key] = bool(done)
+            if key in st.session_state:
+                del st.session_state[key]
                 
         conn.commit()
     status = "completed" if done else "unmarked"
@@ -243,10 +236,13 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
+        # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         
-        # Explicitly force Streamlit cache to uncheck the parent task
-        st.session_state[f"chk_{task_id}"] = False
+        # Wipes parent task cache so it unchecks itself
+        parent_key = f"chk_{task_id}"
+        if parent_key in st.session_state:
+            del st.session_state[parent_key]
             
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
@@ -263,10 +259,12 @@ def set_subtask_done(subtask_id, task_id, done, username):
             
             if not done:
                 conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[parent_key] = False
+                if parent_key in st.session_state:
+                    del st.session_state[parent_key]
             elif all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[parent_key] = True
+                if parent_key in st.session_state:
+                    del st.session_state[parent_key]
                     
         conn.commit()
 
@@ -280,7 +278,9 @@ def delete_subtask(subtask_id, task_id, username):
             all_done = all(s['done'] for s in subtasks)
             if all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[f"chk_{task_id}"] = True
+                parent_key = f"chk_{task_id}"
+                if parent_key in st.session_state:
+                    del st.session_state[parent_key]
                     
         conn.commit()
     st.session_state.pending_toast = "🗑️ Subtask deleted"
@@ -295,11 +295,7 @@ def mark_all_completed(username):
         )
         conn.commit()
     
-    # Overwrite all checkboxes in cache instantly
-    for key in list(st.session_state.keys()):
-        if key.startswith("chk_") or key.startswith("subchk_"):
-            st.session_state[key] = True
-            
+    _clear_all_checkbox_states()
     st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
@@ -315,7 +311,7 @@ def update_task(task_id, text, priority, category, due_date, username):
 # ----------------------------- Callback Handlers -----------------------------
 
 def handle_task_check(task_id, current_done, username):
-    st.session_state.active_task_id = None 
+    st.session_state.active_task_id = task_id  # Ensures the subtask expander stays open when parent is checked!
     key = f"chk_{task_id}"
     val = st.session_state.get(key)
     # Intelligently flip based on fallback if Streamlit dropped the state
@@ -392,7 +388,7 @@ st.markdown(
     }
     
     body.custom-light .stApp {
-        background-image: url("https://img.magnific.com/free-vector/green-monstera-plant-vector-background-with-blank-space_53876-118628.jpg?semt=ais_test_b&w=740&q=80") !important;
+        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     body.custom-light [data-testid="stSidebar"] {
         background-color: rgba(255, 255, 255, 0.85) !important;
@@ -405,6 +401,18 @@ st.markdown(
         letter-spacing: -0.5px;
     }
     
+    /* --- Streamlit Checkbox Alignment Fix --- */
+    div[data-testid="stCheckbox"] label p {
+        display: none !important; /* Hides the invisible text block entirely */
+    }
+    div[data-testid="stCheckbox"] label {
+        min-height: auto !important;
+        padding-bottom: 0 !important;
+    }
+    div[data-testid="stCheckbox"] {
+        min-height: auto !important;
+    }
+
     .task-row {
         padding: 0.8rem 0;
         border-bottom: 1px solid rgba(128, 128, 128, 0.25);
@@ -422,6 +430,7 @@ st.markdown(
         align-items: center;
         gap: 8px;
         transition: color 0.05s ease;
+        transform: translateY(4px); /* Vertical alignment sync with checkbox */
     }
     .task-title.is-done { text-decoration: line-through; }
     
@@ -566,6 +575,7 @@ st.markdown(
         display: flex;
         align-items: center;
         transition: opacity 0.05s ease;
+        transform: translateY(5px); /* Vertical alignment sync with checkbox */
     }
     .subtask-row.is-done {
         text-decoration: line-through;
@@ -1124,7 +1134,6 @@ components.html(
         });
     }, 500);
 
-    // Completely Refactored Optimistic Cascading Checkboxes
     doc.addEventListener('change', function(e) {
         if (e.target && e.target.type === 'checkbox') {
             const block = e.target.closest('div[data-testid="stHorizontalBlock"]');
