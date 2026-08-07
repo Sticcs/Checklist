@@ -137,31 +137,25 @@ PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
 CATEGORIES = ["House", "Work", "Study"]
 PRIORITIES = ["High", "Medium", "Low"]
 
-# Key mappings for UI display
 CAT_KEYS = {"House": "H", "Work": "W", "Study": "S"}
 PRI_KEYS = {"High": "P", "Medium": "M", "Low": "L"}
 
 st.markdown(
     """
     <style>
-    /* Global App Backgrounds & Sidebar Shadow */
     .stApp {
         background-attachment: fixed !important;
         background-size: cover !important;
         background-position: center !important;
         transition: background-image 0.3s ease;
     }
-    
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
         transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
     }
-
     [data-testid="stHeader"] {
         background: transparent !important;
     }
-
-    /* Dark Mode specific */
     body.custom-dark .stApp {
         background-image: url("https://images.unsplash.com/photo-1518800524495-b963b722bd92?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTh8fG1pbmltYWwlMjBkYXJrfGVufDB8fDB8fHww") !important;
     }
@@ -176,8 +170,6 @@ st.markdown(
         margin-top: 2rem;
         backdrop-filter: blur(8px);
     }
-
-    /* Light Mode specific */
     body.custom-light .stApp {
         background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
@@ -193,14 +185,10 @@ st.markdown(
         margin-top: 2rem;
         backdrop-filter: blur(8px);
     }
-
-    /* Minimalist Typography */
     h1, h2, h3, h4 {
         font-weight: 500 !important;
         letter-spacing: -0.5px;
     }
-    
-    /* Clean Task List Design */
     .task-row {
         padding: 0.8rem 0;
         border-bottom: 1px solid rgba(128, 128, 128, 0.25);
@@ -209,33 +197,21 @@ st.markdown(
         justify-content: center;
         transition: opacity 0.2s ease;
     }
-    .task-row.is-done {
-        opacity: 0.4;
-    }
+    .task-row.is-done { opacity: 0.4; }
     .task-title {
         font-size: 1.05rem;
         font-weight: 400;
         margin-bottom: 4px;
     }
-    .task-title.is-done {
-        text-decoration: line-through;
-    }
-    
-    /* Smooth Pop-in Animation for New Tasks */
+    .task-title.is-done { text-decoration: line-through; }
     @keyframes slideInDown {
         0% { opacity: 0; transform: translateY(-20px); }
         100% { opacity: 1; transform: translateY(0); }
     }
-    .new-task-anim {
-        animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-    
-    /* Priority Accent Lines */
+    .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
     .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
     .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
-    
-    /* Subtle Badges */
     .meta-tags {
         display: flex;
         gap: 8px;
@@ -253,8 +229,6 @@ st.markdown(
         background: rgba(231, 76, 60, 0.15);
         font-weight: 600;
     }
-
-    /* Refine Buttons */
     div[data-testid="column"] button { width: 100%; }
     div[data-testid="stHorizontalBlock"] { gap: 0.5rem; }
     section[data-testid="stSidebar"] button {
@@ -347,7 +321,6 @@ with st.sidebar:
             for log in valid_logs[:10]:
                 st.markdown(f"<span style='opacity: 0.7; font-size: 0.85rem;'>{log['text']}</span>", unsafe_allow_html=True)
 
-
 # ----------------------------- Main Layout -----------------------------
 
 left_col, spacer_col, right_col = st.columns([1, 0.25, 1.4])
@@ -368,7 +341,6 @@ with left_col:
     cat_cols = st.columns(len(CATEGORIES), gap="small")
     for col, cat in zip(cat_cols, CATEGORIES):
         with col:
-            # Added hotkey text to the button label
             st.button(
                 f"{cat} [{CAT_KEYS[cat]}]",
                 key=f"cat_btn_{cat}",
@@ -411,7 +383,6 @@ with spacer_col:
     st.empty()
 
 with right_col:
-    # ----------------------------- Apply filters -----------------------------
     filtered = tasks
     if search:
         filtered = [t for t in filtered if search.lower() in t["text"].lower()]
@@ -435,7 +406,6 @@ with right_col:
     
     st.write("")
 
-    # ----------------------------- Task list -----------------------------
     if not filtered:
         st.caption("No tasks match your filters yet.")
     else:
@@ -454,8 +424,6 @@ with right_col:
                         
                 with col2:
                     done_class = "is-done" if t["done"] else ""
-                    
-                    # Logic to check if the task is brand new (less than 2 seconds old) to trigger the animation
                     created_time = datetime.fromisoformat(t["created_at"])
                     is_new_task = (now_time - created_time).total_seconds() < 2
                     anim_class = "new-task-anim" if is_new_task else ""
@@ -550,12 +518,12 @@ components.html(
                 background-color: rgba(128, 128, 128, 0.9); 
                 color: #fff;
                 padding: 8px 16px;
-                border-radius: 4px;
-                font-size: 0.85rem;
-                font-weight: 500;
+                border-radius: 6px;
+                font-size: 0.9rem;
+                font-weight: 600;
                 opacity: 0;
                 transform: translateY(10px);
-                transition: all 0.2s ease;
+                transition: all 0.2s ease, background-color 0.2s ease;
                 pointer-events: none;
                 z-index: 999999;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.2);
@@ -569,7 +537,6 @@ components.html(
 
         const indicator = doc.createElement('div');
         indicator.id = 'enter-indicator';
-        indicator.innerText = 'Press Enter to add';
         doc.body.appendChild(indicator);
     }
 
@@ -585,6 +552,14 @@ components.html(
 
             if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
+                // Color mapping for phases
+                if (doc.activeElement === taskInput) {
+                    indicator.innerText = 'Enter to lock text & set options';
+                    indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)'; // Orange
+                } else {
+                    indicator.innerText = 'Enter again to add task';
+                    indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)'; // Green
+                }
             } else {
                 indicator.classList.remove('visible');
             }
@@ -602,44 +577,53 @@ components.html(
             
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
+            const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
+            const key = e.key.toLowerCase();
+            const isHotkey = ['1','2','3','4','5','6','h','w','s','p','m','l'].includes(key);
 
-            // ---------------- HOTKEYS (Only fire if not typing in a box) ----------------
+            // ---------------- HOTKEYS & AUTO-FOCUS ----------------
             if (!isTyping) {
-                const key = e.key.toLowerCase();
-                
-                // Helper to click a button by matching its text
-                const clickBtn = (textFragment) => {
-                    const buttons = Array.from(doc.querySelectorAll('button'));
-                    const btn = buttons.find(b => b.innerText.includes(textFragment));
-                    if(btn) btn.click();
-                };
+                if (hasText && isHotkey) {
+                    // PHASE 2: Lock text, apply hotkeys without typing
+                    e.preventDefault(); 
+                    
+                    const clickBtn = (textFragment) => {
+                        const buttons = Array.from(doc.querySelectorAll('button'));
+                        const btn = buttons.find(b => b.innerText.includes(textFragment));
+                        if(btn) btn.click();
+                    };
 
-                // Due Dates (1-6)
-                if (key === '1') clickBtn('Today');
-                if (key === '2') clickBtn('Tomorrow');
-                if (key === '3') clickBtn('This week');
-                if (key === '4') clickBtn('Next week');
-                if (key === '5') clickBtn('Custom');
-                if (key === '6') clickBtn('No date');
-
-                // Categories (H, W, S)
-                if (key === 'h') clickBtn('House');
-                if (key === 'w') clickBtn('Work');
-                if (key === 's') clickBtn('Study');
-
-                // Priorities (P, M, L)
-                if (key === 'p') clickBtn('High');
-                if (key === 'm') clickBtn('Medium');
-                if (key === 'l') clickBtn('Low');
+                    if (key === '1') clickBtn('Today');
+                    if (key === '2') clickBtn('Tomorrow');
+                    if (key === '3') clickBtn('This week');
+                    if (key === '4') clickBtn('Next week');
+                    if (key === '5') clickBtn('Custom');
+                    if (key === '6') clickBtn('No date');
+                    
+                    if (key === 'h') clickBtn('House');
+                    if (key === 'w') clickBtn('Work');
+                    if (key === 's') clickBtn('Study');
+                    
+                    if (key === 'p') clickBtn('High');
+                    if (key === 'm') clickBtn('Medium');
+                    if (key === 'l') clickBtn('Low');
+                    
+                    return; 
+                } 
+                else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && taskInput) {
+                    // PHASE 1: Focus input if nothing is typed yet
+                    taskInput.focus();
+                }
             }
 
+            // ---------------- UNDO / REDO ----------------
             if ((e.ctrlKey || e.metaKey) && !isTyping) {
-                if (e.key.toLowerCase() === 'z') {
+                if (key === 'z') {
                     e.preventDefault();
                     const buttons = Array.from(doc.querySelectorAll('button'));
                     const undoBtn = buttons.find(b => b.innerText.includes('Undo'));
                     if (undoBtn && !undoBtn.disabled) undoBtn.click();
-                } else if (e.key.toLowerCase() === 'y') {
+                } else if (key === 'y') {
                     e.preventDefault();
                     const buttons = Array.from(doc.querySelectorAll('button'));
                     const redoBtn = buttons.find(b => b.innerText.includes('Redo'));
@@ -647,29 +631,27 @@ components.html(
                 }
             }
 
-            if (!taskInput) return;
-
-            if (activeTag !== 'input' && activeTag !== 'textarea') {
-                if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                    taskInput.focus();
-                }
-            }
-
-            if (e.key === 'Enter') {
+            // ---------------- ENTER KEY ----------------
+            if (e.key === 'Enter' && taskInput) {
                 if (activeTag === 'input' && doc.activeElement !== taskInput) return; 
                 
-                if (taskInput.value.trim().length > 0) {
+                if (hasText) {
                     e.preventDefault(); 
-                    taskInput.blur(); 
                     
-                    setTimeout(() => {
-                        const buttons = doc.querySelectorAll('button');
-                        buttons.forEach(btn => {
-                            if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
-                                btn.click();
-                            }
-                        });
-                    }, 150); 
+                    if (isTyping && doc.activeElement === taskInput) {
+                        // PHASE 1 to 2 transition: Remove focus so hotkeys can trigger
+                        taskInput.blur(); 
+                    } else {
+                        // PHASE 2 to finish: Submit the form
+                        setTimeout(() => {
+                            const buttons = doc.querySelectorAll('button');
+                            buttons.forEach(btn => {
+                                if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
+                                    btn.click();
+                                }
+                            });
+                        }, 150); 
+                    }
                 }
             }
         });
