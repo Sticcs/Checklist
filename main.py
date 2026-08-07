@@ -187,7 +187,6 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         
-        # Wipes subtask cache so they correctly update to the new parent status
         subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         for s in subtasks:
             key = f"subchk_{s['id']}"
@@ -236,10 +235,8 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
-        # Adding an incomplete subtask means the parent task is no longer complete
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         
-        # Wipes parent task cache so it unchecks itself
         parent_key = f"chk_{task_id}"
         if parent_key in st.session_state:
             del st.session_state[parent_key]
@@ -397,16 +394,6 @@ st.markdown(
         background-color: rgba(255, 255, 255, 0.85) !important;
         box-shadow: 5px 0 25px rgba(0,0,0,0.15);
         backdrop-filter: blur(10px);
-    }
-    
-    /* Higher opacity, blur, and contrast in light mode to fix legibility issues */
-    body.custom-light .main .block-container {
-        background-color: rgba(255, 255, 255, 0.96) !important;
-        border-radius: 16px;
-        padding: 2rem;
-        margin-top: 2rem;
-        backdrop-filter: blur(12px) !important; 
-        box-shadow: 0 4px 24px rgba(0,0,0,0.08) !important;
     }
     
     h1, h2, h3, h4 {
@@ -641,6 +628,7 @@ else:
     st.markdown(
         """
         <style>
+        /* --- Right List Column Scrolling --- */
         section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3) {
             height: 88vh !important;
             max-height: 88vh !important;
@@ -652,6 +640,35 @@ else:
         }
         section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(3)::-webkit-scrollbar {
             display: none !important;
+        }
+
+        /* --- Left Control Panel (Glassmorphism & Legibility) --- */
+        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 1.5rem;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            height: fit-content; /* prevents stretching to match the right column */
+        }
+        body.custom-dark section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
+            background: rgba(14, 17, 23, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Captions: Category, Priority, Due */
+        section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) div[data-testid="stCaptionContainer"] p {
+            color: #2c3e50 !important;
+            font-weight: 700 !important;
+            font-size: 0.85rem !important;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 0.5rem;
+        }
+        body.custom-dark section.main div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) div[data-testid="stCaptionContainer"] p {
+            color: #ecf0f1 !important;
         }
         </style>
         """,
