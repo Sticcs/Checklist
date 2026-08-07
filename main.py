@@ -242,7 +242,7 @@ st.markdown(
         margin-bottom: 1.5rem;
         margin-top: 0.5rem;
         transition: opacity 0.6s ease-in-out;
-        min-height: 4rem; /* Prevents layout jump when fading */
+        min-height: 4rem; 
         display: flex;
         align-items: center;
     }
@@ -331,17 +331,24 @@ st.markdown(
         font-size: 0.75rem;
     }
     
+    /* Smooth Transitions for ALL Streamlit Buttons */
+    div[data-testid="stButton"] button { 
+        width: 100%;
+        height: auto !important;
+        padding: 0.4rem 0.2rem !important;
+        transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.1s ease !important;
+    }
+    
+    div[data-testid="stButton"] button:active {
+        transform: scale(0.97) !important;
+    }
+    
     .stButton button p, .stButton button * {
         white-space: normal !important;
         line-height: 1.2 !important;
         margin: 0 !important;
         font-size: 0.85rem !important;
         text-align: center;
-    }
-    div[data-testid="column"] button { 
-        width: 100%;
-        height: auto !important;
-        padding: 0.4rem 0.2rem !important;
     }
     
     div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
@@ -421,7 +428,6 @@ else:
         "No date": lambda: None,
     }
 
-    # Tracking button state logic
     def set_category(cat): 
         st.session_state.new_category = cat
         st.session_state.options_modified = True
@@ -502,8 +508,7 @@ else:
     left_col, spacer_col, right_col = st.columns([1, 0.25, 1.4])
 
     with left_col:
-        # Dynamic Quote Header & Hidden state tracking for JS
-        st.markdown("<div id='dynamic-header'>Let's get DOing.</div>", unsafe_allow_html=True)
+        st.markdown("<div id='dynamic-header'>Stay locked in.</div>", unsafe_allow_html=True)
         st.markdown(f"<div id='options-state' data-modified='{str(st.session_state.options_modified).lower()}' style='display:none;'></div>", unsafe_allow_html=True)
 
         st.text_input(
@@ -669,21 +674,27 @@ components.html(
     const doc = window.parent.document;
     
     // Dynamic Quotes logic
-    const quotes = ["Let's get DOing.", "Get things done.", "Conquer the day.", "Make it happen.", "Time to execute."];
+    const quotes = [
+        "Stay locked in.", 
+        "September is coming.", 
+        "Trust the data.", 
+        "Focus.", 
+        "Execute."
+    ];
+    
     let qIdx = 0;
     setInterval(() => {
         const header = doc.getElementById('dynamic-header');
         if (header) {
-            header.style.opacity = 0; // Fade out
+            header.style.opacity = 0; 
             setTimeout(() => {
                 qIdx = (qIdx + 1) % quotes.length;
                 header.innerText = quotes[qIdx];
-                header.style.opacity = 1; // Fade in
-            }, 600); // Wait for transition to finish
+                header.style.opacity = 1; 
+            }, 600); 
         }
     }, 8000); 
 
-    // Theme switching tracker
     setInterval(() => {
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\d+/g);
@@ -741,11 +752,9 @@ components.html(
                 if(inp.placeholder === "E.g., Review Big O time complexity") taskInput = inp;
             });
             
-            // Check Python options state
             const optState = doc.getElementById('options-state');
             const isModified = optState ? optState.getAttribute('data-modified') === 'true' : false;
             
-            // Find Add Task button
             const buttons = Array.from(doc.querySelectorAll('button'));
             const addTaskBtn = buttons.find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
             
@@ -764,16 +773,15 @@ components.html(
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
-                // Color the Add Task Button
                 if (addTaskBtn) {
                     if (isModified) {
-                        addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; // Green
+                        addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; 
                         addTaskBtn.style.borderColor = 'rgba(46, 204, 113, 1)';
                         addTaskBtn.style.color = 'white';
                         addTaskBtn.style.pointerEvents = 'auto';
                         addTaskBtn.style.opacity = '1';
                     } else {
-                        addTaskBtn.style.backgroundColor = 'rgba(243, 156, 18, 1)'; // Yellow
+                        addTaskBtn.style.backgroundColor = 'rgba(243, 156, 18, 1)'; 
                         addTaskBtn.style.borderColor = 'rgba(243, 156, 18, 1)';
                         addTaskBtn.style.color = 'white';
                         addTaskBtn.style.pointerEvents = 'auto';
@@ -784,7 +792,6 @@ components.html(
             } else {
                 indicator.classList.remove('visible');
                 
-                // Grey out the Add Task button
                 if (addTaskBtn) {
                     addTaskBtn.style.backgroundColor = 'rgba(128, 128, 128, 0.4)'; 
                     addTaskBtn.style.borderColor = 'transparent';
