@@ -137,6 +137,10 @@ PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
 CATEGORIES = ["House", "Work", "Study"]
 PRIORITIES = ["High", "Medium", "Low"]
 
+# Key mappings for UI display
+CAT_KEYS = {"House": "H", "Work": "W", "Study": "S"}
+PRI_KEYS = {"High": "P", "Medium": "M", "Low": "L"}
+
 st.markdown(
     """
     <style>
@@ -157,7 +161,7 @@ st.markdown(
         background: transparent !important;
     }
 
-    /* Dark Mode specific (Driven by JS Class) */
+    /* Dark Mode specific */
     body.custom-dark .stApp {
         background-image: url("https://images.unsplash.com/photo-1518800524495-b963b722bd92?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTh8fG1pbmltYWwlMjBkYXJrfGVufDB8fDB8fHww") !important;
     }
@@ -173,9 +177,9 @@ st.markdown(
         backdrop-filter: blur(8px);
     }
 
-    /* Light Mode specific (Driven by JS Class) */
+    /* Light Mode specific */
     body.custom-light .stApp {
-        background-image: url("https://img.magnific.com/free-photo/faux-watermelon-peperomia-plant-light-gray-background_53876-142828.jpg?semt=ais_test_b&w=740&q=80") !important;
+        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     body.custom-light [data-testid="stSidebar"] {
         background-color: rgba(255, 255, 255, 0.85) !important;
@@ -215,6 +219,15 @@ st.markdown(
     }
     .task-title.is-done {
         text-decoration: line-through;
+    }
+    
+    /* Smooth Pop-in Animation for New Tasks */
+    @keyframes slideInDown {
+        0% { opacity: 0; transform: translateY(-20px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    .new-task-anim {
+        animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     
     /* Priority Accent Lines */
@@ -355,8 +368,9 @@ with left_col:
     cat_cols = st.columns(len(CATEGORIES), gap="small")
     for col, cat in zip(cat_cols, CATEGORIES):
         with col:
+            # Added hotkey text to the button label
             st.button(
-                cat,
+                f"{cat} [{CAT_KEYS[cat]}]",
                 key=f"cat_btn_{cat}",
                 on_click=set_category,
                 args=(cat,),
@@ -368,7 +382,7 @@ with left_col:
     for col, pri in zip(pri_cols, PRIORITIES):
         with col:
             st.button(
-                pri,
+                f"{pri} [{PRI_KEYS[pri]}]",
                 key=f"pri_btn_{pri}",
                 on_click=set_priority,
                 args=(pri,),
@@ -377,10 +391,10 @@ with left_col:
 
     st.caption("Due")
     due_cols = st.columns(len(DUE_PRESETS), gap="small")
-    for col, preset in zip(due_cols, DUE_PRESETS.keys()):
+    for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
         with col:
             st.button(
-                preset,
+                f"{preset} [{i+1}]",
                 key=f"due_btn_{preset}",
                 on_click=set_due_preset,
                 args=(preset,),
@@ -426,6 +440,8 @@ with right_col:
         st.caption("No tasks match your filters yet.")
     else:
         today = date.today().isoformat()
+        now_time = datetime.now()
+        
         for t in filtered:
             with st.container():
                 col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
@@ -439,6 +455,11 @@ with right_col:
                 with col2:
                     done_class = "is-done" if t["done"] else ""
                     
+                    # Logic to check if the task is brand new (less than 2 seconds old) to trigger the animation
+                    created_time = datetime.fromisoformat(t["created_at"])
+                    is_new_task = (now_time - created_time).total_seconds() < 2
+                    anim_class = "new-task-anim" if is_new_task else ""
+                    
                     tags_html = f'<span class="badge">{t["category"]}</span>'
                     if t["due_date"]:
                         overdue = (not t["done"]) and t["due_date"] < today
@@ -447,7 +468,7 @@ with right_col:
                         
                     st.markdown(
                         f"""
-                        <div class="task-row border-{t['priority']} {done_class}">
+                        <div class="task-row border-{t['priority']} {done_class} {anim_class}">
                             <div class="task-title {done_class}">{t['text']}</div>
                             <div class="meta-tags">{tags_html}</div>
                         </div>
@@ -504,9 +525,6 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // 1. DYNAMIC THEME TRACKER
-    // Streamlit toggles themes by changing the background color in its root CSS.
-    // This constantly checks that color and assigns a class to the body so our custom CSS updates properly.
     setInterval(() => {
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\d+/g);
@@ -522,8 +540,6 @@ components.html(
         }
     }, 200);
 
-
-    // 2. ENTER INDICATOR & KEYBOARD SHORTCUTS
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
         style.innerHTML = `
@@ -586,6 +602,36 @@ components.html(
             
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
+
+            // ---------------- HOTKEYS (Only fire if not typing in a box) ----------------
+            if (!isTyping) {
+                const key = e.key.toLowerCase();
+                
+                // Helper to click a button by matching its text
+                const clickBtn = (textFragment) => {
+                    const buttons = Array.from(doc.querySelectorAll('button'));
+                    const btn = buttons.find(b => b.innerText.includes(textFragment));
+                    if(btn) btn.click();
+                };
+
+                // Due Dates (1-6)
+                if (key === '1') clickBtn('Today');
+                if (key === '2') clickBtn('Tomorrow');
+                if (key === '3') clickBtn('This week');
+                if (key === '4') clickBtn('Next week');
+                if (key === '5') clickBtn('Custom');
+                if (key === '6') clickBtn('No date');
+
+                // Categories (H, W, S)
+                if (key === 'h') clickBtn('House');
+                if (key === 'w') clickBtn('Work');
+                if (key === 's') clickBtn('Study');
+
+                // Priorities (P, M, L)
+                if (key === 'p') clickBtn('High');
+                if (key === 'm') clickBtn('Medium');
+                if (key === 'l') clickBtn('Low');
+            }
 
             if ((e.ctrlKey || e.metaKey) && !isTyping) {
                 if (e.key.toLowerCase() === 'z') {
