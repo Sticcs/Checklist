@@ -243,7 +243,9 @@ def add_subtask(task_id, text, username):
             (task_id, text, datetime.now().isoformat()),
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+        
         st.session_state[f"chk_{task_id}"] = False
+            
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
 
@@ -341,7 +343,8 @@ PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2}
 CATEGORIES = ["House", "Work", "Study", "Personal", "Custom"]
 PRIORITIES = ["High", "Medium", "Low"]
 
-CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "P", "Custom": "C"}
+# Removed 'C' from Custom to prevent Streamlit cache menu clash
+CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "P", "Custom": ""}
 PRI_KEYS = {"High": "T", "Medium": "M", "Low": "L"}
 
 st.markdown(
@@ -600,6 +603,24 @@ st.markdown(
         box-shadow: 0 0 0 1px rgba(46, 204, 113, 0.5), 0 4px 12px rgba(46, 204, 113, 0.1) !important;
         transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
     }
+    
+    /* First Task Prompt Animation */
+    .first-task-prompt {
+        color: rgba(46, 204, 113, 1);
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-top: -12px;
+        margin-bottom: 12px;
+        margin-left: 4px;
+        animation: subtle-bounce 2s infinite;
+    }
+    body.custom-dark .first-task-prompt {
+        color: rgba(46, 204, 113, 0.9);
+    }
+    @keyframes subtle-bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(3px); }
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -843,13 +864,17 @@ else:
             key="task_input",
             label_visibility="collapsed",
         )
+        
+        if not tasks:
+            st.markdown("<div class='first-task-prompt'>↑ Type your first task here and press Enter</div>", unsafe_allow_html=True)
 
         st.caption("Category")
         cat_cols = st.columns(len(CATEGORIES), gap="small")
         for col, cat in zip(cat_cols, CATEGORIES):
             with col:
+                btn_label = f"{cat} [{CAT_KEYS[cat]}]" if CAT_KEYS[cat] else cat
                 st.button(
-                    f"{cat} [{CAT_KEYS[cat]}]",
+                    btn_label,
                     key=f"cat_btn_{cat}",
                     on_click=set_category,
                     args=(cat,),
@@ -1389,11 +1414,12 @@ components.html(
             const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
             const key = e.key.toLowerCase();
             
-            const isHotkey = ['1','2','3','4','5','6','h','w','s','p','c','t','m','l'].includes(key);
+            // "c" is completely eliminated from the hotkey list!
+            const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
                 // Intercept and destroy Streamlit native hotkeys for our mapped keys
-                if (isHotkey || key === 'c' || key === '/') {
+                if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -1438,7 +1464,8 @@ components.html(
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
-                        const btn = buttons.find(b => b.innerText.includes(textFragment) || b.innerText.trim() === textFragment);
+                        // Exact match handling to avoid conflicts
+                        const btn = buttons.find(b => b.innerText.includes(textFragment));
                         if(btn) {
                             const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
                             if(parentRow) {
@@ -1468,7 +1495,6 @@ components.html(
                     if (key === 'w') clickBtn('Work [W]');
                     if (key === 's') clickBtn('Study [S]');
                     if (key === 'p') clickBtn('Personal [P]');
-                    if (key === 'c') clickBtn('Custom [C]');
                     
                     if (key === 't') clickBtn('High [T]');
                     if (key === 'm') clickBtn('Medium [M]');
