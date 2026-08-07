@@ -19,11 +19,25 @@ if "undo_stack" not in st.session_state:
     st.session_state.undo_stack = []
 if "redo_stack" not in st.session_state:
     st.session_state.redo_stack = []
+if "active_task_id" not in st.session_state:
+    st.session_state.active_task_id = None
+if "just_added_task_id" not in st.session_state:
+    st.session_state.just_added_task_id = None
 
 # Global Toast Queue
 if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
+
+def _sync_checkboxes_with_db(username):
+    """Explicitly forces Streamlit to overwrite its checkbox cache with the true DB state."""
+    tasks = get_tasks(username)
+    for t in tasks:
+        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
+        
+    subtasks = get_all_subtasks(username)
+    for s in subtasks:
+        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
 
 # ----------------------------- Security & Auth -----------------------------
 
@@ -150,6 +164,7 @@ def perform_undo(username):
         last_state = st.session_state.undo_stack.pop()
         _restore_state(last_state["tasks"], username)
         _restore_subtasks(last_state["subtasks"], username)
+        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo(username):
@@ -158,23 +173,33 @@ def perform_redo(username):
         next_state = st.session_state.redo_stack.pop()
         _restore_state(next_state["tasks"], username)
         _restore_subtasks(next_state["subtasks"], username)
+        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
-        conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username) "
             "VALUES (?, 0, ?, ?, ?, ?, ?)",
             (text, priority, category or "General", due_date, datetime.now().isoformat(), username),
         )
+        new_id = cur.lastrowid
         conn.commit()
     st.session_state.pending_toast = "✅ Task added"
+    return new_id
 
 def set_done(task_id, done, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
+        conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
+        
+        subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
+        for s in subtasks:
+            st.session_state[f"subchk_{s['id']}"] = bool(done)
+                
         conn.commit()
     status = "completed" if done else "unmarked"
     st.session_state.pending_toast = f"✅ Task {status}"
@@ -217,19 +242,44 @@ def add_subtask(task_id, text, username):
             "INSERT INTO subtasks (task_id, text, done, created_at) VALUES (?, ?, 0, ?)",
             (task_id, text, datetime.now().isoformat()),
         )
+        conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+        
+        st.session_state[f"chk_{task_id}"] = False
+            
         conn.commit()
     st.session_state.pending_toast = "➕ Subtask added"
 
-def set_subtask_done(subtask_id, done, username):
+def set_subtask_done(subtask_id, task_id, done, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("UPDATE subtasks SET done = ? WHERE id = ?", (int(done), subtask_id))
+        
+        subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
+        if subtasks:
+            all_done = all(s['done'] for s in subtasks)
+            parent_key = f"chk_{task_id}"
+            
+            if not done:
+                conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+                st.session_state[parent_key] = False
+            elif all_done:
+                conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
+                st.session_state[parent_key] = True
+                    
         conn.commit()
 
-def delete_subtask(subtask_id, username):
+def delete_subtask(subtask_id, task_id, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("DELETE FROM subtasks WHERE id = ?", (subtask_id,))
+        
+        subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
+        if subtasks:
+            all_done = all(s['done'] for s in subtasks)
+            if all_done:
+                conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
+                st.session_state[f"chk_{task_id}"] = True
+                    
         conn.commit()
     st.session_state.pending_toast = "🗑️ Subtask deleted"
 
@@ -237,7 +287,13 @@ def mark_all_completed(username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = 1 WHERE username = ?", (username,))
+        conn.execute(
+            "UPDATE subtasks SET done = 1 WHERE task_id IN (SELECT id FROM tasks WHERE username = ?)", 
+            (username,)
+        )
         conn.commit()
+    
+    _sync_checkboxes_with_db(username)
     st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
@@ -249,6 +305,38 @@ def update_task(task_id, text, priority, category, due_date, username):
         )
         conn.commit()
     st.session_state.pending_toast = "💾 Task updated"
+
+# ----------------------------- Callback Handlers -----------------------------
+
+def handle_task_check(task_id, current_done, username):
+    # active_task_id is NOT touched here, ensuring checking a box never forces the subtask expander to open.
+    key = f"chk_{task_id}"
+    val = st.session_state.get(key)
+    new_done = not current_done if val is None else val
+    set_done(task_id, new_done, username)
+
+def handle_task_delete(task_id, username):
+    st.session_state.active_task_id = None
+    delete_task(task_id, username)
+
+def handle_subtask_add(task_id, username):
+    st.session_state.active_task_id = task_id
+    key = f"new_sub_{task_id}"
+    new_text = st.session_state.get(key, "").strip()
+    if new_text:
+        add_subtask(task_id, new_text, username)
+        st.session_state[key] = "" 
+
+def handle_subtask_check(subtask_id, task_id, current_done, username):
+    st.session_state.active_task_id = task_id
+    key = f"subchk_{subtask_id}"
+    val = st.session_state.get(key)
+    new_done = not current_done if val is None else val
+    set_subtask_done(subtask_id, task_id, new_done, username)
+
+def handle_subtask_delete(subtask_id, task_id, username):
+    st.session_state.active_task_id = task_id
+    delete_subtask(subtask_id, task_id, username)
 
 # ----------------------------- Styles & Theming -----------------------------
 
@@ -266,6 +354,14 @@ st.markdown(
         padding-top: 2rem !important;
     }
 
+    /* Smooth transitions for main content when sidebar collapses */
+    section.main, [data-testid="stMain"] {
+        transition: margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    }
+    .block-container {
+        transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    }
+
     .stApp {
         background-attachment: fixed !important;
         background-size: cover !important;
@@ -274,11 +370,12 @@ st.markdown(
     }
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
-        transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, background-color 0.3s ease !important;
     }
     [data-testid="stHeader"] {
         background: transparent !important;
     }
+    
     body.custom-dark .stApp {
         background-image: url("https://images.unsplash.com/photo-1518800524495-b963b722bd92?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTh8fG1pbmltYWwlMjBkYXJrfGVufDB8fDB8fHww") !important;
     }
@@ -286,13 +383,7 @@ st.markdown(
         background-color: rgba(14, 17, 23, 0.75) !important;
         backdrop-filter: blur(10px);
     }
-    body.custom-dark .main .block-container {
-        background-color: rgba(14, 17, 23, 0.65);
-        border-radius: 16px;
-        padding: 2rem;
-        margin-top: 2rem;
-        backdrop-filter: blur(8px);
-    }
+    
     body.custom-light .stApp {
         background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
@@ -301,46 +392,43 @@ st.markdown(
         box-shadow: 5px 0 25px rgba(0,0,0,0.15);
         backdrop-filter: blur(10px);
     }
-    body.custom-light .main .block-container {
-        background-color: rgba(255, 255, 255, 0.85);
-        border-radius: 16px;
-        padding: 2rem;
-        margin-top: 2rem;
-        backdrop-filter: blur(8px);
-    }
+    
     h1, h2, h3, h4 {
         font-weight: 500 !important;
         letter-spacing: -0.5px;
     }
     
-    /* Dynamic Header Styles */
-    #dynamic-header {
-        font-size: 2.75rem;
-        font-weight: 700;
-        margin-bottom: 1.5rem;
-        margin-top: 0.5rem;
-        transition: opacity 0.6s ease-in-out;
-        min-height: 4rem; 
+    /* --- Streamlit Checkbox Alignment Fix --- */
+    div[data-testid="stCheckbox"] label p {
+        display: none !important; 
+    }
+    div[data-testid="stCheckbox"] label {
+        min-height: 1.5rem !important;
+        padding-bottom: 0 !important;
+    }
+    div[data-testid="stCheckbox"] {
+        min-height: 1.5rem !important;
         display: flex;
         align-items: center;
     }
-    
+
     .task-row {
         padding: 0.8rem 0;
         border-bottom: 1px solid rgba(128, 128, 128, 0.25);
         display: flex;
         flex-direction: column;
         justify-content: center;
-        transition: opacity 0.2s ease;
+        transition: opacity 0.05s ease;
     }
     .task-row.is-done { opacity: 0.4; }
     .task-title {
         font-size: 1.05rem;
         font-weight: 400;
-        margin-bottom: 4px;
+        margin-bottom: 0;
         display: flex;
         align-items: center;
         gap: 8px;
+        transition: color 0.05s ease;
     }
     .task-title.is-done { text-decoration: line-through; }
     
@@ -413,7 +501,7 @@ st.markdown(
         width: 100%;
         height: auto !important;
         padding: 0.4rem 0.2rem !important;
-        transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.1s ease !important;
+        transition: background-color 0.05s ease, border-color 0.05s ease, color 0.05s ease, transform 0.05s ease !important;
     }
     div[data-testid="stButton"] button:active {
         transform: scale(0.97) !important;
@@ -441,7 +529,6 @@ st.markdown(
         margin-top: 4rem;
     }
 
-    /* Task card container (wraps task row + its subtasks) */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
@@ -458,7 +545,6 @@ st.markdown(
         box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
 
-    /* Smooth accordion feel for the subtasks dropdown */
     div[data-testid="stExpander"] {
         border: none !important;
         background: transparent !important;
@@ -486,10 +572,20 @@ st.markdown(
         font-size: 0.92rem;
         display: flex;
         align-items: center;
+        transition: opacity 0.05s ease;
+        margin: 0 !important;
+        padding: 0 !important;
     }
     .subtask-row.is-done {
         text-decoration: line-through;
         opacity: 0.5;
+    }
+    
+    /* Elegant Minimalist Focus Border for Editing Subtasks */
+    .green-focus-border {
+        border-color: rgba(46, 204, 113, 0.8) !important;
+        box-shadow: 0 0 0 1px rgba(46, 204, 113, 0.5), 0 4px 12px rgba(46, 204, 113, 0.1) !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
     }
     </style>
     """,
@@ -530,8 +626,83 @@ if not st.session_state.logged_in:
                         st.error("Username already exists. Pick another one.")
                 else:
                     st.warning("Please fill in both fields.")
+                    
+        st.write("---")
+        if st.button("Continue as Guest", type="secondary", use_container_width=True):
+            st.session_state.logged_in = True
+            st.session_state.username = "guest"
+            st.rerun()
 
 else:
+    st.markdown(
+        """
+        <style>
+        /* --- Right List Column Scrolling --- */
+        div[data-testid="column"]:has(#right-col-anchor) {
+            height: 88vh !important;
+            max-height: 88vh !important;
+            overflow-y: scroll !important;
+            scroll-behavior: smooth !important;
+            padding-right: 15px !important;
+            -ms-overflow-style: none !important; 
+            scrollbar-width: none !important; 
+        }
+        div[data-testid="column"]:has(#right-col-anchor)::-webkit-scrollbar {
+            display: none !important;
+        }
+
+        /* --- Left Control Panel (Glassmorphism & Legibility) --- */
+        div[data-testid="column"]:has(#left-panel-marker) {
+            background: rgba(255, 255, 255, 0.65) !important;
+            padding: 1.5rem !important;
+            border-radius: 16px !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+            backdrop-filter: blur(12px) !important;
+            -webkit-backdrop-filter: blur(12px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.4) !important;
+            height: fit-content !important;
+        }
+        body.custom-dark div[data-testid="column"]:has(#left-panel-marker) {
+            background: rgba(14, 17, 23, 0.55) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+        }
+
+        /* Captions: Category, Priority, Due */
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
+            color: #2c3e50 !important;
+            font-weight: 700 !important;
+            font-size: 0.85rem !important;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 0.5rem;
+        }
+        body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
+            color: #ecf0f1 !important;
+        }
+        
+        /* Fixed-Height Quote Wrapper for 0 Layout Shift */
+        .quote-wrapper {
+            height: 90px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        #dynamic-header {
+            position: absolute;
+            width: 100%;
+            font-size: clamp(1.8rem, 3vw, 2.75rem);
+            font-weight: 700;
+            line-height: 1.1;
+            transition: opacity 0.5s ease-in-out;
+            margin: 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
@@ -580,9 +751,9 @@ else:
                 if not cat:
                     cat = "General"
                     
-            add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
+            new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
+            st.session_state.just_added_task_id = new_id
             
-            # Reset
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
             if "custom_cat_input" in st.session_state:
@@ -600,6 +771,7 @@ else:
             st.session_state.username = ""
             st.session_state.undo_stack.clear()
             st.session_state.redo_stack.clear()
+            st.session_state.active_task_id = None
             st.rerun()
             
         st.write("---")
@@ -648,7 +820,8 @@ else:
     left_col, spacer_col, right_col = st.columns([1, 0.25, 1.4])
 
     with left_col:
-        st.markdown("<div id='dynamic-header'>Stay locked in.</div>", unsafe_allow_html=True)
+        st.markdown("<div id='left-panel-marker'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='quote-wrapper'><div id='dynamic-header'>Stay locked in.</div></div>", unsafe_allow_html=True)
         st.markdown(f"<div id='options-state' data-modified='{str(st.session_state.options_modified).lower()}' style='display:none;'></div>", unsafe_allow_html=True)
 
         st.text_input(
@@ -670,7 +843,6 @@ else:
                     type="primary" if st.session_state.new_category == cat else "secondary",
                 )
                 
-        # Custom tag input dynamically reveals itself
         if st.session_state.new_category == "Custom":
             st.text_input("Custom Category", placeholder="E.g., Groceries", key="custom_cat_input", label_visibility="collapsed")
             if st.session_state.focus_custom:
@@ -714,6 +886,14 @@ else:
         st.empty()
 
     with right_col:
+        st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
+        
+        # Deploy tracker if task was just added
+        just_added = st.session_state.get("just_added_task_id")
+        if just_added:
+            st.markdown(f"<div id='latest-task-tracker' data-task-id='{just_added}'></div>", unsafe_allow_html=True)
+            st.session_state.just_added_task_id = None
+        
         filtered = tasks
         if search:
             filtered = [t for t in filtered if search.lower() in t["text"].lower()]
@@ -745,13 +925,14 @@ else:
             
             for t in filtered:
                 with st.container(border=True):
+                    # Hidden marker to let JS find this exact task wrapper
+                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
+                    
                     col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
                     
                     with col1:
-                        new_done = st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}")
-                        if new_done != bool(t["done"]):
-                            set_done(t["id"], new_done, st.session_state.username)
-                            st.rerun()
+                        st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}", 
+                                    on_change=handle_task_check, args=(t["id"], bool(t["done"]), st.session_state.username))
                             
                     with col2:
                         done_class = "is-done" if t["done"] else ""
@@ -780,9 +961,8 @@ else:
                             if st.button("Edit", key=f"edit_{t['id']}", help="Edit task"):
                                 st.session_state[f"editing_{t['id']}"] = True
                         with d2:
-                            if st.button("Del", key=f"del_{t['id']}", help="Delete task"):
-                                delete_task(t["id"], st.session_state.username)
-                                st.rerun()
+                            st.button("Del", key=f"del_{t['id']}", help="Delete task",
+                                      on_click=handle_task_delete, args=(t["id"], st.session_state.username))
 
                     # ---------------- Subtasks ----------------
                     subtasks = get_subtasks(t["id"])
@@ -795,14 +975,15 @@ else:
                         st.markdown('</div>', unsafe_allow_html=True)
 
                     expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
-                    with st.expander(expander_label, expanded=False):
+                    
+                    is_expanded = (st.session_state.active_task_id == t["id"])
+                    
+                    with st.expander(expander_label, expanded=is_expanded):
                         for s in subtasks:
                             sc1, sc2, sc3 = st.columns([0.5, 6.5, 1], vertical_alignment="center")
                             with sc1:
-                                s_done = st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}")
-                                if s_done != bool(s["done"]):
-                                    set_subtask_done(s["id"], s_done, st.session_state.username)
-                                    st.rerun()
+                                st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
+                                            on_change=handle_subtask_check, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username))
                             with sc2:
                                 sub_class = "is-done" if s["done"] else ""
                                 st.markdown(
@@ -810,25 +991,23 @@ else:
                                     unsafe_allow_html=True,
                                 )
                             with sc3:
-                                if st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask"):
-                                    delete_subtask(s["id"], st.session_state.username)
-                                    st.rerun()
+                                st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
+                                          on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
 
+                        st.caption("⚡ Press `/` to quickly start typing a subtask")
                         new_sc1, new_sc2 = st.columns([6, 1.5])
                         with new_sc1:
                             st.text_input(
                                 "New subtask",
                                 key=f"new_sub_{t['id']}",
-                                placeholder="Add a subtask...",
+                                placeholder="Add a subtask... (Press '/' to focus)",
                                 label_visibility="collapsed",
+                                on_change=handle_subtask_add, 
+                                args=(t['id'], st.session_state.username)
                             )
                         with new_sc2:
-                            if st.button("Add", key=f"addsub_{t['id']}", use_container_width=True):
-                                new_text = st.session_state.get(f"new_sub_{t['id']}", "").strip()
-                                if new_text:
-                                    add_subtask(t["id"], new_text, st.session_state.username)
-                                    st.session_state[f"new_sub_{t['id']}"] = ""
-                                    st.rerun()
+                            st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
+                                      on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
 
                     if st.session_state.get(f"editing_{t['id']}"):
                         with st.form(f"edit_form_{t['id']}"):
@@ -886,13 +1065,13 @@ components.html(
                 qIdx = (qIdx + 1) % quotes.length;
                 header.innerText = quotes[qIdx];
                 header.style.opacity = 1; 
-            }, 600); 
+            }, 500); 
         }
     }, 8000); 
 
     setInterval(() => {
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-        const rgb = bg.match(/\\d+/g);
+        const rgb = bg.match(/\d+/g);
         if (rgb && rgb.length >= 3) {
             const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
             if (luma < 128) {
@@ -905,7 +1084,49 @@ components.html(
         }
     }, 200);
 
-    // Apply smooth transitions and REMOVE inline styling so native CSS takes over gracefully
+    if (!doc.getElementById('scroll-controls')) {
+        const controls = doc.createElement('div');
+        controls.id = 'scroll-controls';
+        controls.innerHTML = `
+            <button id="scroll-up" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); margin-bottom: 8px;">↑</button>
+            <button id="scroll-down" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);">↓</button>
+        `;
+        controls.style.cssText = 'position: fixed; right: 32px; bottom: 90px; display: flex; flex-direction: column; z-index: 9999; opacity: 0.7; transition: opacity 0.2s ease;';
+        
+        controls.onmouseover = () => controls.style.opacity = '1';
+        controls.onmouseout = () => controls.style.opacity = '0.7';
+
+        doc.body.appendChild(controls);
+
+        const getScrollCol = () => {
+            const anchor = doc.getElementById('right-col-anchor');
+            return anchor ? anchor.closest('div[data-testid="column"]') : null;
+        };
+
+        controls.querySelector('#scroll-up').onclick = () => {
+            const col = getScrollCol();
+            if(col) col.scrollTo({top: 0, behavior: 'smooth'});
+        };
+        controls.querySelector('#scroll-down').onclick = () => {
+            const col = getScrollCol();
+            if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
+        };
+        
+        setInterval(() => {
+            const col = getScrollCol();
+            if (col && !col.dataset.scrollBound) {
+                col.dataset.scrollBound = "true";
+                const savedScroll = sessionStorage.getItem('rightColScroll');
+                if (savedScroll !== null) {
+                    col.scrollTop = parseInt(savedScroll);
+                }
+                col.addEventListener('scroll', () => {
+                    sessionStorage.setItem('rightColScroll', col.scrollTop);
+                });
+            }
+        }, 300);
+    }
+
     setInterval(() => {
         const optionBtns = doc.querySelectorAll('div[data-testid="stButton"] button');
         optionBtns.forEach(btn => {
@@ -928,6 +1149,57 @@ components.html(
             }
         });
     }, 500);
+
+    doc.addEventListener('change', function(e) {
+        if (e.target && e.target.type === 'checkbox') {
+            const block = e.target.closest('div[data-testid="stHorizontalBlock"]');
+            const isSubtask = e.target.closest('div[data-testid="stExpanderDetails"]') !== null;
+            const container = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            const isChecked = e.target.checked;
+            
+            if (block) {
+                const row = block.querySelector('.task-row');
+                const subRow = block.querySelector('.subtask-row');
+                
+                if (row && !isSubtask) {
+                    if (isChecked) {
+                        row.classList.add('is-done');
+                        const title = row.querySelector('.task-title');
+                        if (title) title.classList.add('is-done');
+                    } else {
+                        row.classList.remove('is-done');
+                        const title = row.querySelector('.task-title');
+                        if (title) title.classList.remove('is-done');
+                    }
+                    
+                    if (container) {
+                        const subRows = container.querySelectorAll('.subtask-row');
+                        subRows.forEach(sr => {
+                            if (isChecked) sr.classList.add('is-done');
+                            else sr.classList.remove('is-done');
+                        });
+                    }
+                }
+                
+                if (subRow && isSubtask) {
+                    if (isChecked) {
+                        subRow.classList.add('is-done');
+                    } else {
+                        subRow.classList.remove('is-done');
+                    }
+                    
+                    if (!isChecked && container) {
+                        const parentRow = container.querySelector('.task-row');
+                        if (parentRow) {
+                            parentRow.classList.remove('is-done');
+                            const title = parentRow.querySelector('.task-title');
+                            if (title) title.classList.remove('is-done');
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
@@ -961,6 +1233,24 @@ components.html(
         doc.body.appendChild(indicator);
     }
 
+    // Elegant Focus border bindings for Subtasks (Robust Poller)
+    setInterval(() => {
+        const allCards = doc.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
+        let activeCard = null;
+
+        if (doc.activeElement && doc.activeElement.tagName.toLowerCase() === 'input' && doc.activeElement.placeholder && doc.activeElement.placeholder.includes('Add a subtask')) {
+            activeCard = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+        }
+
+        allCards.forEach(card => {
+            if (card === activeCard) {
+                card.classList.add('green-focus-border');
+            } else {
+                card.classList.remove('green-focus-border');
+            }
+        });
+    }, 50);
+
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
         
@@ -973,6 +1263,15 @@ components.html(
                 if(inp.placeholder === "E.g., Groceries") customInput = inp;
             });
             
+            const tracker = doc.getElementById('latest-task-tracker');
+            if (tracker) {
+                window.latestTaskId = tracker.getAttribute('data-task-id');
+                tracker.removeAttribute('id'); 
+            }
+            
+            const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
+            const isTyping = (activeTag === 'input' || activeTag === 'textarea');
+
             const optState = doc.getElementById('options-state');
             const isModified = optState ? optState.getAttribute('data-modified') === 'true' : false;
             
@@ -980,21 +1279,21 @@ components.html(
             const addTaskBtn = buttons.find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
             
             if (addTaskBtn) {
-                addTaskBtn.style.transition = 'background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease';
+                addTaskBtn.style.transition = 'background-color 0.05s ease, color 0.05s ease, border-color 0.05s ease';
             }
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
-                indicator.innerText = 'Enter to lock custom tag';
-                indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; // Purple for custom tag phase
+                indicator.innerText = 'Enter to confirm custom tag';
+                indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; 
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
                 if (doc.activeElement === taskInput) {
-                    indicator.innerText = 'Enter to lock text & set options';
+                    indicator.innerText = 'Enter to confirm text & set options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter again to add task';
+                    indicator.innerText = 'Enter again to do something else';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
@@ -1014,6 +1313,10 @@ components.html(
                     }
                 }
                 
+            } else if (!isTyping && window.latestTaskId) {
+                indicator.classList.add('visible');
+                indicator.innerText = 'Press / to add subtasks to your new task';
+                indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
             } else {
                 indicator.classList.remove('visible');
                 
@@ -1046,6 +1349,43 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','c','t','m','l'].includes(key);
 
             if (!isTyping) {
+                if (key === '/') {
+                    e.preventDefault();
+                    let targetInput = null;
+                    
+                    if (window.latestTaskId) {
+                        const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${window.latestTaskId}"]`);
+                        if (cardMarker) {
+                            const targetCard = cardMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                            if (targetCard) {
+                                const subInputs = targetCard.querySelectorAll('input[placeholder*="Add a subtask"]');
+                                if (subInputs.length > 0) targetInput = subInputs[0];
+                            }
+                        }
+                    }
+                    
+                    if (!targetInput) {
+                        const subInputs = Array.from(doc.querySelectorAll('input[placeholder*="Add a subtask"]'))
+                            .filter(inp => inp.getBoundingClientRect().height > 0);
+                        if (subInputs.length > 0) targetInput = subInputs[0];
+                    }
+                    
+                    if (targetInput) {
+                        const detailsEl = targetInput.closest('details');
+                        if (detailsEl && !detailsEl.open) {
+                            const summary = detailsEl.querySelector('summary');
+                            if (summary) summary.click();
+                        }
+                        
+                        setTimeout(() => {
+                            targetInput.focus();
+                        }, 50);
+                    }
+                    
+                    window.latestTaskId = null; 
+                    return;
+                }
+
                 if (hasText && isHotkey) {
                     e.preventDefault(); 
                     
@@ -1090,7 +1430,9 @@ components.html(
                     return; 
                 } 
                 else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && taskInput) {
-                    taskInput.focus();
+                    if (taskInput.value.trim().length === 0) {
+                        taskInput.focus();
+                    }
                 }
             }
 
@@ -1113,7 +1455,7 @@ components.html(
                 
                 if (customInput && doc.activeElement === customInput) {
                     e.preventDefault();
-                    customInput.blur(); // Escape the custom input without submitting the whole form
+                    customInput.blur(); 
                     return;
                 }
                 
