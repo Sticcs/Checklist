@@ -92,7 +92,11 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN username TEXT")
             conn.execute("UPDATE tasks SET username = 'guest' WHERE username IS NULL")
         except sqlite3.OperationalError:
-            pass 
+            pass
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS subtasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,8 +137,8 @@ def _restore_state(state_tasks, username):
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         for t in state_tasks:
             conn.execute(
-                "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (t['id'], t['text'], t['done'], t['priority'], t['category'], t['due_date'], t['created_at'], username)
+                "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (t['id'], t['text'], t['done'], t['priority'], t['category'], t['due_date'], t['created_at'], username, t.get('pinned', 0))
             )
         conn.commit()
 
@@ -196,6 +200,13 @@ def set_done(task_id, done, username):
         conn.commit()
     status = "completed" if done else "unmarked"
     st.session_state.pending_toast = f"✅ Task {status}"
+
+def set_pinned(task_id, pinned, username):
+    save_state_for_undo(username)
+    with closing(get_conn()) as conn:
+        conn.execute("UPDATE tasks SET pinned = ? WHERE id = ? AND username = ?", (int(pinned), task_id, username))
+        conn.commit()
+    st.session_state.pending_toast = "📌 Task pinned" if pinned else "📌 Task unpinned"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -293,6 +304,9 @@ def update_task(task_id, text, priority, category, due_date, username):
 
 def handle_task_toggle(task_id, current_done, username):
     set_done(task_id, not current_done, username)
+
+def handle_task_pin(task_id, current_pinned, username):
+    set_pinned(task_id, not current_pinned, username)
 
 def handle_task_delete(task_id, username):
     st.session_state.active_task_id = None
@@ -503,7 +517,13 @@ st.markdown(
         animation: pulse-urgent 1.5s infinite;
         line-height: 1;
     }
-    
+    .pin-badge {
+        font-size: 0.85rem;
+        margin-right: 2px;
+        transform: rotate(0deg);
+        display: inline-block;
+    }
+
     .profile-indicator {
         font-size: 0.85rem;
         font-weight: 500;
@@ -623,7 +643,9 @@ st.markdown(
         transition: opacity 0.15s ease;
         margin: 0 !important;
         padding: 0.5rem 0.1rem !important;
-        border-bottom: 1px solid rgba(128, 128, 128, 0.14);
+        /* Was 0.14 alpha, which is essentially invisible on a light background -
+           bumped enough to actually read as a minimalist divider on both themes. */
+        border-bottom: 1px solid rgba(128, 128, 128, 0.3);
     }
     .subtask-row.is-done {
         text-decoration: line-through;
@@ -828,9 +850,11 @@ else:
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
-    st.session_state.setdefault("new_category", "House")
-    st.session_state.setdefault("new_priority", "Medium")
-    st.session_state.setdefault("new_due_preset", "No date")
+    # None (not any real option) so no button starts pre-selected - the user has
+    # to actively choose a category/priority/due for every task.
+    st.session_state.setdefault("new_category", None)
+    st.session_state.setdefault("new_priority", None)
+    st.session_state.setdefault("new_due_preset", None)
     st.session_state.setdefault("new_due_custom", None)
     st.session_state.setdefault("options_modified", False)
     st.session_state.setdefault("focus_custom", False)
@@ -865,7 +889,7 @@ else:
 
     def submit_new_task():
         text = st.session_state.task_input.strip()
-        if text:
+        if text and st.session_state.new_category and st.session_state.new_priority and st.session_state.new_due_preset:
             due_date = DUE_PRESETS[st.session_state.new_due_preset]()
             cat = st.session_state.new_category
             if cat == "Custom":
@@ -890,9 +914,9 @@ else:
             # moment the text box clears. Since the buttons already *looked*
             # selected, nothing prompted a click to re-set those JS flags, so the
             # chain would get stuck and Due/Add would never appear.
-            st.session_state.new_category = "House"
-            st.session_state.new_priority = "Medium"
-            st.session_state.new_due_preset = "No date"
+            st.session_state.new_category = None
+            st.session_state.new_priority = None
+            st.session_state.new_due_preset = None
             st.session_state.new_due_custom = None
             if "custom_cat_input" in st.session_state:
                 st.session_state.custom_cat_input = ""
@@ -977,6 +1001,7 @@ else:
         st.header("Filters")
         search = st.text_input("Search", label_visibility="collapsed", placeholder="Search tasks...")
         status_filter = st.radio("Status", ["All", "Active", "Completed"], horizontal=True, label_visibility="collapsed")
+        pinned_filter = st.checkbox("📌 Pinned only")
 
         # `default=` only seeds st.multiselect the very first time it's created; on
         # later reruns Streamlit keeps whatever was last selected. If a category
@@ -1087,14 +1112,18 @@ else:
             filtered = [t for t in filtered if t["done"]]
         if category_filter:
             filtered = [t for t in filtered if t["category"] in category_filter]
+        if pinned_filter:
+            filtered = [t for t in filtered if t["pinned"]]
 
         if sort_by == "Priority":
             filtered.sort(key=lambda t: PRIORITY_ORDER.get(t["priority"], 3))
         elif sort_by == "Due date":
             filtered.sort(key=lambda t: (t["due_date"] is None, t["due_date"]))
-        # Completed tasks always float to the top, on top of whatever secondary
-        # sort was chosen above (list.sort is stable, so ties keep that order).
+        # Completed tasks float to the top of whatever secondary sort was chosen
+        # above, and pinned tasks float above *those* - list.sort is stable, so
+        # each pass only breaks ties left by the previous one.
         filtered.sort(key=lambda t: not t["done"])
+        filtered.sort(key=lambda t: not t["pinned"])
 
         st.write("")
         st.write("")
@@ -1122,7 +1151,7 @@ else:
             
             for t in filtered:
                 with st.container(border=True):
-                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' data-done='{str(bool(t['done'])).lower()}' style='display:none;'></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' data-done='{str(bool(t['done'])).lower()}' data-pinned='{str(bool(t['pinned'])).lower()}' style='display:none;'></div>", unsafe_allow_html=True)
                     
                     # Layout: Main task body (left), Stacked buttons (right)
                     col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
@@ -1144,7 +1173,8 @@ else:
                             if t["due_date"] == today and not t["done"]:
                                 urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
                         
-                        html_string = f"""<div class="task-row border-{t['priority']} {done_class} {anim_class}"><div class="task-title {done_class}"><span>{t['text']}</span>{urgent_html}</div><div class="meta-tags">{tags_html}</div></div>"""
+                        pin_html = '<span class="pin-badge" title="Pinned">📌</span>' if t["pinned"] else ""
+                        html_string = f"""<div class="task-row border-{t['priority']} {done_class} {anim_class}"><div class="task-title {done_class}">{pin_html}<span>{t['text']}</span>{urgent_html}</div><div class="meta-tags">{tags_html}</div></div>"""
                         
                         st.markdown(html_string, unsafe_allow_html=True)
                         
@@ -1238,6 +1268,9 @@ else:
                                         st.rerun()
                                         
                     with col_btns:
+                        st.button("📌", key=f"pin_{t['id']}",
+                                  on_click=handle_task_pin, args=(t["id"], bool(t["pinned"]), st.session_state.username),
+                                  use_container_width=True, type="primary" if t["pinned"] else "secondary")
                         if t["done"]:
                             st.button("↩️", key=f"tog_{t['id']}",
                                       on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
