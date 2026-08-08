@@ -193,6 +193,15 @@ def set_done(task_id, done, username):
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
+        
+        subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
+        if subtasks:
+            all_done = all(s['done'] for s in subtasks)
+            if not done:
+                conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
+            elif all_done:
+                conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
+                    
         conn.commit()
 
 def delete_task(task_id, username):
@@ -426,9 +435,9 @@ st.markdown(
     }
     .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     
-    .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
-    .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
-    .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
+    .border-High { border-left: 4px solid #e74c3c; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Medium { border-left: 4px solid #f39c12; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Low { border-left: 4px solid #3498db; padding-left: 12px; margin-left: -0.5rem; }
     
     .meta-tags {
         display: flex;
@@ -517,10 +526,13 @@ st.markdown(
         margin-top: 4rem;
     }
 
+    /* Target Task Container Explicitly - NO BORDER */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
+        border: none !important;
+        box-shadow: none !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -640,8 +652,8 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            l_user = st.text_input("Username", key="login_user", aria_label="Username")
-            l_pass = st.text_input("Password", type="password", key="login_pass", aria_label="Password")
+            l_user = st.text_input("Username", key="login_user")
+            l_pass = st.text_input("Password", type="password", key="login_pass")
             if st.button("Login", type="primary", use_container_width=True):
                 if verify_user(l_user, l_pass):
                     st.session_state.logged_in = True
@@ -651,8 +663,8 @@ if not st.session_state.logged_in:
                     st.error("Invalid username or password.")
                     
         with tab2:
-            s_user = st.text_input("Choose a Username", key="sign_user", aria_label="Choose a Username")
-            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", aria_label="Choose a Password")
+            s_user = st.text_input("Choose a Username", key="sign_user")
+            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
             if st.button("Create Account", type="primary", use_container_width=True):
                 if s_user and s_pass:
                     if create_user(s_user, s_pass):
@@ -701,23 +713,31 @@ if not st.session_state.logged_in:
                     const active = doc.activeElement;
                     if (!active || active.tagName.toLowerCase() !== 'input') return;
 
+                    // Support multiple languages or missing labels by looking at placeholder or aria-label
                     const ariaLabel = active.getAttribute('aria-label');
+                    const placeholder = active.getAttribute('placeholder');
+                    const labelText = ariaLabel || placeholder;
 
-                    if (ariaLabel === 'Username' || ariaLabel === 'Choose a Username') {
+                    if (!labelText) return;
+
+                    if (labelText.includes('Username')) {
                         e.preventDefault();
                         e.stopPropagation();
                         active.blur();
-                        const targetLabel = ariaLabel === 'Username' ? 'Password' : 'Choose a Password';
+                        const isSignUp = labelText.includes('Choose');
+                        const targetLabel = isSignUp ? 'Choose a Password' : 'Password';
                         setTimeout(() => {
-                            const passInput = doc.querySelector(`input[aria-label="${targetLabel}"]`);
+                            const inputs = Array.from(doc.querySelectorAll('input'));
+                            const passInput = inputs.find(i => (i.getAttribute('aria-label') === targetLabel) || (i.getAttribute('placeholder') === targetLabel));
                             if (passInput) passInput.focus();
                         }, 100);
                     }
-                    else if (ariaLabel === 'Password' || ariaLabel === 'Choose a Password') {
+                    else if (labelText.includes('Password')) {
                         e.preventDefault();
                         e.stopPropagation();
                         active.blur();
-                        const targetText = ariaLabel === 'Password' ? 'Login' : 'Create Account';
+                        const isSignUp = labelText.includes('Choose');
+                        const targetText = isSignUp ? 'Create Account' : 'Login';
                         setTimeout(() => {
                             const btns = Array.from(doc.querySelectorAll('button'));
                             const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
@@ -1040,6 +1060,9 @@ else:
     with right_col:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
+        # Minimalist Ctrl+Click Tip Badge
+        st.markdown("<div class='ctrl-tip-badge'>💡 <strong>Tip:</strong> Hold Ctrl (or Cmd) and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
+        
         # New UI Task Data payload for the Custom Toast Notification
         new_task_toast = st.session_state.get("newly_added_task")
         if new_task_toast:
@@ -1211,11 +1234,18 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Setup Progressive States
-    window.textLocked = false;
-    window.categorySelected = false;
-    window.prioritySelected = false;
-    window.dueSelected = false;
+    // Setup Progressive States with SessionStorage to prevent Streamlit rerun wipeouts
+    window.textLocked = sessionStorage.getItem('pd_textLocked') === 'true';
+    window.categorySelected = sessionStorage.getItem('pd_categorySelected') === 'true';
+    window.prioritySelected = sessionStorage.getItem('pd_prioritySelected') === 'true';
+    window.dueSelected = sessionStorage.getItem('pd_dueSelected') === 'true';
+    
+    function savePDState() {
+        sessionStorage.setItem('pd_textLocked', window.textLocked);
+        sessionStorage.setItem('pd_categorySelected', window.categorySelected);
+        sessionStorage.setItem('pd_prioritySelected', window.prioritySelected);
+        sessionStorage.setItem('pd_dueSelected', window.dueSelected);
+    }
     
     const quotes = [
         "Stay locked in.", 
@@ -1237,24 +1267,6 @@ components.html(
             }, 500); 
         }
     }, 5000); 
-
-    // Initial Background setup fix for Light Mode
-    setInterval(() => {
-        const isDark = doc.body.classList.contains('custom-dark');
-        const isLight = doc.body.classList.contains('custom-light');
-        const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-        const rgb = bg.match(/\\d+/g);
-        if (rgb && rgb.length >= 3) {
-            const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-            if (luma < 128 && !isDark) {
-                doc.body.classList.add('custom-dark');
-                doc.body.classList.remove('custom-light');
-            } else if (luma >= 128 && !isLight) {
-                doc.body.classList.add('custom-light');
-                doc.body.classList.remove('custom-dark');
-            }
-        }
-    }, 100);
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1336,10 +1348,13 @@ components.html(
         });
 
         if (taskInput && taskInput.value.trim().length === 0) {
-            window.textLocked = false;
-            window.categorySelected = false;
-            window.prioritySelected = false;
-            window.dueSelected = false;
+            if (window.textLocked || window.categorySelected || window.prioritySelected || window.dueSelected) {
+                window.textLocked = false;
+                window.categorySelected = false;
+                window.prioritySelected = false;
+                window.dueSelected = false;
+                savePDState();
+            }
         }
 
         if (window.textLocked) {
@@ -1380,12 +1395,12 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
-        // Remove focus instantly to prevent stuck tooltips
+        // Fix stuck tooltips by immediately removing focus
         setTimeout(() => btn.blur(), 10);
         
         const txt = btn.innerText.trim();
         
-        if (txt === '🗑️') {
+        if (txt === 'Del' || txt === '✕' || txt === '🗑️') {
             const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
             if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
                 const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1396,9 +1411,11 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
+            // Instantly flip the icon
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
+            // Check if it's main task toggle or subtask toggle
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1420,6 +1437,8 @@ components.html(
             window.categorySelected = false;
             window.prioritySelected = false;
             window.dueSelected = false;
+            savePDState();
+            
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1454,6 +1473,7 @@ components.html(
                 if (isCat) window.categorySelected = true;
                 if (isPri) window.prioritySelected = true;
                 if (isDue) window.dueSelected = true;
+                savePDState();
             }
         }
     }, true);
@@ -1672,21 +1692,21 @@ components.html(
                         }
                     };
 
-                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; }
-                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
-                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
-                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
-                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
-                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
+                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; savePDState(); }
+                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; savePDState(); }
+                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; savePDState(); }
+                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; savePDState(); }
+                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; savePDState(); }
+                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; savePDState(); }
                     
-                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
-                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; }
-                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; }
-                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; }
+                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; savePDState(); }
+                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; savePDState(); }
+                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; savePDState(); }
+                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; savePDState(); }
                     
-                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; }
-                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; }
-                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; }
+                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; savePDState(); }
+                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; savePDState(); }
+                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; savePDState(); }
                     
                     return; 
                 } 
@@ -1725,6 +1745,7 @@ components.html(
                     
                     if (!window.textLocked) {
                         window.textLocked = true;
+                        savePDState();
                         taskInput.blur(); 
                     } 
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
@@ -1736,6 +1757,7 @@ components.html(
                                 window.categorySelected = false;
                                 window.prioritySelected = false;
                                 window.dueSelected = false;
+                                savePDState();
                                 taskInput.value = '';
                                 btn.click();
                             }
