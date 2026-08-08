@@ -369,6 +369,8 @@ st.markdown(
         background-size: cover !important;
         background-position: center !important;
         transition: background-image 0.3s ease;
+        /* Force fallback light background to prevent flicker */
+        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
@@ -515,6 +517,19 @@ st.markdown(
         border-radius: 6px;
         font-weight: 400;
         border: 1px solid rgba(128, 128, 128, 0.2);
+    }
+    
+    /* Professional Selection styling for options */
+    div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button[kind="primary"] {
+        background-color: #2c3e50 !important;
+        border-color: #2c3e50 !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
+    body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button[kind="primary"] {
+        background-color: #ecf0f1 !important;
+        border-color: #ecf0f1 !important;
+        color: #2c3e50 !important;
     }
     
     .login-container {
@@ -709,22 +724,29 @@ if not st.session_state.logged_in:
                     if (!active || active.tagName.toLowerCase() !== 'input') return;
 
                     const ariaLabel = active.getAttribute('aria-label');
+                    const placeholder = active.getAttribute('placeholder');
+                    const labelText = ariaLabel || placeholder;
 
-                    if (ariaLabel === 'Username' || ariaLabel === 'Choose a Username') {
+                    if (!labelText) return;
+
+                    if (labelText.includes('Username')) {
                         e.preventDefault();
                         e.stopPropagation();
                         active.blur();
-                        const targetLabel = ariaLabel === 'Username' ? 'Password' : 'Choose a Password';
+                        const isSignUp = labelText.includes('Choose');
+                        const targetLabel = isSignUp ? 'Choose a Password' : 'Password';
                         setTimeout(() => {
-                            const passInput = doc.querySelector(`input[aria-label="${targetLabel}"]`);
+                            const inputs = Array.from(doc.querySelectorAll('input'));
+                            const passInput = inputs.find(i => (i.getAttribute('aria-label') === targetLabel) || (i.getAttribute('placeholder') === targetLabel));
                             if (passInput) passInput.focus();
                         }, 100);
                     }
-                    else if (ariaLabel === 'Password' || ariaLabel === 'Choose a Password') {
+                    else if (labelText.includes('Password')) {
                         e.preventDefault();
                         e.stopPropagation();
                         active.blur();
-                        const targetText = ariaLabel === 'Password' ? 'Login' : 'Create Account';
+                        const isSignUp = labelText.includes('Choose');
+                        const targetText = isSignUp ? 'Create Account' : 'Login';
                         setTimeout(() => {
                             const btns = Array.from(doc.querySelectorAll('button'));
                             const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
@@ -734,6 +756,24 @@ if not st.session_state.logged_in:
                 }
             }, true);
         }
+        
+        // Initial Background setup fix for Light Mode
+        setInterval(() => {
+            const isDark = doc.body.classList.contains('custom-dark');
+            const isLight = doc.body.classList.contains('custom-light');
+            const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
+            const rgb = bg.match(/\\d+/g);
+            if (rgb && rgb.length >= 3) {
+                const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+                if (luma < 128 && !isDark) {
+                    doc.body.classList.add('custom-dark');
+                    doc.body.classList.remove('custom-light');
+                } else if (luma >= 128 && !isLight) {
+                    doc.body.classList.add('custom-light');
+                    doc.body.classList.remove('custom-dark');
+                }
+            }
+        }, 100);
         </script>
         """,
         height=0, width=0
@@ -757,7 +797,7 @@ else:
             display: none !important;
         }
 
-        /* --- Left Control Panel (Glassmorphism & Legibility) --- */
+        /* --- Left Control Panel Aggressive Compacting & Glassmorphism --- */
         div[data-testid="column"]:has(#left-panel-marker) {
             background: rgba(255, 255, 255, 0.65) !important;
             padding: 1.5rem !important;
@@ -773,20 +813,39 @@ else:
             border: 1px solid rgba(255, 255, 255, 0.08) !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
         }
+        
+        /* Strip the excessive vertical gaps generated by Streamlit's st.container inside the left panel */
+        div[data-testid="column"]:has(#left-panel-marker) > div > div > div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
 
-        /* Captions: Category, Priority, Due */
+        /* Compress the labels (Category, Priority, Due) */
         div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #2c3e50 !important;
             font-weight: 700 !important;
-            font-size: 0.85rem !important;
+            font-size: 0.75rem !important;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-top: 0.5rem;
+            margin-top: 0.2rem !important;
+            margin-bottom: 0.1rem !important;
         }
         body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #ecf0f1 !important;
         }
         
+        /* Make the left panel buttons smaller and tighter */
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button {
+            padding: 0.15rem 0.2rem !important;
+            min-height: 1.8rem !important;
+            font-size: 0.8rem !important;
+        }
+        div[data-testid="column"]:has(#left-panel-marker) div[data-baseweb="input"] {
+            font-size: 0.9rem !important;
+        }
+
         /* Fixed-Height Quote Wrapper for 0 Layout Shift */
         .quote-wrapper {
             height: 90px;
@@ -1054,10 +1113,13 @@ else:
                 with st.container(border=True):
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
-                    # Layout: Main task body (left), Stacked buttons (right)
-                    col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
+                    col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
                     
-                    with col_main:
+                    with col1:
+                        st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}", 
+                                    on_change=handle_task_check, args=(t["id"], bool(t["done"]), st.session_state.username))
+                            
+                    with col2:
                         done_class = "is-done" if t["done"] else ""
                         created_time = datetime.fromisoformat(t["created_at"])
                         is_new_task = (now_time - created_time).total_seconds() < 2
@@ -1078,102 +1140,92 @@ else:
                         
                         st.markdown(html_string, unsafe_allow_html=True)
                         
-                        # ---------------- Subtasks ----------------
-                        subtasks = get_subtasks(t["id"])
-                        sub_total = len(subtasks)
-                        sub_done = sum(1 for s in subtasks if s["done"])
+                    with col3:
+                        d1, d2 = st.columns(2)
+                        with d1:
+                            if st.button("Edit", key=f"edit_{t['id']}", help="Edit task"):
+                                st.session_state[f"editing_{t['id']}"] = True
+                        with d2:
+                            st.button("Del", key=f"del_{t['id']}", help="Delete task",
+                                      on_click=handle_task_delete, args=(t["id"], st.session_state.username))
 
-                        if sub_total > 0:
-                            st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
-                            st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
-                            st.markdown('</div>', unsafe_allow_html=True)
+                    # ---------------- Subtasks ----------------
+                    subtasks = get_subtasks(t["id"])
+                    sub_total = len(subtasks)
+                    sub_done = sum(1 for s in subtasks if s["done"])
 
-                        expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
-                        
-                        is_expanded = (st.session_state.active_task_id == t["id"])
-                        
-                        with st.expander(expander_label, expanded=is_expanded):
-                            for i, s in enumerate(subtasks):
-                                if i > 0:
-                                    st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
-                                sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
-                                with sc_main:
-                                    sub_class = "is-done" if s["done"] else ""
-                                    st.markdown(
-                                        f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
-                                        unsafe_allow_html=True,
-                                    )
-                                with sc_btn:
-                                    if s["done"]:
-                                        st.button("↩️", key=f"subtog_{s['id']}", help="Mark incomplete", 
-                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                    else:
-                                        st.button("✔️", key=f"subtog_{s['id']}", help="Mark complete", 
-                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                        
-                                    st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
-                                              on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
+                    if sub_total > 0:
+                        st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
+                        st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
+                        st.markdown('</div>', unsafe_allow_html=True)
 
-                            st.caption("⚡ Press `/` to quickly start typing a subtask")
-                            new_sc1, new_sc2 = st.columns([6, 1.5])
-                            with new_sc1:
-                                st.text_input(
-                                    "New subtask",
-                                    key=f"new_sub_{t['id']}",
-                                    placeholder="Add a subtask... (Press '/' to focus)",
-                                    label_visibility="collapsed",
-                                    on_change=handle_subtask_add, 
-                                    args=(t['id'], st.session_state.username)
+                    expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
+                    
+                    is_expanded = (st.session_state.active_task_id == t["id"])
+                    
+                    with st.expander(expander_label, expanded=is_expanded):
+                        for s in subtasks:
+                            sc1, sc2, sc3 = st.columns([0.5, 6.5, 1], vertical_alignment="center")
+                            with sc1:
+                                st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
+                                            on_change=handle_subtask_check, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username))
+                            with sc2:
+                                sub_class = "is-done" if s["done"] else ""
+                                st.markdown(
+                                    f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
+                                    unsafe_allow_html=True,
                                 )
-                            with new_sc2:
-                                st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
-                                          on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
+                            with sc3:
+                                st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
+                                          on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
 
-                        if st.session_state.get(f"editing_{t['id']}"):
-                            with st.form(f"edit_form_{t['id']}"):
-                                e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
-                                e_col1, e_col2, e_col3 = st.columns(3)
-                                with e_col1:
-                                    e_priority = st.selectbox(
-                                        "Priority", PRIORITIES,
-                                        index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
+                        st.caption("⚡ Press `/` to quickly start typing a subtask")
+                        new_sc1, new_sc2 = st.columns([6, 1.5])
+                        with new_sc1:
+                            st.text_input(
+                                "New subtask",
+                                key=f"new_sub_{t['id']}",
+                                placeholder="Add a subtask... (Press '/' to focus)",
+                                label_visibility="collapsed",
+                                on_change=handle_subtask_add, 
+                                args=(t['id'], st.session_state.username)
+                            )
+                        with new_sc2:
+                            st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
+                                      on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
+
+                    if st.session_state.get(f"editing_{t['id']}"):
+                        with st.form(f"edit_form_{t['id']}"):
+                            e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
+                            e_col1, e_col2, e_col3 = st.columns(3)
+                            with e_col1:
+                                e_priority = st.selectbox(
+                                    "Priority", PRIORITIES,
+                                    index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
+                                )
+                            with e_col2:
+                                cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
+                                e_category = st.selectbox(
+                                    "Category", cat_options, index=cat_options.index(t["category"])
+                                )
+                            with e_col3:
+                                e_due = st.date_input(
+                                    "Due date",
+                                    value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
+                                )
+                            save_col, cancel_col = st.columns(2)
+                            with save_col:
+                                if st.form_submit_button("Save", use_container_width=True):
+                                    update_task(
+                                        t["id"], e_text.strip(), e_priority, e_category,
+                                        e_due.isoformat() if e_due else None, st.session_state.username
                                     )
-                                with e_col2:
-                                    cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
-                                    e_category = st.selectbox(
-                                        "Category", cat_options, index=cat_options.index(t["category"])
-                                    )
-                                with e_col3:
-                                    e_due = st.date_input(
-                                        "Due date",
-                                        value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
-                                    )
-                                save_col, cancel_col = st.columns(2)
-                                with save_col:
-                                    if st.form_submit_button("Save", use_container_width=True):
-                                        update_task(
-                                            t["id"], e_text.strip(), e_priority, e_category,
-                                            e_due.isoformat() if e_due else None, st.session_state.username
-                                        )
-                                        st.session_state[f"editing_{t['id']}"] = False
-                                        st.rerun()
-                                with cancel_col:
-                                    if st.form_submit_button("Cancel", use_container_width=True):
-                                        st.session_state[f"editing_{t['id']}"] = False
-                                        st.rerun()
-                                        
-                    with col_btns:
-                        if t["done"]:
-                            st.button("↩️", key=f"tog_{t['id']}", help="Mark incomplete", 
-                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
-                        else:
-                            st.button("✔️", key=f"tog_{t['id']}", help="Mark complete", 
-                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
-                        
-                        if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
-                            st.session_state[f"editing_{t['id']}"] = True
-                        st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
-                                  on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
+                                    st.session_state[f"editing_{t['id']}"] = False
+                                    st.rerun()
+                            with cancel_col:
+                                if st.form_submit_button("Cancel", use_container_width=True):
+                                    st.session_state[f"editing_{t['id']}"] = False
+                                    st.rerun()
 
 # ----------------------------- Custom JavaScript Injection -----------------------------
 components.html(
@@ -1212,7 +1264,7 @@ components.html(
     setInterval(() => {
         const isDark = doc.body.classList.contains('custom-dark');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-        const rgb = bg.match(/\d+/g);
+        const rgb = bg.match(/\\d+/g);
         if (rgb && rgb.length >= 3) {
             const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
             if (luma < 128 && !isDark) {
@@ -1255,50 +1307,6 @@ components.html(
             });
         } catch(e) {}
     }, 100);
-
-    // Persist Scroll memory
-    if (!doc.getElementById('scroll-controls')) {
-        const controls = doc.createElement('div');
-        controls.id = 'scroll-controls';
-        controls.innerHTML = `
-            <button id="scroll-up" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); margin-bottom: 8px;">↑</button>
-            <button id="scroll-down" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);">↓</button>
-        `;
-        controls.style.cssText = 'position: fixed; right: 32px; bottom: 90px; display: flex; flex-direction: column; z-index: 9999; opacity: 0.7; transition: opacity 0.2s ease;';
-        
-        controls.onmouseover = () => controls.style.opacity = '1';
-        controls.onmouseout = () => controls.style.opacity = '0.7';
-
-        doc.body.appendChild(controls);
-
-        const getScrollCol = () => {
-            const anchor = doc.getElementById('right-col-anchor');
-            return anchor ? anchor.closest('div[data-testid="column"]') : null;
-        };
-
-        controls.querySelector('#scroll-up').onclick = () => {
-            const col = getScrollCol();
-            if(col) col.scrollTo({top: 0, behavior: 'smooth'});
-        };
-        controls.querySelector('#scroll-down').onclick = () => {
-            const col = getScrollCol();
-            if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
-        };
-        
-        setInterval(() => {
-            const col = getScrollCol();
-            if (col && !col.dataset.scrollBound) {
-                col.dataset.scrollBound = "true";
-                const savedScroll = sessionStorage.getItem('rightColScroll');
-                if (savedScroll !== null) {
-                    col.scrollTop = parseInt(savedScroll);
-                }
-                col.addEventListener('scroll', () => {
-                    sessionStorage.setItem('rightColScroll', col.scrollTop);
-                });
-            }
-        }, 300);
-    }
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1429,7 +1437,7 @@ components.html(
         
         const txt = btn.innerText.trim();
         
-        if (txt === '🗑️') {
+        if (txt === 'Del' || txt === '✕') {
             const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
             if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
                 const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1437,24 +1445,6 @@ components.html(
             } else {
                 const row = btn.closest('div[data-testid="column"]')?.parentElement;
                 if (row) row.classList.add('optimistic-fade');
-            }
-        }
-        else if (txt === '✔️' || txt === '↩️') {
-            const p = btn.querySelector('p');
-            if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
-            
-            const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
-            if (isSubtask) {
-                const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
-                if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
-            } else {
-                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || btn.closest('div[data-testid="stVerticalBlock"]');
-                if (card) {
-                    const mainRow = card.querySelector('.task-row');
-                    const mainTitle = card.querySelector('.task-title');
-                    if (mainRow) mainRow.classList.toggle('is-done', txt === '✔️');
-                    if (mainTitle) mainTitle.classList.toggle('is-done', txt === '✔️');
-                }
             }
         }
         else if (txt === 'Add task') {
@@ -1486,14 +1476,20 @@ components.html(
         if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
             const block = btn.closest('div[data-testid="stHorizontalBlock"]');
             if (block) {
+                const isDark = doc.body.classList.contains('custom-dark');
+                const selBg = isDark ? '#ecf0f1' : '#2c3e50';
+                const selText = isDark ? '#2c3e50' : '#ffffff';
+
                 block.querySelectorAll('button').forEach(b => {
                     b.style.backgroundColor = '';
                     b.style.borderColor = 'rgba(128, 128, 128, 0.2)';
                     b.style.color = '';
+                    b.style.fontWeight = '400';
                 });
-                btn.style.backgroundColor = '#ff4b4b';
-                btn.style.borderColor = '#ff4b4b';
-                btn.style.color = 'white';
+                btn.style.backgroundColor = selBg;
+                btn.style.borderColor = selBg;
+                btn.style.color = selText;
+                btn.style.fontWeight = '600';
                 
                 if (isCat) window.categorySelected = true;
                 if (isPri) window.prioritySelected = true;
@@ -1501,6 +1497,64 @@ components.html(
             }
         }
     }, true);
+
+    // Fast Checkbox Cascade Override (Visual updates instantly on state change)
+    doc.addEventListener('change', function(e) {
+        if (e.target && e.target.type === 'checkbox') {
+            const block = e.target.closest('div[data-testid="column"]')?.parentElement;
+            const isSubtask = e.target.closest('div[data-testid="stExpanderDetails"]') !== null;
+            const containerMarker = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
+            const container = containerMarker ? (containerMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || containerMarker.closest('div[data-testid="stVerticalBlock"]')) : null;
+            const isChecked = e.target.checked;
+            
+            if (block) {
+                const row = block.querySelector('.task-row');
+                const subRow = block.querySelector('.subtask-row');
+                
+                if (row && !isSubtask) {
+                    row.classList.toggle('is-done', isChecked);
+                    const title = row.querySelector('.task-title');
+                    if (title) title.classList.toggle('is-done', isChecked);
+                    
+                    if (container) {
+                        const subRows = container.querySelectorAll('.subtask-row');
+                        subRows.forEach(sr => sr.classList.toggle('is-done', isChecked));
+                        const subChecks = container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]');
+                        subChecks.forEach(sc => sc.checked = isChecked);
+                    }
+                }
+                
+                if (subRow && isSubtask) {
+                    subRow.classList.toggle('is-done', isChecked);
+                    
+                    if (container) {
+                        const parentRow = container.querySelector('.task-row');
+                        const parentCheck = container.querySelector('input[type="checkbox"]'); 
+                        const allSubChecks = Array.from(container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]'));
+                        
+                        if (!isChecked) {
+                            if (parentRow) {
+                                parentRow.classList.remove('is-done');
+                                const title = parentRow.querySelector('.task-title');
+                                if (title) title.classList.remove('is-done');
+                            }
+                            if (parentCheck) parentCheck.checked = false;
+                        } else {
+                            const allDone = allSubChecks.every(c => c.checked);
+                            if (allDone) {
+                                if (parentRow) {
+                                    parentRow.classList.add('is-done');
+                                    const title = parentRow.querySelector('.task-title');
+                                    if (title) title.classList.add('is-done');
+                                }
+                                if (parentCheck) parentCheck.checked = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
@@ -1578,13 +1632,13 @@ components.html(
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
-                indicator.innerText = 'Enter to confirm custom tag';
+                indicator.innerText = 'Enter to proceed'; 
                 indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; 
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
                 if (!window.textLocked) {
-                    indicator.innerText = 'Enter to lock text & open options';
+                    indicator.innerText = 'Enter to proceed to options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else if (!window.categorySelected) {
                     indicator.innerText = 'Select a category (Use hotkeys)';
@@ -1596,7 +1650,7 @@ components.html(
                     indicator.innerText = 'Select a due date';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter to finish adding task';
+                    indicator.innerText = 'Enter to create task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
@@ -1707,11 +1761,18 @@ components.html(
                                     sib.style.removeProperty('background-color');
                                     sib.style.removeProperty('border-color');
                                     sib.style.removeProperty('color');
+                                    sib.style.removeProperty('font-weight');
                                 });
                             }
-                            btn.style.backgroundColor = '#ff4b4b';
-                            btn.style.borderColor = '#ff4b4b';
-                            btn.style.color = 'white';
+                            
+                            const isDark = doc.body.classList.contains('custom-dark');
+                            const selBg = isDark ? '#ecf0f1' : '#2c3e50';
+                            const selText = isDark ? '#2c3e50' : '#ffffff';
+                            
+                            btn.style.backgroundColor = selBg;
+                            btn.style.borderColor = selBg;
+                            btn.style.color = selText;
+                            btn.style.fontWeight = '600';
                             
                             btn.click();
                         }
