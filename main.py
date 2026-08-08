@@ -31,15 +31,6 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
-def _sync_checkboxes_with_db(username):
-    tasks = get_tasks(username)
-    for t in tasks:
-        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
-        
-    subtasks = get_all_subtasks(username)
-    for s in subtasks:
-        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
-
 # ----------------------------- Security & Auth -----------------------------
 
 def hash_password(password):
@@ -165,7 +156,6 @@ def perform_undo(username):
         last_state = st.session_state.undo_stack.pop()
         _restore_state(last_state["tasks"], username)
         _restore_subtasks(last_state["subtasks"], username)
-        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo(username):
@@ -174,7 +164,6 @@ def perform_redo(username):
         next_state = st.session_state.redo_stack.pop()
         _restore_state(next_state["tasks"], username)
         _restore_subtasks(next_state["subtasks"], username)
-        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date, username):
@@ -195,12 +184,9 @@ def set_done(task_id, done, username):
     with closing(get_conn()) as conn:
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
-        
-        subtasks = conn.execute("SELECT id FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
-        for s in subtasks:
-            st.session_state[f"subchk_{s['id']}"] = bool(done)
-                
         conn.commit()
+    status = "completed" if done else "unmarked"
+    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -208,6 +194,7 @@ def delete_task(task_id, username):
         conn.execute("DELETE FROM subtasks WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
+    st.session_state.pending_toast = "🗑️ Task deleted"
 
 def clear_completed(username):
     save_state_for_undo(username)
@@ -220,6 +207,7 @@ def clear_completed(username):
             conn.execute(f"DELETE FROM subtasks WHERE task_id IN ({placeholders})", done_ids)
         conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
+    st.session_state.pending_toast = "🧹 Cleared completed tasks"
 
 def clear_all(username):
     save_state_for_undo(username)
@@ -229,6 +217,7 @@ def clear_all(username):
         )
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
+    st.session_state.pending_toast = "🗑️ Cleared all tasks"
 
 def add_subtask(task_id, text, username):
     save_state_for_undo(username)
@@ -238,8 +227,8 @@ def add_subtask(task_id, text, username):
             (task_id, text, datetime.now().isoformat()),
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-        st.session_state[f"chk_{task_id}"] = False
         conn.commit()
+    st.session_state.pending_toast = "➕ Subtask added"
 
 def set_subtask_done(subtask_id, task_id, done, username):
     save_state_for_undo(username)
@@ -249,14 +238,10 @@ def set_subtask_done(subtask_id, task_id, done, username):
         subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         if subtasks:
             all_done = all(s['done'] for s in subtasks)
-            parent_key = f"chk_{task_id}"
-            
             if not done:
                 conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[parent_key] = False
             elif all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[parent_key] = True
                     
         conn.commit()
 
@@ -270,9 +255,9 @@ def delete_subtask(subtask_id, task_id, username):
             all_done = all(s['done'] for s in subtasks)
             if all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[f"chk_{task_id}"] = True
                     
         conn.commit()
+    st.session_state.pending_toast = "🗑️ Subtask deleted"
 
 def mark_all_completed(username):
     save_state_for_undo(username)
@@ -283,7 +268,7 @@ def mark_all_completed(username):
             (username,)
         )
         conn.commit()
-    _sync_checkboxes_with_db(username)
+    st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
     save_state_for_undo(username)
@@ -297,11 +282,8 @@ def update_task(task_id, text, priority, category, due_date, username):
 
 # ----------------------------- Callback Handlers -----------------------------
 
-def handle_task_check(task_id, current_done, username):
-    key = f"chk_{task_id}"
-    val = st.session_state.get(key)
-    new_done = not current_done if val is None else val
-    set_done(task_id, new_done, username)
+def handle_task_toggle(task_id, current_done, username):
+    set_done(task_id, not current_done, username)
 
 def handle_task_delete(task_id, username):
     st.session_state.active_task_id = None
@@ -315,12 +297,9 @@ def handle_subtask_add(task_id, username):
         add_subtask(task_id, new_text, username)
         st.session_state[key] = "" 
 
-def handle_subtask_check(subtask_id, task_id, current_done, username):
+def handle_subtask_toggle(subtask_id, task_id, current_done, username):
     st.session_state.active_task_id = task_id
-    key = f"subchk_{subtask_id}"
-    val = st.session_state.get(key)
-    new_done = not current_done if val is None else val
-    set_subtask_done(subtask_id, task_id, new_done, username)
+    set_subtask_done(subtask_id, task_id, not current_done, username)
 
 def handle_subtask_delete(subtask_id, task_id, username):
     st.session_state.active_task_id = task_id
@@ -351,6 +330,12 @@ st.markdown(
         opacity: 0 !important;
         pointer-events: none !important;
         transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    }
+    .optimistic-btn {
+        opacity: 0.6 !important;
+        pointer-events: none !important;
+        filter: grayscale(1) !important;
+        transition: all 0.1s ease !important;
     }
 
     section.main, [data-testid="stMain"] {
@@ -395,43 +380,23 @@ st.markdown(
         font-weight: 500 !important;
         letter-spacing: -0.5px;
     }
-    
-    /* --- COMPLETELY INVISIBLE CHECKBOXES SO JS CAN CLICK THEM --- */
-    div[data-testid="stCheckbox"] {
-        position: fixed !important;
-        top: -9999px !important;
-        left: -9999px !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        z-index: -100 !important;
-    }
 
-    /* Target Task Container Explicitly */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
-        border-radius: 14px !important;
-        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
-        margin-bottom: 0.7rem !important;
-        overflow: hidden;
-    }
-    
-    /* Dynamic cursor when Ctrl is held */
-    body.ctrl-pressed div[data-testid="stVerticalBlockBorderWrapper"] {
-        cursor: crosshair !important;
-    }
-    body.ctrl-pressed div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-        transform: scale(0.995);
-        transition: transform 0.1s ease;
+    /* Stack the icon buttons neatly */
+    div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {
+        padding: 0.1rem 0 !important;
+        min-height: 2rem !important;
+        margin-bottom: 0.2rem !important;
     }
 
     .task-row {
-        padding: 0.5rem 0;
+        padding: 0.8rem 0;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.25);
         display: flex;
         flex-direction: column;
         justify-content: center;
         transition: opacity 0.05s ease;
-        margin-left: 0.5rem;
     }
-    .task-row.is-done { opacity: 0.6; }
+    .task-row.is-done { opacity: 0.4; }
     .task-title {
         font-size: 1.05rem;
         font-weight: 400;
@@ -449,9 +414,9 @@ st.markdown(
     }
     .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     
-    .border-High { border-left: 4px solid #e74c3c; padding-left: 12px; margin-left: -0.5rem; }
-    .border-Medium { border-left: 4px solid #f39c12; padding-left: 12px; margin-left: -0.5rem; }
-    .border-Low { border-left: 4px solid #3498db; padding-left: 12px; margin-left: -0.5rem; }
+    .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
+    .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
+    .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
     
     .meta-tags {
         display: flex;
@@ -488,6 +453,26 @@ st.markdown(
         line-height: 1;
     }
     
+    .profile-indicator {
+        font-size: 0.85rem;
+        font-weight: 500;
+        opacity: 0.75;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 0.8rem;
+    }
+    .profile-indicator span {
+        background: rgba(128, 128, 128, 0.2);
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+    }
+    
     div[data-testid="stButton"] button { 
         width: 100%;
         height: auto !important;
@@ -518,6 +503,12 @@ st.markdown(
         border-radius: 12px;
         background: rgba(128,128,128,0.1);
         margin-top: 4rem;
+    }
+
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
+        border-radius: 14px !important;
+        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
+        margin-bottom: 0.7rem !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -605,43 +596,6 @@ st.markdown(
         opacity: 1 !important;
         transform: translateY(0) !important;
         pointer-events: auto !important;
-    }
-    
-    /* Minimalist Ctrl+Click Tip Badge */
-    .ctrl-tip-badge {
-        font-size: 0.8rem;
-        opacity: 0.8;
-        background: rgba(128, 128, 128, 0.12);
-        padding: 6px 12px;
-        border-radius: 6px;
-        display: inline-block;
-        margin-bottom: 1rem;
-        font-weight: 500;
-        letter-spacing: 0.2px;
-    }
-    
-    /* CSS Fallback for Background Coloring */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.is-done) {
-        background-color: rgba(46, 204, 113, 1) !important;
-        border-color: rgba(39, 174, 96, 1) !important;
-    }
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-High):not(:has(.is-done)) {
-        background-color: rgba(250, 219, 216, 0.85) !important;
-    }
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Medium):not(:has(.is-done)) {
-        background-color: rgba(253, 235, 208, 0.85) !important;
-    }
-    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Low):not(:has(.is-done)) {
-        background-color: rgba(214, 234, 248, 0.85) !important;
-    }
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-High):not(:has(.is-done)) {
-        background-color: rgba(100, 30, 22, 0.85) !important;
-    }
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Medium):not(:has(.is-done)) {
-        background-color: rgba(126, 81, 9, 0.85) !important;
-    }
-    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Low):not(:has(.is-done)) {
-        background-color: rgba(21, 67, 96, 0.85) !important;
     }
     </style>
     """,
@@ -966,9 +920,6 @@ else:
     with right_col:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
-        # Minimalist Ctrl+Click Tip Badge
-        st.markdown("<div class='ctrl-tip-badge'>💡 <strong>Tip:</strong> Hold Ctrl (or Cmd) and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
-        
         # New UI Task Data payload for the Custom Toast Notification
         new_task_toast = st.session_state.get("newly_added_task")
         if new_task_toast:
@@ -1014,13 +965,9 @@ else:
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
                     # Layout: Main task body (left), Stacked buttons (right)
-                    col_main, col_btns = st.columns([9, 0.6], vertical_alignment="center")
+                    col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
                     
                     with col_main:
-                        # Invisibly Hidden Checkbox
-                        st.checkbox("HiddenMainChk", value=bool(t["done"]), key=f"chk_{t['id']}", 
-                                    on_change=handle_task_check, args=(t["id"], bool(t["done"]), st.session_state.username), label_visibility="collapsed")
-                        
                         done_class = "is-done" if t["done"] else ""
                         created_time = datetime.fromisoformat(t["created_at"])
                         is_new_task = (now_time - created_time).total_seconds() < 2
@@ -1057,18 +1004,21 @@ else:
                         
                         with st.expander(expander_label, expanded=is_expanded):
                             for s in subtasks:
-                                sc_main, sc_btn = st.columns([9, 0.6], vertical_alignment="center")
+                                sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
                                 with sc_main:
-                                    # Invisibly Hidden Checkbox
-                                    st.checkbox("HiddenSubChk", value=bool(s["done"]), key=f"subchk_{s['id']}",
-                                                on_change=handle_subtask_check, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), label_visibility="collapsed")
-                                    
                                     sub_class = "is-done" if s["done"] else ""
                                     st.markdown(
                                         f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
                                         unsafe_allow_html=True,
                                     )
                                 with sc_btn:
+                                    if s["done"]:
+                                        st.button("↩️", key=f"subtog_{s['id']}", help="Mark incomplete", 
+                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                    else:
+                                        st.button("✔️", key=f"subtog_{s['id']}", help="Mark complete", 
+                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                        
                                     st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
                                               on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
 
@@ -1121,6 +1071,13 @@ else:
                                         st.rerun()
                                         
                     with col_btns:
+                        if t["done"]:
+                            st.button("↩️", key=f"tog_{t['id']}", help="Mark incomplete", 
+                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
+                        else:
+                            st.button("✔️", key=f"tog_{t['id']}", help="Mark complete", 
+                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
+                        
                         if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
                             st.session_state[f"editing_{t['id']}"] = True
                         st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
@@ -1131,60 +1088,6 @@ components.html(
     """
     <script>
     const doc = window.parent.document;
-    
-    // Track Ctrl/Cmd Key State for Cursor Hint
-    doc.addEventListener('keydown', (e) => {
-        if (e.ctrlKey || e.metaKey) doc.body.classList.add('ctrl-pressed');
-    });
-    doc.addEventListener('keyup', (e) => {
-        if (!e.ctrlKey && !e.metaKey) doc.body.classList.remove('ctrl-pressed');
-    });
-    window.addEventListener('blur', () => {
-        doc.body.classList.remove('ctrl-pressed');
-    });
-    
-    // Bulletproof Ctrl+Click System for Checkboxes
-    doc.addEventListener('click', function(e) {
-        if (e.ctrlKey || e.metaKey) {
-            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (!card) return;
-            
-            // Allow expander chevron summary click
-            if (e.target.tagName.toLowerCase() === 'summary' || e.target.closest('summary')) return;
-            // Allow actual action buttons to work normally
-            if (e.target.closest('button')) return;
-
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-
-            let targetChk = null;
-
-            const expanderDetails = e.target.closest('div[data-testid="stExpanderDetails"]');
-            if (expanderDetails) {
-                // Clicked inside a subtask row
-                const subRowBlock = e.target.closest('div[data-testid="stHorizontalBlock"]');
-                if (subRowBlock) {
-                    targetChk = subRowBlock.querySelector('input[type="checkbox"]');
-                }
-            } else {
-                // Clicked main task area. Get the FIRST checkbox in the card.
-                targetChk = card.querySelector('input[type="checkbox"]');
-            }
-
-            if (targetChk) {
-                try {
-                    // React native setter bypass
-                    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "checked").set;
-                    nativeSetter.call(targetChk, !targetChk.checked);
-                    targetChk.dispatchEvent(new Event('change', { bubbles: true }));
-                } catch (err) {
-                    // Fallback to normal click if React setter fails
-                    targetChk.click();
-                }
-            }
-        }
-    }, true); 
     
     // Setup Progressive States
     window.textLocked = false;
@@ -1213,7 +1116,7 @@ components.html(
         }
     }, 8000); 
 
-    // Sync Background Mode & Force Strict DOM Painting for Colors
+    // Sync Background Mode & Bulletproof Task Card Colors
     setInterval(() => {
         const isDark = doc.body.classList.contains('custom-dark');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
@@ -1229,36 +1132,34 @@ components.html(
             }
         }
         
-        try {
-            // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
-            const markers = doc.querySelectorAll('.task-card-marker');
-            markers.forEach(marker => {
-                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
-                if (!card) return;
-                
-                const isDone = card.querySelector('.task-row.is-done') !== null;
-                const hasHigh = card.querySelector('.border-High') !== null;
-                const hasMed = card.querySelector('.border-Medium') !== null;
-                const hasLow = card.querySelector('.border-Low') !== null;
-                
-                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-                
-                if (isDone) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-                } else if (hasHigh) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-                } else if (hasMed) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-                } else if (hasLow) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
-                }
-            });
-        } catch(e) {}
+        // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
+        const markers = doc.querySelectorAll('.task-card-marker');
+        markers.forEach(marker => {
+            let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
+            if (!card) return;
+            
+            const isDone = card.querySelector('.task-row.is-done') !== null;
+            const hasHigh = card.querySelector('.border-High') !== null;
+            const hasMed = card.querySelector('.border-Medium') !== null;
+            const hasLow = card.querySelector('.border-Low') !== null;
+            
+            card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
+            
+            if (isDone) {
+                card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
+                card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
+            } else if (hasHigh) {
+                card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
+                card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
+            } else if (hasMed) {
+                card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
+                card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
+            } else if (hasLow) {
+                card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
+                card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
+            }
+        });
     }, 100);
 
     // Persist Scroll memory
@@ -1424,7 +1325,7 @@ components.html(
         }
     }, 100);
 
-    // --- Event Delegation & UI Triggers ---
+    // --- TRUE OPTIMISTIC UI: Event Delegation ---
     doc.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
@@ -1441,8 +1342,26 @@ components.html(
                 if (row) row.classList.add('optimistic-fade');
             }
         }
+        else if (txt === '✔️' || txt === '↩️') {
+            btn.classList.add('optimistic-btn');
+            
+            // Instantly apply visual toggle logic
+            const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
+            if (isSubtask) {
+                const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
+                if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
+            } else {
+                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                if (card) {
+                    const mainRow = card.querySelector('.task-row');
+                    const mainTitle = card.querySelector('.task-title');
+                    if (mainRow) mainRow.classList.toggle('is-done', txt === '✔️');
+                    if (mainTitle) mainTitle.classList.toggle('is-done', txt === '✔️');
+                }
+            }
+        }
         else if (txt === 'Add task') {
-            // Fades the button via CSS instead of breaking innerText react node sync
+            // Fades the button via CSS
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
@@ -1486,64 +1405,6 @@ components.html(
             }
         }
     }, true);
-
-    // Fast Checkbox Cascade Override (Visual updates instantly on state change)
-    doc.addEventListener('change', function(e) {
-        if (e.target && e.target.type === 'checkbox') {
-            const block = e.target.closest('div[data-testid="column"]')?.parentElement;
-            const isSubtask = e.target.closest('div[data-testid="stExpanderDetails"]') !== null;
-            const containerMarker = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
-            const container = containerMarker ? (containerMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || containerMarker.closest('div[data-testid="stVerticalBlock"]')) : null;
-            const isChecked = e.target.checked;
-            
-            if (block) {
-                const row = block.querySelector('.task-row');
-                const subRow = block.querySelector('.subtask-row');
-                
-                if (row && !isSubtask) {
-                    row.classList.toggle('is-done', isChecked);
-                    const title = row.querySelector('.task-title');
-                    if (title) title.classList.toggle('is-done', isChecked);
-                    
-                    if (container) {
-                        const subRows = container.querySelectorAll('.subtask-row');
-                        subRows.forEach(sr => sr.classList.toggle('is-done', isChecked));
-                        const subChecks = container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]');
-                        subChecks.forEach(sc => sc.checked = isChecked);
-                    }
-                }
-                
-                if (subRow && isSubtask) {
-                    subRow.classList.toggle('is-done', isChecked);
-                    
-                    if (container) {
-                        const parentRow = container.querySelector('.task-row');
-                        const parentCheck = container.querySelector('input[type="checkbox"]'); 
-                        const allSubChecks = Array.from(container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]'));
-                        
-                        if (!isChecked) {
-                            if (parentRow) {
-                                parentRow.classList.remove('is-done');
-                                const title = parentRow.querySelector('.task-title');
-                                if (title) title.classList.remove('is-done');
-                            }
-                            if (parentCheck) parentCheck.checked = false;
-                        } else {
-                            const allDone = allSubChecks.every(c => c.checked);
-                            if (allDone) {
-                                if (parentRow) {
-                                    parentRow.classList.add('is-done');
-                                    const title = parentRow.querySelector('.task-title');
-                                    if (title) title.classList.add('is-done');
-                                }
-                                if (parentCheck) parentCheck.checked = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
 
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
@@ -1695,6 +1556,7 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
+                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1737,6 +1599,7 @@ components.html(
                     return;
                 }
 
+                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
@@ -1810,10 +1673,12 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
+                    // Lock text on first Enter
                     if (!window.textLocked) {
                         window.textLocked = true;
                         taskInput.blur(); 
                     } 
+                    // Add Task on subsequent Enter ONLY IF all sections are filled
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
