@@ -165,7 +165,6 @@ def perform_undo(username):
         last_state = st.session_state.undo_stack.pop()
         _restore_state(last_state["tasks"], username)
         _restore_subtasks(last_state["subtasks"], username)
-        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↩️ Undid last action"
 
 def perform_redo(username):
@@ -174,7 +173,6 @@ def perform_redo(username):
         next_state = st.session_state.redo_stack.pop()
         _restore_state(next_state["tasks"], username)
         _restore_subtasks(next_state["subtasks"], username)
-        _sync_checkboxes_with_db(username)
         st.session_state.pending_toast = "↪️ Redid last action"
 
 def add_task(text, priority, category, due_date, username):
@@ -196,8 +194,6 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         conn.commit()
-    status = "completed" if done else "unmarked"
-    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -205,7 +201,6 @@ def delete_task(task_id, username):
         conn.execute("DELETE FROM subtasks WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Task deleted"
 
 def clear_completed(username):
     save_state_for_undo(username)
@@ -218,7 +213,6 @@ def clear_completed(username):
             conn.execute(f"DELETE FROM subtasks WHERE task_id IN ({placeholders})", done_ids)
         conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
-    st.session_state.pending_toast = "🧹 Cleared completed tasks"
 
 def clear_all(username):
     save_state_for_undo(username)
@@ -228,7 +222,6 @@ def clear_all(username):
         )
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Cleared all tasks"
 
 def add_subtask(task_id, text, username):
     save_state_for_undo(username)
@@ -238,9 +231,7 @@ def add_subtask(task_id, text, username):
             (task_id, text, datetime.now().isoformat()),
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-        st.session_state[f"chk_{task_id}"] = False
         conn.commit()
-    st.session_state.pending_toast = "➕ Subtask added"
 
 def set_subtask_done(subtask_id, task_id, done, username):
     save_state_for_undo(username)
@@ -250,14 +241,10 @@ def set_subtask_done(subtask_id, task_id, done, username):
         subtasks = conn.execute("SELECT done FROM subtasks WHERE task_id = ?", (task_id,)).fetchall()
         if subtasks:
             all_done = all(s['done'] for s in subtasks)
-            parent_key = f"chk_{task_id}"
-            
             if not done:
                 conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[parent_key] = False
             elif all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[parent_key] = True
                     
         conn.commit()
 
@@ -271,10 +258,8 @@ def delete_subtask(subtask_id, task_id, username):
             all_done = all(s['done'] for s in subtasks)
             if all_done:
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
-                st.session_state[f"chk_{task_id}"] = True
                     
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Subtask deleted"
 
 def mark_all_completed(username):
     save_state_for_undo(username)
@@ -285,8 +270,6 @@ def mark_all_completed(username):
             (username,)
         )
         conn.commit()
-    _sync_checkboxes_with_db(username)
-    st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
     save_state_for_undo(username)
@@ -296,15 +279,11 @@ def update_task(task_id, text, priority, category, due_date, username):
             (text, priority, category, due_date, task_id, username),
         )
         conn.commit()
-    st.session_state.pending_toast = "💾 Task updated"
 
 # ----------------------------- Callback Handlers -----------------------------
 
-def handle_task_check(task_id, current_done, username):
-    key = f"chk_{task_id}"
-    val = st.session_state.get(key)
-    new_done = not current_done if val is None else val
-    set_done(task_id, new_done, username)
+def handle_task_toggle(task_id, current_done, username):
+    set_done(task_id, not current_done, username)
 
 def handle_task_delete(task_id, username):
     st.session_state.active_task_id = None
@@ -318,12 +297,9 @@ def handle_subtask_add(task_id, username):
         add_subtask(task_id, new_text, username)
         st.session_state[key] = "" 
 
-def handle_subtask_check(subtask_id, task_id, current_done, username):
+def handle_subtask_toggle(subtask_id, task_id, current_done, username):
     st.session_state.active_task_id = task_id
-    key = f"subchk_{subtask_id}"
-    val = st.session_state.get(key)
-    new_done = not current_done if val is None else val
-    set_subtask_done(subtask_id, task_id, new_done, username)
+    set_subtask_done(subtask_id, task_id, not current_done, username)
 
 def handle_subtask_delete(subtask_id, task_id, username):
     st.session_state.active_task_id = task_id
@@ -348,13 +324,23 @@ st.markdown(
     /* Destroy Streamlit's janky skeleton loading animations */
     div[data-testid="stSkeleton"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
     
-    /* Smooth transitions for optimistic UI feedback */
+    /* Smooth, collapsing transitions for optimistic UI deletions */
     .optimistic-fade {
-        transform: scale(0.95) !important;
+        transform: scale(0.95) translateY(-10px) !important;
         opacity: 0 !important;
+        max-height: 0px !important;
+        min-height: 0px !important;
+        height: 0px !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        border-width: 0 !important;
+        overflow: hidden !important;
         pointer-events: none !important;
-        transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
+    
     .optimistic-btn {
         opacity: 0.6 !important;
         pointer-events: none !important;
@@ -374,6 +360,8 @@ st.markdown(
         background-size: cover !important;
         background-position: center !important;
         transition: background-image 0.3s ease;
+        /* Default fallback to light mode */
+        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
@@ -529,13 +517,10 @@ st.markdown(
         margin-top: 4rem;
     }
 
-    /* Target Task Container Explicitly - NO BORDER */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
-        border: none !important;
-        box-shadow: none !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -576,6 +561,13 @@ st.markdown(
     .subtask-row.is-done {
         text-decoration: line-through;
         opacity: 0.5;
+    }
+    
+    /* Subtask Divider */
+    .subtask-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(128, 128, 128, 0.2) 10%, rgba(128, 128, 128, 0.2) 90%, transparent);
+        margin: 0.3rem 0;
     }
     
     /* Elegant Minimalist Focus Border for Editing Subtasks */
@@ -648,8 +640,8 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            l_user = st.text_input("Username", key="login_user")
-            l_pass = st.text_input("Password", type="password", key="login_pass")
+            l_user = st.text_input("Username", key="login_user", aria_label="Username")
+            l_pass = st.text_input("Password", type="password", key="login_pass", aria_label="Password")
             if st.button("Login", type="primary", use_container_width=True):
                 if verify_user(l_user, l_pass):
                     st.session_state.logged_in = True
@@ -659,12 +651,13 @@ if not st.session_state.logged_in:
                     st.error("Invalid username or password.")
                     
         with tab2:
-            s_user = st.text_input("Choose a Username", key="sign_user")
-            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
+            s_user = st.text_input("Choose a Username", key="sign_user", aria_label="Choose a Username")
+            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", aria_label="Choose a Password")
             if st.button("Create Account", type="primary", use_container_width=True):
                 if s_user and s_pass:
                     if create_user(s_user, s_pass):
                         st.success("Account created! You can now log in.")
+                        st.session_state.switch_to_login = True
                     else:
                         st.error("Username already exists. Pick another one.")
                 else:
@@ -675,6 +668,87 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.username = "guest"
             st.rerun()
+
+    if st.session_state.get("switch_to_login"):
+        components.html(
+            """
+            <script>
+            setTimeout(() => {
+                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                const loginTab = Array.from(tabs).find(t => t.innerText.trim() === 'Login');
+                if (loginTab) {
+                    loginTab.click();
+                    setTimeout(() => {
+                        const userInp = window.parent.document.querySelector('input[aria-label="Username"]');
+                        if (userInp) userInp.focus();
+                    }, 100);
+                }
+            }, 100);
+            </script>
+            """,
+            height=0, width=0
+        )
+        st.session_state.switch_to_login = False
+
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        if (!window.authKeyboardAttached) {
+            window.authKeyboardAttached = true;
+            doc.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    const active = doc.activeElement;
+                    if (!active || active.tagName.toLowerCase() !== 'input') return;
+
+                    const ariaLabel = active.getAttribute('aria-label');
+
+                    if (ariaLabel === 'Username' || ariaLabel === 'Choose a Username') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        active.blur();
+                        const targetLabel = ariaLabel === 'Username' ? 'Password' : 'Choose a Password';
+                        setTimeout(() => {
+                            const passInput = doc.querySelector(`input[aria-label="${targetLabel}"]`);
+                            if (passInput) passInput.focus();
+                        }, 100);
+                    }
+                    else if (ariaLabel === 'Password' || ariaLabel === 'Choose a Password') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        active.blur();
+                        const targetText = ariaLabel === 'Password' ? 'Login' : 'Create Account';
+                        setTimeout(() => {
+                            const btns = Array.from(doc.querySelectorAll('button'));
+                            const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
+                            if (btn) btn.click();
+                        }, 100);
+                    }
+                }
+            }, true);
+        }
+        
+        // Initial Background setup fix for Light Mode
+        setInterval(() => {
+            const isDark = doc.body.classList.contains('custom-dark');
+            const isLight = doc.body.classList.contains('custom-light');
+            const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
+            const rgb = bg.match(/\\d+/g);
+            if (rgb && rgb.length >= 3) {
+                const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+                if (luma < 128 && !isDark) {
+                    doc.body.classList.add('custom-dark');
+                    doc.body.classList.remove('custom-light');
+                } else if (luma >= 128 && !isLight) {
+                    doc.body.classList.add('custom-light');
+                    doc.body.classList.remove('custom-dark');
+                }
+            }
+        }, 100);
+        </script>
+        """,
+        height=0, width=0
+    )
 
 else:
     st.markdown(
@@ -694,7 +768,7 @@ else:
             display: none !important;
         }
 
-        /* --- Left Control Panel (Glassmorphism & Legibility) --- */
+        /* --- Left Control Panel Aggressive Compacting & Glassmorphism --- */
         div[data-testid="column"]:has(#left-panel-marker) {
             background: rgba(255, 255, 255, 0.65) !important;
             padding: 1.5rem !important;
@@ -710,20 +784,39 @@ else:
             border: 1px solid rgba(255, 255, 255, 0.08) !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
         }
+        
+        /* Strip the excessive vertical gaps generated by Streamlit's st.container inside the left panel */
+        div[data-testid="column"]:has(#left-panel-marker) > div > div > div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
 
-        /* Captions: Category, Priority, Due */
+        /* Compress the labels (Category, Priority, Due) */
         div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #2c3e50 !important;
             font-weight: 700 !important;
-            font-size: 0.85rem !important;
+            font-size: 0.75rem !important;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-top: 0.5rem;
+            margin-top: 0.2rem !important;
+            margin-bottom: 0.1rem !important;
         }
         body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #ecf0f1 !important;
         }
         
+        /* Make the left panel buttons smaller and tighter */
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button {
+            padding: 0.15rem 0.2rem !important;
+            min-height: 1.8rem !important;
+            font-size: 0.8rem !important;
+        }
+        div[data-testid="column"]:has(#left-panel-marker) div[data-baseweb="input"] {
+            font-size: 0.9rem !important;
+        }
+
         /* Fixed-Height Quote Wrapper for 0 Layout Shift */
         .quote-wrapper {
             height: 90px;
@@ -991,13 +1084,10 @@ else:
                 with st.container(border=True):
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
-                    col1, col2, col3 = st.columns([0.4, 7.5, 1.5], vertical_alignment="center")
+                    # Layout: Main task body (left), Stacked buttons (right)
+                    col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
                     
-                    with col1:
-                        st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}", 
-                                    on_change=handle_task_check, args=(t["id"], bool(t["done"]), st.session_state.username))
-                            
-                    with col2:
+                    with col_main:
                         done_class = "is-done" if t["done"] else ""
                         created_time = datetime.fromisoformat(t["created_at"])
                         is_new_task = (now_time - created_time).total_seconds() < 2
@@ -1018,92 +1108,102 @@ else:
                         
                         st.markdown(html_string, unsafe_allow_html=True)
                         
-                    with col3:
-                        d1, d2 = st.columns(2)
-                        with d1:
-                            if st.button("Edit", key=f"edit_{t['id']}", help="Edit task"):
-                                st.session_state[f"editing_{t['id']}"] = True
-                        with d2:
-                            st.button("Del", key=f"del_{t['id']}", help="Delete task",
-                                      on_click=handle_task_delete, args=(t["id"], st.session_state.username))
+                        # ---------------- Subtasks ----------------
+                        subtasks = get_subtasks(t["id"])
+                        sub_total = len(subtasks)
+                        sub_done = sum(1 for s in subtasks if s["done"])
 
-                    # ---------------- Subtasks ----------------
-                    subtasks = get_subtasks(t["id"])
-                    sub_total = len(subtasks)
-                    sub_done = sum(1 for s in subtasks if s["done"])
+                        if sub_total > 0:
+                            st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
+                            st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
+                            st.markdown('</div>', unsafe_allow_html=True)
 
-                    if sub_total > 0:
-                        st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
-                        st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
-                        st.markdown('</div>', unsafe_allow_html=True)
-
-                    expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
-                    
-                    is_expanded = (st.session_state.active_task_id == t["id"])
-                    
-                    with st.expander(expander_label, expanded=is_expanded):
-                        for s in subtasks:
-                            sc1, sc2, sc3 = st.columns([0.5, 6.5, 1], vertical_alignment="center")
-                            with sc1:
-                                st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
-                                            on_change=handle_subtask_check, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username))
-                            with sc2:
-                                sub_class = "is-done" if s["done"] else ""
-                                st.markdown(
-                                    f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
-                                    unsafe_allow_html=True,
-                                )
-                            with sc3:
-                                st.button("✕", key=f"subdel_{s['id']}", help="Delete subtask",
-                                          on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username))
-
-                        st.caption("⚡ Press `/` to quickly start typing a subtask")
-                        new_sc1, new_sc2 = st.columns([6, 1.5])
-                        with new_sc1:
-                            st.text_input(
-                                "New subtask",
-                                key=f"new_sub_{t['id']}",
-                                placeholder="Add a subtask... (Press '/' to focus)",
-                                label_visibility="collapsed",
-                                on_change=handle_subtask_add, 
-                                args=(t['id'], st.session_state.username)
-                            )
-                        with new_sc2:
-                            st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
-                                      on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
-
-                    if st.session_state.get(f"editing_{t['id']}"):
-                        with st.form(f"edit_form_{t['id']}"):
-                            e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
-                            e_col1, e_col2, e_col3 = st.columns(3)
-                            with e_col1:
-                                e_priority = st.selectbox(
-                                    "Priority", PRIORITIES,
-                                    index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
-                                )
-                            with e_col2:
-                                cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
-                                e_category = st.selectbox(
-                                    "Category", cat_options, index=cat_options.index(t["category"])
-                                )
-                            with e_col3:
-                                e_due = st.date_input(
-                                    "Due date",
-                                    value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
-                                )
-                            save_col, cancel_col = st.columns(2)
-                            with save_col:
-                                if st.form_submit_button("Save", use_container_width=True):
-                                    update_task(
-                                        t["id"], e_text.strip(), e_priority, e_category,
-                                        e_due.isoformat() if e_due else None, st.session_state.username
+                        expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
+                        
+                        is_expanded = (st.session_state.active_task_id == t["id"])
+                        
+                        with st.expander(expander_label, expanded=is_expanded):
+                            for i, s in enumerate(subtasks):
+                                if i > 0:
+                                    st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
+                                sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
+                                with sc_main:
+                                    sub_class = "is-done" if s["done"] else ""
+                                    st.markdown(
+                                        f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
+                                        unsafe_allow_html=True,
                                     )
-                                    st.session_state[f"editing_{t['id']}"] = False
-                                    st.rerun()
-                            with cancel_col:
-                                if st.form_submit_button("Cancel", use_container_width=True):
-                                    st.session_state[f"editing_{t['id']}"] = False
-                                    st.rerun()
+                                with sc_btn:
+                                    if s["done"]:
+                                        st.button("↩️", key=f"subtog_{s['id']}", help="Mark incomplete", 
+                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                    else:
+                                        st.button("✔️", key=f"subtog_{s['id']}", help="Mark complete", 
+                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                        
+                                    st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
+                                              on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
+
+                            st.caption("⚡ Press `/` to quickly start typing a subtask")
+                            new_sc1, new_sc2 = st.columns([6, 1.5])
+                            with new_sc1:
+                                st.text_input(
+                                    "New subtask",
+                                    key=f"new_sub_{t['id']}",
+                                    placeholder="Add a subtask... (Press '/' to focus)",
+                                    label_visibility="collapsed",
+                                    on_change=handle_subtask_add, 
+                                    args=(t['id'], st.session_state.username)
+                                )
+                            with new_sc2:
+                                st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
+                                          on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
+
+                        if st.session_state.get(f"editing_{t['id']}"):
+                            with st.form(f"edit_form_{t['id']}"):
+                                e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
+                                e_col1, e_col2, e_col3 = st.columns(3)
+                                with e_col1:
+                                    e_priority = st.selectbox(
+                                        "Priority", PRIORITIES,
+                                        index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
+                                    )
+                                with e_col2:
+                                    cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
+                                    e_category = st.selectbox(
+                                        "Category", cat_options, index=cat_options.index(t["category"])
+                                    )
+                                with e_col3:
+                                    e_due = st.date_input(
+                                        "Due date",
+                                        value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
+                                    )
+                                save_col, cancel_col = st.columns(2)
+                                with save_col:
+                                    if st.form_submit_button("Save", use_container_width=True):
+                                        update_task(
+                                            t["id"], e_text.strip(), e_priority, e_category,
+                                            e_due.isoformat() if e_due else None, st.session_state.username
+                                        )
+                                        st.session_state[f"editing_{t['id']}"] = False
+                                        st.rerun()
+                                with cancel_col:
+                                    if st.form_submit_button("Cancel", use_container_width=True):
+                                        st.session_state[f"editing_{t['id']}"] = False
+                                        st.rerun()
+                                        
+                    with col_btns:
+                        if t["done"]:
+                            st.button("↩️", key=f"tog_{t['id']}", help="Mark incomplete", 
+                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
+                        else:
+                            st.button("✔️", key=f"tog_{t['id']}", help="Mark complete", 
+                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
+                        
+                        if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
+                            st.session_state[f"editing_{t['id']}"] = True
+                        st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
+                                  on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
 # ----------------------------- Custom JavaScript Injection -----------------------------
 components.html(
@@ -1111,18 +1211,11 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Setup Progressive States with SessionStorage to prevent Streamlit rerun wipeouts
-    window.textLocked = sessionStorage.getItem('pd_textLocked') === 'true';
-    window.categorySelected = sessionStorage.getItem('pd_categorySelected') === 'true';
-    window.prioritySelected = sessionStorage.getItem('pd_prioritySelected') === 'true';
-    window.dueSelected = sessionStorage.getItem('pd_dueSelected') === 'true';
-    
-    function savePDState() {
-        sessionStorage.setItem('pd_textLocked', window.textLocked);
-        sessionStorage.setItem('pd_categorySelected', window.categorySelected);
-        sessionStorage.setItem('pd_prioritySelected', window.prioritySelected);
-        sessionStorage.setItem('pd_dueSelected', window.dueSelected);
-    }
+    // Setup Progressive States
+    window.textLocked = false;
+    window.categorySelected = false;
+    window.prioritySelected = false;
+    window.dueSelected = false;
     
     const quotes = [
         "Stay locked in.", 
@@ -1144,6 +1237,24 @@ components.html(
             }, 500); 
         }
     }, 5000); 
+
+    // Initial Background setup fix for Light Mode
+    setInterval(() => {
+        const isDark = doc.body.classList.contains('custom-dark');
+        const isLight = doc.body.classList.contains('custom-light');
+        const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
+        const rgb = bg.match(/\\d+/g);
+        if (rgb && rgb.length >= 3) {
+            const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+            if (luma < 128 && !isDark) {
+                doc.body.classList.add('custom-dark');
+                doc.body.classList.remove('custom-light');
+            } else if (luma >= 128 && !isLight) {
+                doc.body.classList.add('custom-light');
+                doc.body.classList.remove('custom-dark');
+            }
+        }
+    }, 100);
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1225,13 +1336,10 @@ components.html(
         });
 
         if (taskInput && taskInput.value.trim().length === 0) {
-            if (window.textLocked || window.categorySelected || window.prioritySelected || window.dueSelected) {
-                window.textLocked = false;
-                window.categorySelected = false;
-                window.prioritySelected = false;
-                window.dueSelected = false;
-                savePDState();
-            }
+            window.textLocked = false;
+            window.categorySelected = false;
+            window.prioritySelected = false;
+            window.dueSelected = false;
         }
 
         if (window.textLocked) {
@@ -1272,16 +1380,37 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
+        // Remove focus instantly to prevent stuck tooltips
+        setTimeout(() => btn.blur(), 10);
+        
         const txt = btn.innerText.trim();
         
-        if (txt === 'Del' || txt === '✕') {
+        if (txt === '🗑️') {
             const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
-            if (marker && txt === 'Del') {
+            if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
                 const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
                 if (card) card.classList.add('optimistic-fade');
             } else {
                 const row = btn.closest('div[data-testid="column"]')?.parentElement;
                 if (row) row.classList.add('optimistic-fade');
+            }
+        }
+        else if (txt === '✔️' || txt === '↩️') {
+            const p = btn.querySelector('p');
+            if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
+            
+            const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
+            if (isSubtask) {
+                const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
+                if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
+            } else {
+                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || btn.closest('div[data-testid="stVerticalBlock"]');
+                if (card) {
+                    const mainRow = card.querySelector('.task-row');
+                    const mainTitle = card.querySelector('.task-title');
+                    if (mainRow) mainRow.classList.toggle('is-done', txt === '✔️');
+                    if (mainTitle) mainTitle.classList.toggle('is-done', txt === '✔️');
+                }
             }
         }
         else if (txt === 'Add task') {
@@ -1291,8 +1420,6 @@ components.html(
             window.categorySelected = false;
             window.prioritySelected = false;
             window.dueSelected = false;
-            savePDState();
-            
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1327,68 +1454,9 @@ components.html(
                 if (isCat) window.categorySelected = true;
                 if (isPri) window.prioritySelected = true;
                 if (isDue) window.dueSelected = true;
-                savePDState();
             }
         }
     }, true);
-
-    // Fast Checkbox Cascade Override (Visual updates instantly on state change)
-    doc.addEventListener('change', function(e) {
-        if (e.target && e.target.type === 'checkbox') {
-            const block = e.target.closest('div[data-testid="column"]')?.parentElement;
-            const isSubtask = e.target.closest('div[data-testid="stExpanderDetails"]') !== null;
-            const containerMarker = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
-            const container = containerMarker ? (containerMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || containerMarker.closest('div[data-testid="stVerticalBlock"]')) : null;
-            const isChecked = e.target.checked;
-            
-            if (block) {
-                const row = block.querySelector('.task-row');
-                const subRow = block.querySelector('.subtask-row');
-                
-                if (row && !isSubtask) {
-                    row.classList.toggle('is-done', isChecked);
-                    const title = row.querySelector('.task-title');
-                    if (title) title.classList.toggle('is-done', isChecked);
-                    
-                    if (container) {
-                        const subRows = container.querySelectorAll('.subtask-row');
-                        subRows.forEach(sr => sr.classList.toggle('is-done', isChecked));
-                        const subChecks = container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]');
-                        subChecks.forEach(sc => sc.checked = isChecked);
-                    }
-                }
-                
-                if (subRow && isSubtask) {
-                    subRow.classList.toggle('is-done', isChecked);
-                    
-                    if (container) {
-                        const parentRow = container.querySelector('.task-row');
-                        const parentCheck = container.querySelector('input[type="checkbox"]'); 
-                        const allSubChecks = Array.from(container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]'));
-                        
-                        if (!isChecked) {
-                            if (parentRow) {
-                                parentRow.classList.remove('is-done');
-                                const title = parentRow.querySelector('.task-title');
-                                if (title) title.classList.remove('is-done');
-                            }
-                            if (parentCheck) parentCheck.checked = false;
-                        } else {
-                            const allDone = allSubChecks.every(c => c.checked);
-                            if (allDone) {
-                                if (parentRow) {
-                                    parentRow.classList.add('is-done');
-                                    const title = parentRow.querySelector('.task-title');
-                                    if (title) title.classList.add('is-done');
-                                }
-                                if (parentCheck) parentCheck.checked = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
 
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
@@ -1540,7 +1608,6 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1605,21 +1672,21 @@ components.html(
                         }
                     };
 
-                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; savePDState(); }
-                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; savePDState(); }
-                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; savePDState(); }
-                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; savePDState(); }
-                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; savePDState(); }
-                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; savePDState(); }
+                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; }
+                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
+                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
+                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
+                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
+                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
                     
-                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; savePDState(); }
-                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; savePDState(); }
-                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; savePDState(); }
-                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; savePDState(); }
+                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
+                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; }
+                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; }
+                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; }
                     
-                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; savePDState(); }
-                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; savePDState(); }
-                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; savePDState(); }
+                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; }
+                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; }
+                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; }
                     
                     return; 
                 } 
@@ -1658,7 +1725,6 @@ components.html(
                     
                     if (!window.textLocked) {
                         window.textLocked = true;
-                        savePDState();
                         taskInput.blur(); 
                     } 
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
@@ -1670,12 +1736,7 @@ components.html(
                                 window.categorySelected = false;
                                 window.prioritySelected = false;
                                 window.dueSelected = false;
-                                savePDState();
                                 taskInput.value = '';
-                                setTimeout(() => {
-                                    btn.classList.remove('optimistic-btn');
-                                    btn.innerText = 'Add task';
-                                }, 1000);
                                 btn.click();
                             }
                         });
