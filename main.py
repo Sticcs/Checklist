@@ -391,7 +391,7 @@ st.markdown(
     }
 
     /* Stack the icon buttons neatly */
-    div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {
+    div[data-testid="stColumn"]:nth-child(2) div[data-testid="stButton"] button {
         padding: 0.1rem 0 !important;
         min-height: 2rem !important;
         margin-bottom: 0.2rem !important;
@@ -482,11 +482,12 @@ st.markdown(
         font-size: 0.75rem;
     }
     
-    div[data-testid="stButton"] button { 
+    div[data-testid="stButton"] button {
         width: 100%;
         height: auto !important;
         padding: 0.4rem 0.2rem !important;
-        transition: background-color 0.05s ease, border-color 0.05s ease, color 0.05s ease, transform 0.05s ease !important;
+        transition: background-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+        will-change: background-color, transform;
     }
     div[data-testid="stButton"] button:active {
         transform: scale(0.97) !important;
@@ -551,9 +552,10 @@ st.markdown(
         font-size: 0.92rem;
         display: flex;
         align-items: center;
-        transition: opacity 0.05s ease;
+        transition: opacity 0.15s ease;
         margin: 0 !important;
-        padding: 0.4rem 0 !important;
+        padding: 0.5rem 0.1rem !important;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.14);
     }
     .subtask-row.is-done {
         text-decoration: line-through;
@@ -630,27 +632,29 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            l_user = st.text_input("Username", key="login_user")
-            l_pass = st.text_input("Password", type="password", key="login_pass")
-            if st.button("Login", type="primary", use_container_width=True):
-                if verify_user(l_user, l_pass):
-                    st.session_state.logged_in = True
-                    st.session_state.username = l_user.strip()
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
-                    
-        with tab2:
-            s_user = st.text_input("Choose a Username", key="sign_user")
-            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
-            if st.button("Create Account", type="primary", use_container_width=True):
-                if s_user and s_pass:
-                    if create_user(s_user, s_pass):
-                        st.success("Account created! You can now log in.")
+            with st.form("login_form", border=False):
+                l_user = st.text_input("Username", key="login_user", placeholder="Enter your username")
+                l_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Enter your password")
+                if st.form_submit_button("Login", type="primary", use_container_width=True):
+                    if verify_user(l_user, l_pass):
+                        st.session_state.logged_in = True
+                        st.session_state.username = l_user.strip()
+                        st.rerun()
                     else:
-                        st.error("Username already exists. Pick another one.")
-                else:
-                    st.warning("Please fill in both fields.")
+                        st.error("Invalid username or password.")
+
+        with tab2:
+            with st.form("signup_form", border=False):
+                s_user = st.text_input("Choose a Username", key="sign_user", placeholder="Pick a username")
+                s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", placeholder="Pick a password")
+                if st.form_submit_button("Create Account", type="primary", use_container_width=True):
+                    if s_user and s_pass:
+                        if create_user(s_user, s_pass):
+                            st.success("Account created! You can now log in.")
+                        else:
+                            st.error("Username already exists. Pick another one.")
+                    else:
+                        st.warning("Please fill in both fields.")
                     
         st.write("---")
         if st.button("Continue as Guest", type="secondary", use_container_width=True):
@@ -663,7 +667,7 @@ else:
         """
         <style>
         /* --- Right List Column Scrolling --- */
-        div[data-testid="column"]:has(#right-col-anchor) {
+        div[data-testid="stColumn"]:has(#right-col-anchor) {
             height: 88vh !important;
             max-height: 88vh !important;
             overflow-y: scroll !important;
@@ -672,12 +676,12 @@ else:
             -ms-overflow-style: none !important; 
             scrollbar-width: none !important; 
         }
-        div[data-testid="column"]:has(#right-col-anchor)::-webkit-scrollbar {
+        div[data-testid="stColumn"]:has(#right-col-anchor)::-webkit-scrollbar {
             display: none !important;
         }
 
         /* --- Left Control Panel (Glassmorphism & Legibility) --- */
-        div[data-testid="column"]:has(#left-panel-marker) {
+        div[data-testid="stColumn"]:has(#left-panel-marker) {
             background: rgba(255, 255, 255, 0.65) !important;
             padding: 1.5rem !important;
             border-radius: 16px !important;
@@ -687,14 +691,14 @@ else:
             border: 1px solid rgba(255, 255, 255, 0.4) !important;
             height: fit-content !important;
         }
-        body.custom-dark div[data-testid="column"]:has(#left-panel-marker) {
+        body.custom-dark div[data-testid="stColumn"]:has(#left-panel-marker) {
             background: rgba(14, 17, 23, 0.55) !important;
             border: 1px solid rgba(255, 255, 255, 0.08) !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
         }
 
         /* Captions: Category, Priority, Due */
-        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
+        div[data-testid="stColumn"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #2c3e50 !important;
             font-weight: 700 !important;
             font-size: 0.85rem !important;
@@ -702,7 +706,7 @@ else:
             letter-spacing: 0.5px;
             margin-top: 0.5rem;
         }
-        body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
+        body.custom-dark div[data-testid="stColumn"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #ecf0f1 !important;
         }
         
@@ -775,18 +779,78 @@ else:
                 cat = st.session_state.get("custom_cat_input", "").strip()
                 if not cat:
                     cat = "General"
-                    
+
             new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
             st.session_state.just_added_task_id = new_id
             st.session_state.newly_added_task = {
                 "priority": st.session_state.new_priority,
                 "due": due_date
             }
-            
-            st.session_state.task_input = "" 
+
+            st.session_state.task_input = ""
             st.session_state.options_modified = False
             if "custom_cat_input" in st.session_state:
                 st.session_state.custom_cat_input = ""
+
+    # Each option group below reruns in isolation (st.fragment) instead of the whole
+    # app, so clicking Category/Priority/Due no longer flickers/re-renders the task list.
+    @st.fragment
+    def render_category_picker():
+        st.markdown("<div id='step-cat-marker'></div>", unsafe_allow_html=True)
+        st.caption("Category")
+        cat_cols = st.columns(len(CATEGORIES), gap="small")
+        for col, cat in zip(cat_cols, CATEGORIES):
+            with col:
+                btn_label = f"{cat} [{CAT_KEYS[cat]}]" if CAT_KEYS[cat] else cat
+                st.button(
+                    btn_label,
+                    key=f"cat_btn_{cat}",
+                    on_click=set_category,
+                    args=(cat,),
+                    type="primary" if st.session_state.new_category == cat else "secondary",
+                )
+
+        if st.session_state.new_category == "Custom":
+            st.text_input("Custom Category", placeholder="E.g., Groceries", key="custom_cat_input", label_visibility="collapsed")
+            if st.session_state.focus_custom:
+                components.html(
+                    "<script>setTimeout(() => { const inp = window.parent.document.querySelector('input[placeholder=\"E.g., Groceries\"]'); if(inp) inp.focus(); }, 150);</script>",
+                    height=0, width=0
+                )
+                st.session_state.focus_custom = False
+
+    @st.fragment
+    def render_priority_picker():
+        st.markdown("<div id='step-pri-marker'></div>", unsafe_allow_html=True)
+        st.caption("Priority")
+        pri_cols = st.columns(len(PRIORITIES), gap="small")
+        for col, pri in zip(pri_cols, PRIORITIES):
+            with col:
+                st.button(
+                    f"{pri} [{PRI_KEYS[pri]}]",
+                    key=f"pri_btn_{pri}",
+                    on_click=set_priority,
+                    args=(pri,),
+                    type="primary" if st.session_state.new_priority == pri else "secondary",
+                )
+
+    @st.fragment
+    def render_due_picker():
+        st.markdown("<div id='step-due-marker'></div>", unsafe_allow_html=True)
+        st.caption("Due")
+        due_cols = st.columns(len(DUE_PRESETS), gap="small")
+        for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
+            with col:
+                st.button(
+                    f"{preset} [{i+1}]",
+                    key=f"due_btn_{preset}",
+                    on_click=set_due_preset,
+                    args=(preset,),
+                    type="primary" if st.session_state.new_due_preset == preset else "secondary",
+                )
+
+        if st.session_state.new_due_preset == "Custom":
+            st.date_input("Pick a date", key="new_due_custom", label_visibility="collapsed")
 
     tasks = get_tasks(st.session_state.username)
     sidebar_categories = sorted({t["category"] for t in tasks}) if tasks else []
@@ -864,59 +928,13 @@ else:
             st.markdown("<div class='first-task-prompt'>↑ Type your first task here</div>", unsafe_allow_html=True)
 
         with st.container():
-            st.markdown("<div id='step-cat-marker'></div>", unsafe_allow_html=True)
-            st.caption("Category")
-            cat_cols = st.columns(len(CATEGORIES), gap="small")
-            for col, cat in zip(cat_cols, CATEGORIES):
-                with col:
-                    btn_label = f"{cat} [{CAT_KEYS[cat]}]" if CAT_KEYS[cat] else cat
-                    st.button(
-                        btn_label,
-                        key=f"cat_btn_{cat}",
-                        on_click=set_category,
-                        args=(cat,),
-                        type="primary" if st.session_state.new_category == cat else "secondary",
-                    )
-                    
-            if st.session_state.new_category == "Custom":
-                st.text_input("Custom Category", placeholder="E.g., Groceries", key="custom_cat_input", label_visibility="collapsed")
-                if st.session_state.focus_custom:
-                    components.html(
-                        "<script>setTimeout(() => { const inp = window.parent.document.querySelector('input[placeholder=\"E.g., Groceries\"]'); if(inp) inp.focus(); }, 150);</script>", 
-                        height=0, width=0
-                    )
-                    st.session_state.focus_custom = False
+            render_category_picker()
 
         with st.container():
-            st.markdown("<div id='step-pri-marker'></div>", unsafe_allow_html=True)
-            st.caption("Priority")
-            pri_cols = st.columns(len(PRIORITIES), gap="small")
-            for col, pri in zip(pri_cols, PRIORITIES):
-                with col:
-                    st.button(
-                        f"{pri} [{PRI_KEYS[pri]}]",
-                        key=f"pri_btn_{pri}",
-                        on_click=set_priority,
-                        args=(pri,),
-                        type="primary" if st.session_state.new_priority == pri else "secondary",
-                    )
+            render_priority_picker()
 
         with st.container():
-            st.markdown("<div id='step-due-marker'></div>", unsafe_allow_html=True)
-            st.caption("Due")
-            due_cols = st.columns(len(DUE_PRESETS), gap="small")
-            for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
-                with col:
-                    st.button(
-                        f"{preset} [{i+1}]",
-                        key=f"due_btn_{preset}",
-                        on_click=set_due_preset,
-                        args=(preset,),
-                        type="primary" if st.session_state.new_due_preset == preset else "secondary",
-                    )
-
-            if st.session_state.new_due_preset == "Custom":
-                st.date_input("Pick a date", key="new_due_custom", label_visibility="collapsed")
+            render_due_picker()
 
         with st.container():
             st.markdown("<div id='step-add-marker'></div>", unsafe_allow_html=True)
@@ -1148,7 +1166,10 @@ components.html(
                 let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
                 if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
                 if (!card) return;
-                
+                // Skip cards mid-delete: their own collapse transition owns `style` right now,
+                // and re-stamping it here every 100ms would cut that animation short.
+                if (card.dataset.collapsing === 'true') return;
+
                 const isDone = card.querySelector('.task-row.is-done') !== null;
                 const hasHigh = card.querySelector('.border-High') !== null;
                 const hasMed = card.querySelector('.border-Medium') !== null;
@@ -1190,7 +1211,7 @@ components.html(
 
         const getScrollCol = () => {
             const anchor = doc.getElementById('right-col-anchor');
-            return anchor ? anchor.closest('div[data-testid="column"]') : null;
+            return anchor ? anchor.closest('div[data-testid="stColumn"]') : null;
         };
 
         controls.querySelector('#scroll-up').onclick = () => {
@@ -1202,10 +1223,11 @@ components.html(
             if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
         };
         
-        setInterval(() => {
+        const scrollBindTimer = setInterval(() => {
             const col = getScrollCol();
             if (col && !col.dataset.scrollBound) {
                 col.dataset.scrollBound = "true";
+                col.style.overflowAnchor = 'none';
                 const savedScroll = sessionStorage.getItem('rightColScroll');
                 if (savedScroll !== null) {
                     col.scrollTop = parseInt(savedScroll);
@@ -1213,6 +1235,7 @@ components.html(
                 col.addEventListener('scroll', () => {
                     sessionStorage.setItem('rightColScroll', col.scrollTop);
                 });
+                clearInterval(scrollBindTimer);
             }
         }, 300);
     }
@@ -1336,21 +1359,98 @@ components.html(
         }
     }, 100);
 
+    // Finds the bordered task-card block enclosing a button/input that lives
+    // inside one of its columns (e.g. the delete button, or a subtask input
+    // nested inside the subtasks expander). Streamlit no longer exposes a
+    // dedicated "bordered wrapper" testid for st.container(border=True), so
+    // the card is just a stVerticalBlock — but a button's *nearest*
+    // stVerticalBlock ancestor is its own column's inner block, not the
+    // card. Climb past each column/row pair until the block found actually
+    // contains the card's marker.
+    function findEnclosingCard(el) {
+        let node = el;
+        for (let i = 0; i < 6 && node; i++) {
+            const block = node.closest('[data-testid="stVerticalBlock"]');
+            if (!block) return null;
+            if (block.querySelector('.task-card-marker')) return block;
+            const col = block.closest('[data-testid="stColumn"]');
+            const hBlock = col ? col.closest('[data-testid="stHorizontalBlock"]') : null;
+            if (!hBlock) return null;
+            node = hBlock;
+        }
+        return null;
+    }
+
+    // Smoothly collapses a task/subtask row (height + fade) before letting the
+    // real delete click through, so removal never causes an abrupt jump.
+    function collapseAndDelete(el, btn) {
+        if (!el || el.dataset.collapsing === 'true') return;
+        el.dataset.collapsing = 'true';
+        const startHeight = el.getBoundingClientRect().height;
+        el.style.overflow = 'hidden';
+        el.style.maxHeight = startHeight + 'px';
+        el.style.transition = 'max-height 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, transform 0.22s ease, margin 0.26s ease, padding 0.26s ease';
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                el.style.maxHeight = '0px';
+                el.style.opacity = '0';
+                el.style.transform = 'scale(0.97)';
+                el.style.marginTop = '0px';
+                el.style.marginBottom = '0px';
+                el.style.paddingTop = '0px';
+                el.style.paddingBottom = '0px';
+                el.style.pointerEvents = 'none';
+            });
+        });
+        setTimeout(() => btn.click(), 250);
+    }
+
+    // Streamlit resizes the main content pane the instant the sidebar is
+    // collapsed/expanded (only the sidebar itself slides, over ~0.3s) — the
+    // content pane's width snaps in a single frame, with nothing to visually
+    // ease. Rather than fight React for control of that width, mask the snap
+    // with a brief, deliberate opacity settle timed to the sidebar's slide,
+    // so the change reads as an eased transition instead of a hard cut.
+    function smoothMainResize() {
+        const main = doc.querySelector('[data-testid="stMain"]');
+        if (!main || main.dataset.resizing === 'true') return;
+        main.dataset.resizing = 'true';
+        main.style.setProperty('transition', 'opacity 0.16s ease-out', 'important');
+        main.style.setProperty('opacity', '0.45', 'important');
+        setTimeout(() => {
+            main.style.setProperty('transition', 'opacity 0.22s ease-in', 'important');
+            main.style.setProperty('opacity', '1', 'important');
+            setTimeout(() => {
+                main.style.removeProperty('transition');
+                main.style.removeProperty('opacity');
+                delete main.dataset.resizing;
+            }, 240);
+        }, 110);
+    }
+
     // --- TRUE OPTIMISTIC UI: Event Delegation ---
     doc.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
-        
+
+        if (btn.closest('[data-testid="stSidebarCollapseButton"], [data-testid="stExpandSidebarButton"]')) {
+            smoothMainResize();
+        }
+
         const txt = btn.innerText.trim();
-        
+
         if (txt === '🗑️') {
-            const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
-            if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
-                const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
-                if (card) card.classList.add('optimistic-fade');
+            let target = null;
+            if (!e.target.closest('div[data-testid="stExpanderDetails"]')) {
+                target = findEnclosingCard(btn);
             } else {
-                const row = btn.closest('div[data-testid="column"]')?.parentElement;
-                if (row) row.classList.add('optimistic-fade');
+                target = btn.closest('div[data-testid="stColumn"]')?.parentElement;
+            }
+            if (target && target.dataset.collapsing !== 'true') {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                collapseAndDelete(target, btn);
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
@@ -1361,10 +1461,10 @@ components.html(
             // Instantly apply visual toggle logic
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
-                const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
+                const subRow = btn.closest('div[data-testid="stColumn"]')?.parentElement.querySelector('.subtask-row');
                 if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
             } else {
-                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || btn.closest('div[data-testid="stVerticalBlock"]');
+                const card = findEnclosingCard(btn);
                 if (card) {
                     const mainRow = card.querySelector('.task-row');
                     const mainTitle = card.querySelector('.task-title');
@@ -1457,8 +1557,7 @@ components.html(
         let activeCard = null;
 
         if (doc.activeElement && doc.activeElement.tagName.toLowerCase() === 'input' && doc.activeElement.placeholder && doc.activeElement.placeholder.includes('Add a subtask')) {
-            const m = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
-            if (m) activeCard = m.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || m.closest('div[data-testid="stVerticalBlock"]');
+            activeCard = findEnclosingCard(doc.activeElement);
         }
 
         allCards.forEach(marker => {
@@ -1560,8 +1659,27 @@ components.html(
                 if(inp.placeholder === "E.g., Review Big O time complexity") taskInput = inp;
                 if(inp.placeholder === "E.g., Groceries") customInput = inp;
             });
-            
+
             const activeTag = doc.activeElement ? doc.activeElement.tagName.toLowerCase() : '';
+
+            // Login/Sign-up: Enter advances username -> password, then submits
+            // the form natively (Streamlit auto-submits forms on Enter).
+            if (e.key === 'Enter' && activeTag === 'input') {
+                const advanceMap = {
+                    'Enter your username': 'Enter your password',
+                    'Pick a username': 'Pick a password',
+                };
+                const nextPlaceholder = advanceMap[doc.activeElement.placeholder];
+                if (nextPlaceholder) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    const next = doc.querySelector(`input[placeholder="${nextPlaceholder}"]`);
+                    if (next) next.focus();
+                    return;
+                }
+            }
+
             const isTyping = (activeTag === 'input' || activeTag === 'textarea');
             const hasText = taskInput ? taskInput.value.trim().length > 0 : false;
             const key = e.key.toLowerCase();
@@ -1582,7 +1700,7 @@ components.html(
                     if (window.latestTaskId) {
                         const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${window.latestTaskId}"]`);
                         if (cardMarker) {
-                            const targetCard = cardMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                            const targetCard = cardMarker.closest('div[data-testid="stVerticalBlock"]');
                             if (targetCard) {
                                 const subInputs = targetCard.querySelectorAll('input[placeholder*="Add a subtask"]');
                                 if (subInputs.length > 0) targetInput = subInputs[0];
