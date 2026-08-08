@@ -1144,50 +1144,78 @@ components.html(
         }
     }, 8000); 
 
-    // Aggressive Task Box Color Injection (Forces transparency on blockers)
-    setInterval(() => {
-        const isDark = doc.body.classList.contains('custom-dark');
-        const markers = doc.querySelectorAll('.task-card-marker');
-        
-        markers.forEach(marker => {
-            let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (!card) return;
-            
-            const isDone = card.querySelector('.task-row.is-done') !== null;
-            const hasHigh = card.querySelector('.border-High') !== null;
-            const hasMed = card.querySelector('.border-Medium') !== null;
-            const hasLow = card.querySelector('.border-Low') !== null;
-            
-            let bgColor = '';
-            let borderColor = '';
+    // Task Box Colour Injection
+setInterval(() => {
+    const isDark = doc.body.classList.contains('custom-dark');
+    const markers = doc.querySelectorAll('.task-card-marker');
 
-            if (isDone) {
-                bgColor = isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)';
-                borderColor = isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)';
-            } else if (hasHigh) {
-                bgColor = isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)';
-                borderColor = 'rgba(231, 76, 60, 0.8)';
-            } else if (hasMed) {
-                bgColor = isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)';
-                borderColor = 'rgba(243, 156, 18, 0.8)';
-            } else if (hasLow) {
-                bgColor = isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)';
-                borderColor = 'rgba(52, 152, 219, 0.8)';
-            }
+    markers.forEach(marker => {
+        const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+        if (!card) return;
 
-            if (bgColor) {
-                card.style.setProperty('background-color', bgColor, 'important');
-                card.style.setProperty('border-color', borderColor, 'important');
-                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-                
-                // Force the inner container to be transparent so the color bleeds through
-                let innerDiv = card.querySelector('div[data-testid="stVerticalBlock"]');
-                if (innerDiv) {
-                    innerDiv.style.setProperty('background-color', 'transparent', 'important');
-                }
+        const isDone = card.querySelector('.task-row.is-done') !== null;
+        const hasHigh = card.querySelector('.border-High') !== null;
+        const hasMed = card.querySelector('.border-Medium') !== null;
+        const hasLow = card.querySelector('.border-Low') !== null;
+
+        let bgColor = '';
+        let borderColor = '';
+
+        if (isDone) {
+            // Completed = solid green
+            bgColor = 'rgba(46, 204, 113, 1)';
+            borderColor = 'rgba(39, 174, 96, 1)';
+
+        } else if (hasHigh) {
+            // High = actual priority colour at 85%
+            bgColor = 'rgba(231, 76, 60, 0.85)';
+            borderColor = 'rgba(231, 76, 60, 1)';
+
+        } else if (hasMed) {
+            // Medium = actual priority colour at 85%
+            bgColor = 'rgba(243, 156, 18, 0.85)';
+            borderColor = 'rgba(243, 156, 18, 1)';
+
+        } else if (hasLow) {
+            // Low = actual priority colour at 85%
+            bgColor = 'rgba(52, 152, 219, 0.85)';
+            borderColor = 'rgba(52, 152, 219, 1)';
+        }
+
+        if (bgColor) {
+            card.style.setProperty(
+                'background-color',
+                bgColor,
+                'important'
+            );
+
+            card.style.setProperty(
+                'border-color',
+                borderColor,
+                'important'
+            );
+
+            card.style.setProperty(
+                'transition',
+                'background-color 0.3s ease, border-color 0.3s ease',
+                'important'
+            );
+
+            // Make Streamlit's inner wrapper transparent
+            const innerDiv = card.querySelector(
+                'div[data-testid="stVerticalBlock"]'
+            );
+
+            if (innerDiv) {
+                innerDiv.style.setProperty(
+                    'background-color',
+                    'transparent',
+                    'important'
+                );
             }
-        });
-    }, 100);
+        }
+    });
+}, 100);
 
     // Persist Scroll memory
     if (!doc.getElementById('scroll-controls')) {
