@@ -2,6 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import sqlite3
 import hashlib
+import html
 from datetime import date, timedelta, datetime, timezone
 from contextlib import closing
 
@@ -106,6 +107,15 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
         conn.commit()
 
 def get_tasks(username):
@@ -131,6 +141,26 @@ def get_all_subtasks(username):
             (username,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+def log_activity(username, action, detail):
+    with closing(get_conn()) as conn:
+        conn.execute(
+            "INSERT INTO activity_log (username, action, detail, created_at) VALUES (?, ?, ?, ?)",
+            (username, action, detail, datetime.now().isoformat()),
+        )
+        conn.commit()
+
+def get_activity_log(username, limit=15):
+    with closing(get_conn()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM activity_log WHERE username = ? ORDER BY created_at DESC LIMIT ?",
+            (username, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def _get_task_text(conn, task_id):
+    row = conn.execute("SELECT text FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    return row["text"] if row else "(unknown task)"
 
 def _restore_state(state_tasks, username):
     with closing(get_conn()) as conn:
@@ -190,31 +220,38 @@ def add_task(text, priority, category, due_date, username):
         )
         new_id = cur.lastrowid
         conn.commit()
+    log_activity(username, "added", text)
     return new_id
 
 def set_done(task_id, done, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        text = _get_task_text(conn, task_id)
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         conn.commit()
     status = "completed" if done else "unmarked"
     st.session_state.pending_toast = f"✅ Task {status}"
+    log_activity(username, "completed" if done else "uncompleted", text)
 
 def set_pinned(task_id, pinned, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        text = _get_task_text(conn, task_id)
         conn.execute("UPDATE tasks SET pinned = ? WHERE id = ? AND username = ?", (int(pinned), task_id, username))
         conn.commit()
     st.session_state.pending_toast = "📌 Task pinned" if pinned else "📌 Task unpinned"
+    log_activity(username, "pinned" if pinned else "unpinned", text)
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        text = _get_task_text(conn, task_id)
         conn.execute("DELETE FROM subtasks WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
     st.session_state.pending_toast = "🗑️ Task deleted"
+    log_activity(username, "deleted", text)
 
 def clear_completed(username):
     save_state_for_undo(username)
@@ -228,16 +265,21 @@ def clear_completed(username):
         conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
     st.session_state.pending_toast = "🧹 Cleared completed tasks"
+    if done_ids:
+        log_activity(username, "cleared_completed", f"{len(done_ids)} task{'s' if len(done_ids) != 1 else ''}")
 
 def clear_all(username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        count = conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE username = ?", (username,)).fetchone()["c"]
         conn.execute(
             "DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE username = ?)", (username,)
         )
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
     st.session_state.pending_toast = "🗑️ Cleared all tasks"
+    if count:
+        log_activity(username, "cleared_all", f"{count} task{'s' if count != 1 else ''}")
 
 def add_subtask(task_id, text, username):
     save_state_for_undo(username)
@@ -282,23 +324,31 @@ def delete_subtask(subtask_id, task_id, username):
 def mark_all_completed(username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS c FROM tasks WHERE username = ? AND done = 0", (username,)
+        ).fetchone()["c"]
         conn.execute("UPDATE tasks SET done = 1 WHERE username = ?", (username,))
         conn.execute(
-            "UPDATE subtasks SET done = 1 WHERE task_id IN (SELECT id FROM tasks WHERE username = ?)", 
+            "UPDATE subtasks SET done = 1 WHERE task_id IN (SELECT id FROM tasks WHERE username = ?)",
             (username,)
         )
         conn.commit()
     st.session_state.pending_toast = "✅ Marked all as completed"
+    if count:
+        log_activity(username, "marked_all_completed", f"{count} task{'s' if count != 1 else ''}")
 
 def update_task(task_id, text, priority, category, due_date, username):
     save_state_for_undo(username)
     with closing(get_conn()) as conn:
+        old_text = _get_task_text(conn, task_id)
         conn.execute(
             "UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ? WHERE id = ? AND username = ?",
             (text, priority, category, due_date, task_id, username),
         )
         conn.commit()
     st.session_state.pending_toast = "💾 Task updated"
+    detail = text if text == old_text else f"{old_text} → {text}"
+    log_activity(username, "edited", detail)
 
 # ----------------------------- Callback Handlers -----------------------------
 
@@ -336,6 +386,19 @@ PRIORITIES = ["High", "Medium", "Low"]
 
 CAT_KEYS = {"House": "H", "Work": "W", "Study": "S", "Personal": "P", "Custom": ""}
 PRI_KEYS = {"High": "T", "Medium": "M", "Low": "L"}
+
+ACTIVITY_META = {
+    "added": ("➕", "Added"),
+    "completed": ("✅", "Completed"),
+    "uncompleted": ("↩️", "Unmarked"),
+    "pinned": ("📌", "Pinned"),
+    "unpinned": ("📌", "Unpinned"),
+    "deleted": ("🗑️", "Deleted"),
+    "edited": ("✏️", "Edited"),
+    "cleared_completed": ("🧹", "Cleared completed"),
+    "cleared_all": ("🗑️", "Cleared all"),
+    "marked_all_completed": ("✅", "Marked all completed"),
+}
 
 st.markdown(
     """
@@ -494,6 +557,27 @@ st.markdown(
         padding: 2px 8px;
         border-radius: 4px;
         letter-spacing: 0.2px;
+    }
+    .activity-log-entry {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+        padding: 0.35rem 0;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+        font-size: 0.82rem;
+    }
+    .activity-log-entry:last-child {
+        border-bottom: none;
+    }
+    .activity-log-entry > span:first-child {
+        overflow-wrap: anywhere;
+    }
+    .activity-log-time {
+        opacity: 0.55;
+        font-size: 0.72rem;
+        white-space: nowrap;
+        flex-shrink: 0;
     }
     .overdue {
         color: #e74c3c;
@@ -783,7 +867,12 @@ else:
            at the natural top of the list. --- */
         div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
             padding: 0.6rem 1rem !important;
-            margin: 0 2px 0.4rem 2px !important;
+            /* The right column's #right-col-anchor marker and this bar's own
+               #overall-progress-marker are each a separate zero-height
+               placeholder div, and Streamlit puts a 16px gap after each one -
+               pulling the bar up by that stacked 32px lines its top edge up
+               with the task entry panel's top edge on the left. */
+            margin: -32px 2px 0.4rem 2px !important;
             border-radius: 12px !important;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
@@ -1046,12 +1135,21 @@ else:
         st.write("---")
         
         with st.expander("Activity Logs"):
-            valid_logs = [t for t in tasks if t['done'] and len(t['text'].strip()) >= 3]
-            if not valid_logs:
-                st.caption("No recent activities.")
+            logs = get_activity_log(st.session_state.username, limit=15)
+            if not logs:
+                st.caption("No recent activity.")
             else:
-                for log in valid_logs[:10]:
-                    st.markdown(f"<span style='opacity: 0.7; font-size: 0.85rem;'>{log['text']}</span>", unsafe_allow_html=True)
+                for log in logs:
+                    icon, label = ACTIVITY_META.get(log["action"], ("•", log["action"].replace("_", " ").title()))
+                    when = datetime.fromisoformat(log["created_at"])
+                    time_str = when.strftime("%b %d, %I:%M %p").replace(" 0", " ")
+                    st.markdown(
+                        f"<div class='activity-log-entry'>"
+                        f"<span>{icon} <b>{label}:</b> {html.escape(log['detail'])}</span>"
+                        f"<span class='activity-log-time'>{time_str}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
 
     # ----------------------------- Main Layout -----------------------------
 
@@ -1125,8 +1223,6 @@ else:
         filtered.sort(key=lambda t: not t["done"])
         filtered.sort(key=lambda t: not t["pinned"])
 
-        st.write("")
-        st.write("")
         # st.empty() gives these slots a stable identity that's explicitly blanked
         # every run before being conditionally refilled, so a deleted task can't
         # leave a stale "X / Y completed" total behind. Two separate empty()
