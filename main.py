@@ -371,8 +371,51 @@ st.markdown(
         font-weight: 500 !important;
         letter-spacing: -0.5px;
     }
+    
+    /* Layout: Flexbox setup for the outside button column stretching */
+    div[data-testid="stHorizontalBlock"]:has(.outside-btn-marker) {
+        align-items: stretch !important;
+        margin-bottom: 0.8rem !important;
+    }
+    div[data-testid="column"]:has(.outside-btn-marker) {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: stretch !important;
+    }
+    div[data-testid="column"]:has(.outside-btn-marker) > div.element-container:has(button) {
+        flex-grow: 1 !important;
+        display: flex !important;
+    }
+    div[data-testid="column"]:has(.outside-btn-marker) .stButton {
+        flex-grow: 1 !important;
+        display: flex !important;
+        height: 100% !important;
+    }
+    div[data-testid="column"]:has(.outside-btn-marker) button {
+        height: 100% !important;
+        min-height: 100% !important;
+        width: 100% !important;
+        border-radius: 12px !important;
+        background-color: rgba(128, 128, 128, 0.05) !important;
+        border: 1px solid rgba(128, 128, 128, 0.25) !important;
+        font-size: 1.5rem !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    div[data-testid="column"]:has(.outside-btn-marker) button:hover {
+        background-color: rgba(46, 204, 113, 0.2) !important;
+        border-color: rgba(46, 204, 113, 0.5) !important;
+    }
 
-    /* Stack the inner card icon buttons neatly */
+    /* Remove default margin from the task card so it perfectly aligns with the side button */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) {
+        margin-bottom: 0 !important;
+        height: 100% !important;
+        border-radius: 14px !important;
+        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
+    }
+
+    /* Stack the inner card icon buttons neatly on the right */
     div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {
         padding: 0.1rem 0 !important;
         min-height: 2rem !important;
@@ -453,6 +496,26 @@ st.markdown(
         line-height: 1;
     }
     
+    .profile-indicator {
+        font-size: 0.85rem;
+        font-weight: 500;
+        opacity: 0.75;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 0.8rem;
+    }
+    .profile-indicator span {
+        background: rgba(128, 128, 128, 0.2);
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+    }
+    
     div[data-testid="stButton"] button { 
         width: 100%;
         height: auto !important;
@@ -483,44 +546,6 @@ st.markdown(
         border-radius: 12px;
         background: rgba(128,128,128,0.1);
         margin-top: 4rem;
-    }
-
-    /* Target Task Container Explicitly */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) {
-        border-radius: 14px !important;
-        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
-        margin-bottom: 0.7rem !important;
-        overflow: visible !important; /* Allow the absolute button to break out */
-        position: relative !important; /* Anchor for the absolute button */
-    }
-
-    /* EXTRACTING THE COMPLETE BUTTON TO THE LEFT OUTSIDE THE BOX */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) > div > div.element-container:has(button[title^="Mark task"]) {
-        position: absolute !important;
-        left: -48px !important; /* Push it 48px to the left of the card */
-        top: 0 !important;
-        bottom: 0 !important;
-        height: 100% !important; /* Stretch to full height of task */
-        width: 40px !important;
-        z-index: 10;
-        display: block !important;
-    }
-
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) > div > div.element-container:has(button[title^="Mark task"]) > div.stButton,
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) > div > div.element-container:has(button[title^="Mark task"]) button {
-        height: 100% !important;
-        min-height: 100% !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border-radius: 8px !important;
-        font-size: 1.2rem !important;
-        background: rgba(128, 128, 128, 0.05) !important;
-        border: 1px solid rgba(128, 128, 128, 0.25) !important;
-    }
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) > div > div.element-container:has(button[title^="Mark task"]) button:hover {
-        background: rgba(46, 204, 113, 0.15) !important;
-        border-color: rgba(46, 204, 113, 0.4) !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -989,127 +1014,135 @@ else:
             now_time = datetime.now()
             
             for t in filtered:
-                with st.container(border=True):
-                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
-                    
+                # Top level layout: Button Column | Task Card Column
+                col_btn, col_task = st.columns([0.6, 9])
+                
+                with col_btn:
+                    st.markdown(f"<div class='outside-btn-marker' data-target='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     if t["done"]:
-                        st.button("↩️", key=f"tog_{t['id']}", help="Mark task incomplete")
+                        st.button("↩️", key=f"tog_{t['id']}", help="Mark task incomplete", 
+                                  on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                     else:
-                        st.button("✔️", key=f"tog_{t['id']}", help="Mark task complete")
+                        st.button("✔️", key=f"tog_{t['id']}", help="Mark task complete", 
+                                  on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
+                
+                with col_task:
+                    with st.container(border=True):
+                        st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                         
-                    # Layout: Main task body (left), Stacked buttons (right)
-                    col_main, col_btns = st.columns([9, 0.7], vertical_alignment="center")
-                    
-                    with col_main:
-                        done_class = "is-done" if t["done"] else ""
-                        created_time = datetime.fromisoformat(t["created_at"])
-                        is_new_task = (now_time - created_time).total_seconds() < 2
-                        anim_class = "new-task-anim" if is_new_task else ""
+                        # Inner layout: Main task content | Edit/Delete stack
+                        col_main, col_btns = st.columns([9, 0.7], vertical_alignment="center")
                         
-                        tags_html = f'<span class="badge">{t["category"]}</span>'
-                        
-                        urgent_html = ""
-                        if t["due_date"]:
-                            overdue = (not t["done"]) and t["due_date"] < today
-                            due_class = "badge overdue" if overdue else "badge"
-                            tags_html += f'<span class="{due_class}">{t["due_date"]}</span>'
+                        with col_main:
+                            done_class = "is-done" if t["done"] else ""
+                            created_time = datetime.fromisoformat(t["created_at"])
+                            is_new_task = (now_time - created_time).total_seconds() < 2
+                            anim_class = "new-task-anim" if is_new_task else ""
                             
-                            if t["due_date"] == today and not t["done"]:
-                                urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
-                        
-                        html_string = f"""<div class="task-row border-{t['priority']} {done_class} {anim_class}"><div class="task-title {done_class}"><span>{t['text']}</span>{urgent_html}</div><div class="meta-tags">{tags_html}</div></div>"""
-                        
-                        st.markdown(html_string, unsafe_allow_html=True)
-                        
-                        # ---------------- Subtasks ----------------
-                        subtasks = get_subtasks(t["id"])
-                        sub_total = len(subtasks)
-                        sub_done = sum(1 for s in subtasks if s["done"])
+                            tags_html = f'<span class="badge">{t["category"]}</span>'
+                            
+                            urgent_html = ""
+                            if t["due_date"]:
+                                overdue = (not t["done"]) and t["due_date"] < today
+                                due_class = "badge overdue" if overdue else "badge"
+                                tags_html += f'<span class="{due_class}">{t["due_date"]}</span>'
+                                
+                                if t["due_date"] == today and not t["done"]:
+                                    urgent_html = '<span class="urgent-badge">🚨 Urgent!</span>'
+                            
+                            html_string = f"""<div class="task-row border-{t['priority']} {done_class} {anim_class}"><div class="task-title {done_class}"><span>{t['text']}</span>{urgent_html}</div><div class="meta-tags">{tags_html}</div></div>"""
+                            
+                            st.markdown(html_string, unsafe_allow_html=True)
+                            
+                            # ---------------- Subtasks ----------------
+                            subtasks = get_subtasks(t["id"])
+                            sub_total = len(subtasks)
+                            sub_done = sum(1 for s in subtasks if s["done"])
 
-                        if sub_total > 0:
-                            st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
-                            st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
-                            st.markdown('</div>', unsafe_allow_html=True)
+                            if sub_total > 0:
+                                st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
+                                st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
+                                st.markdown('</div>', unsafe_allow_html=True)
 
-                        expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
-                        
-                        is_expanded = (st.session_state.active_task_id == t["id"])
-                        
-                        with st.expander(expander_label, expanded=is_expanded):
-                            for s in subtasks:
-                                sc_main, sc_btn = st.columns([9, 1.3], vertical_alignment="center")
-                                with sc_main:
-                                    sub_class = "is-done" if s["done"] else ""
-                                    st.markdown(
-                                        f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
-                                        unsafe_allow_html=True,
-                                    )
-                                with sc_btn:
-                                    ss1, ss2 = st.columns(2)
-                                    with ss1:
-                                        if s["done"]:
-                                            st.button("↩️", key=f"subtog_{s['id']}", help="Mark subtask incomplete", 
-                                                      on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                        else:
-                                            st.button("✔️", key=f"subtog_{s['id']}", help="Mark subtask complete", 
-                                                      on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                    with ss2:
-                                        st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
-                                                  on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
-
-                            st.caption("⚡ Press `/` to quickly start typing a subtask")
-                            new_sc1, new_sc2 = st.columns([6, 1.5])
-                            with new_sc1:
-                                st.text_input(
-                                    "New subtask",
-                                    key=f"new_sub_{t['id']}",
-                                    placeholder="Add a subtask... (Press '/' to focus)",
-                                    label_visibility="collapsed",
-                                    on_change=handle_subtask_add, 
-                                    args=(t['id'], st.session_state.username)
-                                )
-                            with new_sc2:
-                                st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
-                                          on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
-
-                        if st.session_state.get(f"editing_{t['id']}"):
-                            with st.form(f"edit_form_{t['id']}"):
-                                e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
-                                e_col1, e_col2, e_col3 = st.columns(3)
-                                with e_col1:
-                                    e_priority = st.selectbox(
-                                        "Priority", PRIORITIES,
-                                        index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
-                                    )
-                                with e_col2:
-                                    cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
-                                    e_category = st.selectbox(
-                                        "Category", cat_options, index=cat_options.index(t["category"])
-                                    )
-                                with e_col3:
-                                    e_due = st.date_input(
-                                        "Due date",
-                                        value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
-                                    )
-                                save_col, cancel_col = st.columns(2)
-                                with save_col:
-                                    if st.form_submit_button("Save", use_container_width=True):
-                                        update_task(
-                                            t["id"], e_text.strip(), e_priority, e_category,
-                                            e_due.isoformat() if e_due else None, st.session_state.username
+                            expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
+                            
+                            is_expanded = (st.session_state.active_task_id == t["id"])
+                            
+                            with st.expander(expander_label, expanded=is_expanded):
+                                for s in subtasks:
+                                    sc_main, sc_btn = st.columns([9, 1.3], vertical_alignment="center")
+                                    with sc_main:
+                                        sub_class = "is-done" if s["done"] else ""
+                                        st.markdown(
+                                            f'<div class="subtask-row {sub_class}">{s["text"]}</div>',
+                                            unsafe_allow_html=True,
                                         )
-                                        st.session_state[f"editing_{t['id']}"] = False
-                                        st.rerun()
-                                with cancel_col:
-                                    if st.form_submit_button("Cancel", use_container_width=True):
-                                        st.session_state[f"editing_{t['id']}"] = False
-                                        st.rerun()
-                                        
-                    with col_btns:
-                        if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
-                            st.session_state[f"editing_{t['id']}"] = True
-                        st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
-                                  on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
+                                    with sc_btn:
+                                        ss1, ss2 = st.columns(2)
+                                        with ss1:
+                                            if s["done"]:
+                                                st.button("↩️", key=f"subtog_{s['id']}", help="Mark subtask incomplete", 
+                                                          on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                            else:
+                                                st.button("✔️", key=f"subtog_{s['id']}", help="Mark subtask complete", 
+                                                          on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                        with ss2:
+                                            st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
+                                                      on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
+
+                                st.caption("⚡ Press `/` to quickly start typing a subtask")
+                                new_sc1, new_sc2 = st.columns([6, 1.5])
+                                with new_sc1:
+                                    st.text_input(
+                                        "New subtask",
+                                        key=f"new_sub_{t['id']}",
+                                        placeholder="Add a subtask... (Press '/' to focus)",
+                                        label_visibility="collapsed",
+                                        on_change=handle_subtask_add, 
+                                        args=(t['id'], st.session_state.username)
+                                    )
+                                with new_sc2:
+                                    st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
+                                              on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
+
+                            if st.session_state.get(f"editing_{t['id']}"):
+                                with st.form(f"edit_form_{t['id']}"):
+                                    e_text = st.text_input("Task text", value=t["text"], label_visibility="collapsed")
+                                    e_col1, e_col2, e_col3 = st.columns(3)
+                                    with e_col1:
+                                        e_priority = st.selectbox(
+                                            "Priority", PRIORITIES,
+                                            index=PRIORITIES.index(t["priority"]) if t["priority"] in PRIORITIES else 1,
+                                        )
+                                    with e_col2:
+                                        cat_options = CATEGORIES if t["category"] in CATEGORIES else CATEGORIES + [t["category"]]
+                                        e_category = st.selectbox(
+                                            "Category", cat_options, index=cat_options.index(t["category"])
+                                        )
+                                    with e_col3:
+                                        e_due = st.date_input(
+                                            "Due date",
+                                            value=date.fromisoformat(t["due_date"]) if t["due_date"] else None,
+                                        )
+                                    save_col, cancel_col = st.columns(2)
+                                    with save_col:
+                                        if st.form_submit_button("Save", use_container_width=True):
+                                            update_task(
+                                                t["id"], e_text.strip(), e_priority, e_category,
+                                                e_due.isoformat() if e_due else None, st.session_state.username
+                                            )
+                                            st.session_state[f"editing_{t['id']}"] = False
+                                            st.rerun()
+                                    with cancel_col:
+                                        if st.form_submit_button("Cancel", use_container_width=True):
+                                            st.session_state[f"editing_{t['id']}"] = False
+                                            st.rerun()
+                                            
+                        with col_btns:
+                            if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
+                                st.session_state[f"editing_{t['id']}"] = True
+                            st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
+                                      on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
 # ----------------------------- Custom JavaScript Injection -----------------------------
 components.html(
@@ -1128,31 +1161,34 @@ components.html(
         doc.body.classList.remove('ctrl-pressed');
     });
     
-    // True Bulletproof Ctrl+Click System matching Native Buttons
+    // Bulletproof Ctrl+Click System via Sibling Column Traversal
     doc.addEventListener('click', function(e) {
         if (e.ctrlKey || e.metaKey) {
-            // Find if clicked inside a subtask row
+            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (!card) return;
+            
+            // Allow expander chevron summary click naturally
+            if (e.target.tagName.toLowerCase() === 'summary' || e.target.closest('summary')) return;
+            // Allow action buttons naturally
+            if (e.target.closest('button')) return;
+
+            e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+
             const subtaskRow = e.target.closest('.subtask-row');
             if (subtaskRow) {
-                e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+                // If it's a subtask, find the toggle button inside the same horizontal block
                 const btn = subtaskRow.closest('div[data-testid="stHorizontalBlock"]')?.querySelector('button[title^="Mark subtask"]');
                 if (btn) btn.click();
-                return;
-            }
-
-            // Find if clicked inside the main task card
-            const card = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (card) {
-                // Allow expander chevron summary click naturally
-                if (e.target.tagName.toLowerCase() === 'summary' || e.target.closest('summary')) return;
-                // Allow action buttons naturally
-                if (e.target.closest('button')) return;
-
-                e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-                
-                // The complete button has been extracted via CSS to absolute left!
-                const btn = card.querySelector('button[title^="Mark task"]');
-                if (btn) btn.click();
+            } else {
+                // If it's the main task, find the button in the PREVIOUS sibling column
+                const horizontalBlock = card.closest('div[data-testid="stHorizontalBlock"]');
+                if (horizontalBlock) {
+                    const btnCol = horizontalBlock.querySelector('div[data-testid="column"]:has(.outside-btn-marker)');
+                    if (btnCol) {
+                        const btn = btnCol.querySelector('button');
+                        if (btn) btn.click();
+                    }
+                }
             }
         }
     }, true); 
@@ -1205,7 +1241,6 @@ components.html(
             const markers = doc.querySelectorAll('.task-card-marker');
             markers.forEach(marker => {
                 let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
                 if (!card) return;
                 
                 const isDone = card.querySelector('.task-row.is-done') !== null;
@@ -1405,29 +1440,32 @@ components.html(
         if (txt === '🗑️') {
             const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
             if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
-                const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
-                if (card) card.classList.add('optimistic-fade');
+                // Main task delete optimistic fade
+                const row = marker.closest('div[data-testid="stHorizontalBlock"]');
+                if (row) row.classList.add('optimistic-fade');
             } else {
+                // Subtask delete
                 const row = btn.closest('div[data-testid="column"]')?.parentElement;
                 if (row) row.classList.add('optimistic-fade');
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
+            // Instantly flip the icon
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            const isMain = btn.getAttribute('title')?.startsWith('Mark task');
-            const isSub = btn.getAttribute('title')?.startsWith('Mark subtask');
-
+            // Check if it's main task toggle or subtask toggle
+            const isMain = btn.closest('div[data-testid="column"]')?.querySelector('.outside-btn-marker') !== null;
             if (isMain) {
-                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                const horizontalBlock = btn.closest('div[data-testid="stHorizontalBlock"]');
+                const card = horizontalBlock?.querySelector('div[data-testid="stVerticalBlockBorderWrapper"]');
                 if (card) {
                     const mainRow = card.querySelector('.task-row');
                     const mainTitle = card.querySelector('.task-title');
                     if (mainRow) mainRow.classList.toggle('is-done', txt === '✔️');
                     if (mainTitle) mainTitle.classList.toggle('is-done', txt === '✔️');
                 }
-            } else if (isSub) {
+            } else {
                 const subRowBlock = btn.closest('div[data-testid="stHorizontalBlock"]');
                 if (subRowBlock) {
                     const subRow = subRowBlock.querySelector('.subtask-row');
@@ -1451,7 +1489,7 @@ components.html(
         else if (txt.includes('Clear completed') || txt.includes('Clear all')) {
             const markers = doc.querySelectorAll('.task-card-marker');
             markers.forEach(m => {
-                const c = m.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || m.closest('div[data-testid="stVerticalBlock"]');
+                const c = m.closest('div[data-testid="stHorizontalBlock"]');
                 if (c) c.classList.add('optimistic-fade');
             });
         }
@@ -1630,6 +1668,7 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
+                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1672,6 +1711,7 @@ components.html(
                     return;
                 }
 
+                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
