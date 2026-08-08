@@ -25,6 +25,8 @@ if "just_added_task_id" not in st.session_state:
     st.session_state.just_added_task_id = None
 if "newly_added_task" not in st.session_state:
     st.session_state.newly_added_task = None
+if "auth_msg" not in st.session_state:
+    st.session_state.auth_msg = None
 
 # Global Toast Queue
 if "pending_toast" in st.session_state:
@@ -313,6 +315,27 @@ def handle_subtask_toggle(subtask_id, task_id, current_done, username):
 def handle_subtask_delete(subtask_id, task_id, username):
     st.session_state.active_task_id = task_id
     delete_subtask(subtask_id, task_id, username)
+
+def attempt_login():
+    l_user = st.session_state.get("login_user", "")
+    l_pass = st.session_state.get("login_pass", "")
+    if verify_user(l_user, l_pass):
+        st.session_state.logged_in = True
+        st.session_state.username = l_user.strip()
+        st.session_state.auth_msg = None
+    else:
+        st.session_state.auth_msg = ("error", "Invalid username or password.")
+
+def attempt_signup():
+    s_user = st.session_state.get("sign_user", "")
+    s_pass = st.session_state.get("sign_pass", "")
+    if s_user and s_pass:
+        if create_user(s_user, s_pass):
+            st.session_state.auth_msg = ("success", "Account created! You can now log in.")
+        else:
+            st.session_state.auth_msg = ("error", "Username already exists. Pick another one.")
+    else:
+        st.session_state.auth_msg = ("warning", "Please fill in both fields.")
 
 # ----------------------------- Styles & Theming -----------------------------
 
@@ -627,30 +650,30 @@ if not st.session_state.logged_in:
         st.markdown("<h1 style='text-align: center; margin-top: 2rem;'>✅ My Checklist</h1>", unsafe_allow_html=True)
         st.write("")
         
+        # Display any auth messages from callbacks
+        if st.session_state.auth_msg:
+            msg_type, msg_text = st.session_state.auth_msg
+            if msg_type == "error":
+                st.error(msg_text)
+            elif msg_type == "success":
+                st.success(msg_text)
+            elif msg_type == "warning":
+                st.warning(msg_text)
+            st.session_state.auth_msg = None
+        
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            l_user = st.text_input("Username", key="login_user")
-            l_pass = st.text_input("Password", type="password", key="login_pass")
-            if st.button("Login", type="primary", use_container_width=True):
-                if verify_user(l_user, l_pass):
-                    st.session_state.logged_in = True
-                    st.session_state.username = l_user.strip()
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
+            st.text_input("Username", key="login_user")
+            # Binding on_change directly to the password field triggers the function when Enter is pressed
+            st.text_input("Password", type="password", key="login_pass", on_change=attempt_login)
+            st.button("Login", type="primary", use_container_width=True, on_click=attempt_login)
                     
         with tab2:
-            s_user = st.text_input("Choose a Username", key="sign_user")
-            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
-            if st.button("Create Account", type="primary", use_container_width=True):
-                if s_user and s_pass:
-                    if create_user(s_user, s_pass):
-                        st.success("Account created! You can now log in.")
-                    else:
-                        st.error("Username already exists. Pick another one.")
-                else:
-                    st.warning("Please fill in both fields.")
+            st.text_input("Choose a Username", key="sign_user")
+            # Binding on_change directly to the password field triggers the function when Enter is pressed
+            st.text_input("Choose a Password", type="password", key="sign_pass", on_change=attempt_signup)
+            st.button("Create Account", type="primary", use_container_width=True, on_click=attempt_signup)
                     
         st.write("---")
         if st.button("Continue as Guest", type="secondary", use_container_width=True):
@@ -1012,7 +1035,6 @@ else:
                         is_expanded = (st.session_state.active_task_id == t["id"])
                         
                         with st.expander(expander_label, expanded=is_expanded):
-                            # Wrap subtasks in enumerate to detect the last item
                             for i, s in enumerate(subtasks):
                                 sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
                                 with sc_main:
@@ -1031,8 +1053,8 @@ else:
                                         
                                     st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
                                               on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
-
-                                # Add a minimalistic divider between subtasks
+                                
+                                # Subtask Divider
                                 if i < len(subtasks) - 1:
                                     st.markdown("<hr style='margin: 0.15rem 0; border: none; border-top: 1px solid rgba(128, 128, 128, 0.15);' />", unsafe_allow_html=True)
 
