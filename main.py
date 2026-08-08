@@ -31,6 +31,15 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
+def _sync_checkboxes_with_db(username):
+    tasks = get_tasks(username)
+    for t in tasks:
+        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
+        
+    subtasks = get_all_subtasks(username)
+    for s in subtasks:
+        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
+
 # ----------------------------- Security & Auth -----------------------------
 
 def hash_password(password):
@@ -282,6 +291,9 @@ def update_task(task_id, text, priority, category, due_date, username):
 
 # ----------------------------- Callback Handlers -----------------------------
 
+def handle_task_toggle(task_id, current_done, username):
+    set_done(task_id, not current_done, username)
+
 def handle_task_delete(task_id, username):
     st.session_state.active_task_id = None
     delete_task(task_id, username)
@@ -294,16 +306,13 @@ def handle_subtask_add(task_id, username):
         add_subtask(task_id, new_text, username)
         st.session_state[key] = "" 
 
-def handle_subtask_delete(subtask_id, task_id, username):
-    st.session_state.active_task_id = task_id
-    delete_subtask(subtask_id, task_id, username)
-
-def handle_task_toggle(task_id, current_done, username):
-    set_done(task_id, not current_done, username)
-
 def handle_subtask_toggle(subtask_id, task_id, current_done, username):
     st.session_state.active_task_id = task_id
     set_subtask_done(subtask_id, task_id, not current_done, username)
+
+def handle_subtask_delete(subtask_id, task_id, username):
+    st.session_state.active_task_id = task_id
+    delete_subtask(subtask_id, task_id, username)
 
 # ----------------------------- Styles & Theming -----------------------------
 
@@ -360,8 +369,6 @@ st.markdown(
         background-size: cover !important;
         background-position: center !important;
         transition: background-image 0.3s ease;
-        /* Force fallback light background to prevent flicker */
-        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
@@ -426,9 +433,9 @@ st.markdown(
     }
     .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     
-    .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
-    .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
-    .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
+    .border-High { border-left: 4px solid #e74c3c; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Medium { border-left: 4px solid #f39c12; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Low { border-left: 4px solid #3498db; padding-left: 12px; margin-left: -0.5rem; }
     
     .meta-tags {
         display: flex;
@@ -510,19 +517,6 @@ st.markdown(
         border: 1px solid rgba(128, 128, 128, 0.2);
     }
     
-    /* Professional Selection styling for options (CSS Backend Matching) */
-    div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button[kind="primary"] {
-        background-color: #2c3e50 !important;
-        border-color: #2c3e50 !important;
-        color: #ffffff !important;
-        font-weight: 600 !important;
-    }
-    body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button[kind="primary"] {
-        background-color: #ecf0f1 !important;
-        border-color: #ecf0f1 !important;
-        color: #2c3e50 !important;
-    }
-    
     .login-container {
         padding: 2rem;
         border-radius: 12px;
@@ -530,13 +524,42 @@ st.markdown(
         margin-top: 4rem;
     }
 
-    /* Target Task Container Explicitly - NO BORDER */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
+    /* --- BEAUTIFUL TASK BOX COLORING VIA CSS ONLY --- */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
         border: none !important;
-        box-shadow: none !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05) !important;
+        transition: background-color 0.3s ease !important;
+    }
+
+    /* Light Mode Background Colors */
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) {
+        background-color: rgba(250, 219, 216, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) {
+        background-color: rgba(253, 235, 208, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) {
+        background-color: rgba(214, 234, 248, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) {
+        background-color: rgba(46, 204, 113, 1) !important;
+    }
+
+    /* Dark Mode Background Colors */
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) {
+        background-color: rgba(100, 30, 22, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) {
+        background-color: rgba(126, 81, 9, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) {
+        background-color: rgba(21, 67, 96, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) {
+        background-color: rgba(29, 131, 72, 1) !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -1116,7 +1139,7 @@ else:
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
                     # Layout: Main task body (left), Stacked buttons (right)
-                    col_main, col_btns = st.columns([9, 1], vertical_alignment="center")
+                    col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
                     
                     with col_main:
                         done_class = "is-done" if t["done"] else ""
@@ -1157,7 +1180,7 @@ else:
                             for i, s in enumerate(subtasks):
                                 if i > 0:
                                     st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
-                                sc_main, sc_btn = st.columns([9, 1], vertical_alignment="center")
+                                sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
                                 with sc_main:
                                     sub_class = "is-done" if s["done"] else ""
                                     st.markdown(
@@ -1423,7 +1446,7 @@ components.html(
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            // Instantly apply visual toggle logic
+            // Instantly apply visual toggle logic to trigger CSS :has rules
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1469,20 +1492,15 @@ components.html(
         if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
             const block = btn.closest('div[data-testid="stHorizontalBlock"]');
             if (block) {
-                const isDark = doc.body.classList.contains('custom-dark');
-                const selBg = isDark ? '#ecf0f1' : '#2c3e50';
-                const selText = isDark ? '#2c3e50' : '#ffffff';
-
+                // Instantly apply Streamlit native primary red so it doesn't flicker
                 block.querySelectorAll('button').forEach(b => {
                     b.style.backgroundColor = '';
                     b.style.borderColor = 'rgba(128, 128, 128, 0.2)';
                     b.style.color = '';
-                    b.style.fontWeight = '400';
                 });
-                btn.style.backgroundColor = selBg;
-                btn.style.borderColor = selBg;
-                btn.style.color = selText;
-                btn.style.fontWeight = '600';
+                btn.style.backgroundColor = '#ff4b4b';
+                btn.style.borderColor = '#ff4b4b';
+                btn.style.color = 'white';
                 
                 if (isCat) window.categorySelected = true;
                 if (isPri) window.prioritySelected = true;
@@ -1696,18 +1714,12 @@ components.html(
                                     sib.style.removeProperty('background-color');
                                     sib.style.removeProperty('border-color');
                                     sib.style.removeProperty('color');
-                                    sib.style.removeProperty('font-weight');
                                 });
                             }
                             
-                            const isDark = doc.body.classList.contains('custom-dark');
-                            const selBg = isDark ? '#ecf0f1' : '#2c3e50';
-                            const selText = isDark ? '#2c3e50' : '#ffffff';
-                            
-                            btn.style.backgroundColor = selBg;
-                            btn.style.borderColor = selBg;
-                            btn.style.color = selText;
-                            btn.style.fontWeight = '600';
+                            btn.style.backgroundColor = '#ff4b4b';
+                            btn.style.borderColor = '#ff4b4b';
+                            btn.style.color = 'white';
                             
                             btn.click();
                         }
