@@ -1504,6 +1504,22 @@ components.html(
             window.dueSelected = false;
         }
 
+        // Self-healing: the optimistic click/hotkey handlers set these flags the
+        // instant a button is clicked, for a snappy reveal - but that's a purely
+        // client-side guess made ahead of the server confirming it. If that guess
+        // ever misses (e.g. a race with a fragment rerun replacing the button
+        // node right as it's clicked), the flag would stay false forever and the
+        // rest of the chain would never reveal, even though the option really
+        // did get selected server-side. OR it with a check of the *actual*
+        // rendered state (Streamlit marks the selected button type="primary") so
+        // a missed optimistic update still self-corrects within one tick once
+        // the real rerun lands - selection state can never get permanently
+        // stuck out of sync with what's really selected.
+        const rowHasSelection = (block) => !!(block && block.querySelector('[data-testid="stBaseButton-primary"]'));
+        window.categorySelected = window.categorySelected || rowHasSelection(catBlock);
+        window.prioritySelected = window.prioritySelected || rowHasSelection(priBlock);
+        window.dueSelected = window.dueSelected || rowHasSelection(dueBlock);
+
         // Always compute the desired visibility from scratch and apply it, every
         // tick - never conditionally skip based on "have I seen this DOM node
         // before". A category/priority/due button click reruns only its own
@@ -1588,25 +1604,40 @@ components.html(
             delete el.dataset.collapsing;
         };
 
+        const originalMarker = el.querySelector('.task-card-marker');
+        const originalTaskId = originalMarker ? originalMarker.getAttribute('data-task-id') : null;
+
         setTimeout(() => {
             btn.click();
             // Streamlit patches list positions in place rather than always
             // replacing the DOM node, so once the list shrinks this exact
             // element can end up reused for a *different* surviving task - which
             // would otherwise render invisible (opacity still forced to 0 above)
-            // until cleanup ran. Watch for that rerun's content actually landing
-            // on this node and clean up the instant it does, rather than waiting
-            // out a fixed delay that's either too short (still-visible flicker
-            // gap) or leaves a surviving task invisible for an obviously long
-            // stretch (too long).
+            // forever. But Streamlit's patch can land in more than one mutation
+            // (e.g. an intermediate update before the final content settles) -
+            // cleaning up on the *first* mutation regardless of what it was used
+            // to fire while this task itself was still mid-removal, undoing the
+            // collapse and making it flash back to full size for a moment before
+            // actually disappearing. Only clean up once we can tell *why*: either
+            // this node left the document entirely (nothing to fix), or its
+            // marker now names a genuinely different task (that one needs its
+            // forced-zero styling cleared, not this one).
+            const resolveIfSettled = () => {
+                if (!el.isConnected) return true;
+                const marker = el.querySelector('.task-card-marker');
+                const currentTaskId = marker ? marker.getAttribute('data-task-id') : null;
+                if (currentTaskId !== originalTaskId) {
+                    cleanup();
+                    return true;
+                }
+                return false;
+            };
             const observer = new MutationObserver(() => {
-                observer.disconnect();
-                cleanup();
+                if (resolveIfSettled()) observer.disconnect();
             });
             observer.observe(el, { childList: true, subtree: true, attributes: true });
-            // Safety net in case this node never mutates (e.g. it really was the
-            // last task and got removed from the tree entirely).
-            setTimeout(() => { observer.disconnect(); cleanup(); }, 800);
+            // Safety net in case this node never mutates as expected.
+            setTimeout(() => { observer.disconnect(); resolveIfSettled(); }, 800);
         }, 250);
     }
 
@@ -1781,23 +1812,25 @@ components.html(
         });
     }, 50);
 
-    // Tracks whichever subtask panel the user most recently expanded, so the
-    // '/' hotkey jumps to *that* task's subtask box instead of always the
-    // newest task - only newly-opened <details> update the target, so several
-    // panels can stay open at once without fighting over which one '/' targets.
-    let _prevOpenSubtaskPanels = new Set();
-    setInterval(() => {
-        const nowOpen = new Set();
-        doc.querySelectorAll('div[data-testid="stExpander"] details[open]').forEach(d => {
-            const tid = findTaskIdContaining(d);
-            if (!tid) return;
-            nowOpen.add(tid);
-            if (!_prevOpenSubtaskPanels.has(tid)) {
-                window.lastExpandedTaskId = tid;
+    // Tracks whichever subtask panel the user most recently expanded by hand,
+    // so the '/' hotkey can fall back to *that* task when it's not the newest
+    // one. Tied directly to the click that opens it (checked right after the
+    // native <details> toggle applies) rather than polled - polling for "which
+    // panels are open right now changed since last tick" was noisy: any
+    // unrelated rerun that happened to re-assert an expander's open state could
+    // look like a fresh "just expanded" event and hijack the target, which is
+    // exactly what made '/' occasionally jump to the wrong task.
+    doc.addEventListener('click', (e) => {
+        const summary = e.target.closest('div[data-testid="stExpander"] summary');
+        if (!summary) return;
+        setTimeout(() => {
+            const details = summary.closest('details');
+            if (details && details.open) {
+                const tid = findTaskIdContaining(details);
+                if (tid) window.lastExpandedTaskId = tid;
             }
-        });
-        _prevOpenSubtaskPanels = nowOpen;
-    }, 150);
+        }, 20);
+    }, true);
 
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
@@ -1928,9 +1961,10 @@ components.html(
 
                 if (key === '/') {
                     let targetInput = null;
-                    // Target whichever subtask panel was most recently expanded;
-                    // only fall back to the newest task if nothing's been expanded yet.
-                    const focusTaskId = window.lastExpandedTaskId || window.latestTaskId;
+                    // Prefer the task that was added most recently (the common
+                    // "just added a task, now add its subtasks" flow), then fall
+                    // back to whichever panel was last expanded by hand.
+                    const focusTaskId = window.latestTaskId || window.lastExpandedTaskId;
 
                     if (focusTaskId) {
                         const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${focusTaskId}"]`);
