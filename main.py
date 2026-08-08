@@ -31,6 +31,15 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
+def _sync_checkboxes_with_db(username):
+    tasks = get_tasks(username)
+    for t in tasks:
+        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
+        
+    subtasks = get_all_subtasks(username)
+    for s in subtasks:
+        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
+
 # ----------------------------- Security & Auth -----------------------------
 
 def hash_password(password):
@@ -1116,7 +1125,7 @@ components.html(
         }
     }, 8000); 
 
-    // Sync Background Mode & Bulletproof Task Card Colors
+    // Sync Background Mode & Force Strict DOM Painting for Colors
     setInterval(() => {
         const isDark = doc.body.classList.contains('custom-dark');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
@@ -1132,34 +1141,36 @@ components.html(
             }
         }
         
-        // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
-        const markers = doc.querySelectorAll('.task-card-marker');
-        markers.forEach(marker => {
-            let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
-            if (!card) return;
-            
-            const isDone = card.querySelector('.task-row.is-done') !== null;
-            const hasHigh = card.querySelector('.border-High') !== null;
-            const hasMed = card.querySelector('.border-Medium') !== null;
-            const hasLow = card.querySelector('.border-Low') !== null;
-            
-            card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-            
-            if (isDone) {
-                card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-            } else if (hasHigh) {
-                card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-            } else if (hasMed) {
-                card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-            } else if (hasLow) {
-                card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
-            }
-        });
+        try {
+            // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
+            const markers = doc.querySelectorAll('.task-card-marker');
+            markers.forEach(marker => {
+                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
+                if (!card) return;
+                
+                const isDone = card.querySelector('.task-row.is-done') !== null;
+                const hasHigh = card.querySelector('.border-High') !== null;
+                const hasMed = card.querySelector('.border-Medium') !== null;
+                const hasLow = card.querySelector('.border-Low') !== null;
+                
+                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
+                
+                if (isDone) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
+                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
+                } else if (hasHigh) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
+                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
+                } else if (hasMed) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
+                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
+                } else if (hasLow) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
+                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
+                }
+            });
+        } catch(e) {}
     }, 100);
 
     // Persist Scroll memory
@@ -1343,7 +1354,9 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
-            btn.classList.add('optimistic-btn');
+            // Instantly flip the icon so it feels perfectly responsive
+            const p = btn.querySelector('p');
+            if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
             // Instantly apply visual toggle logic
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
@@ -1351,7 +1364,7 @@ components.html(
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
                 if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
             } else {
-                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || btn.closest('div[data-testid="stVerticalBlock"]');
                 if (card) {
                     const mainRow = card.querySelector('.task-row');
                     const mainTitle = card.querySelector('.task-title');
@@ -1361,7 +1374,7 @@ components.html(
             }
         }
         else if (txt === 'Add task') {
-            // Fades the button via CSS
+            // Fades the button via CSS instead of breaking innerText react node sync
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
