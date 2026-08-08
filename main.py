@@ -551,12 +551,6 @@ st.markdown(
         margin-top: 4rem;
     }
 
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
-        border-radius: 14px !important;
-        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
-        margin-bottom: 0.7rem !important;
-    }
-
     /* Subtask panel: its own neutral surface, isolated from the parent task's
        priority color-coding (which is painted on the card behind it). */
     div[data-testid="stExpander"] {
@@ -727,23 +721,25 @@ else:
             display: none !important;
         }
 
-        /* --- Sticky "completed" progress bar, anchored to the top of the scroll area.
-           Rounded + inset so it reads as a floating pill over the wallpaper instead of
-           a hard-edged slab. --- */
+        /* --- "Completed" progress bar, styled as a floating pill. Real CSS
+           position:sticky doesn't work here - Streamlit wraps this element in its
+           own tightly-fitted layout wrapper (sized to just the bar itself), which
+           becomes its sticky containing block and caps the "stick" range to
+           roughly its own height instead of the whole scrollable list. A JS-driven
+           fixed-position clone (see the script below) handles staying visible
+           while scrolled; this rule just styles the real element for when it's
+           at the natural top of the list. --- */
         div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
-            position: sticky !important;
-            top: 0.4rem !important;
-            z-index: 20 !important;
             padding: 0.6rem 1rem !important;
             margin: 0 2px 0.4rem 2px !important;
             border-radius: 12px !important;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            background: rgba(255, 255, 255, 0.75);
+            background: rgba(255, 255, 255, 0.92);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
         }
         body.custom-dark div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
-            background: rgba(14, 17, 23, 0.75);
+            background: rgba(14, 17, 23, 0.92);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
         }
 
@@ -1054,13 +1050,25 @@ else:
             filtered.sort(key=lambda t: PRIORITY_ORDER.get(t["priority"], 3))
         elif sort_by == "Due date":
             filtered.sort(key=lambda t: (t["due_date"] is None, t["due_date"]))
+        # Completed tasks always float to the top, on top of whatever secondary
+        # sort was chosen above (list.sort is stable, so ties keep that order).
+        filtered.sort(key=lambda t: not t["done"])
 
         st.write("")
         st.write("")
+        # st.empty() gives these slots a stable identity that's explicitly blanked
+        # every run before being conditionally refilled, so a deleted task can't
+        # leave a stale "X / Y completed" total behind. Two separate empty()
+        # placeholders (rather than one wrapping .container()) so no extra
+        # stVerticalBlock gets inserted around the marker+bar - that wrapper was
+        # only tall enough for its own two children, which cut off the sticky
+        # bar's "stick" range to ~its own height instead of the full scroll list.
+        marker_slot = st.empty()
+        progress_slot = st.empty()
         if tasks:
             done_count = sum(1 for t in tasks if t["done"])
-            st.markdown("<div id='overall-progress-marker'></div>", unsafe_allow_html=True)
-            st.progress(done_count / len(tasks), text=f"{done_count} / {len(tasks)} completed")
+            marker_slot.markdown("<div id='overall-progress-marker'></div>", unsafe_allow_html=True)
+            progress_slot.progress(done_count / len(tasks), text=f"{done_count} / {len(tasks)} completed")
 
         st.write("")
 
@@ -1129,13 +1137,13 @@ else:
                                     )
                                 with sc_btn:
                                     if s["done"]:
-                                        st.button("↩️", key=f"subtog_{s['id']}", help="Mark incomplete", 
+                                        st.button("↩️", key=f"subtog_{s['id']}",
                                                   on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
                                     else:
-                                        st.button("✔️", key=f"subtog_{s['id']}", help="Mark complete", 
+                                        st.button("✔️", key=f"subtog_{s['id']}",
                                                   on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                        
-                                    st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
+
+                                    st.button("🗑️", key=f"subdel_{s['id']}",
                                               on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
 
                             st.caption("⚡ Press `/` to quickly start typing a subtask")
@@ -1189,15 +1197,15 @@ else:
                                         
                     with col_btns:
                         if t["done"]:
-                            st.button("↩️", key=f"tog_{t['id']}", help="Mark incomplete", 
+                            st.button("↩️", key=f"tog_{t['id']}",
                                       on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                         else:
-                            st.button("✔️", key=f"tog_{t['id']}", help="Mark complete", 
+                            st.button("✔️", key=f"tog_{t['id']}",
                                       on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
-                        
-                        if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
+
+                        if st.button("✏️", key=f"edit_{t['id']}", use_container_width=True):
                             st.session_state[f"editing_{t['id']}"] = True
-                        st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
+                        st.button("🗑️", key=f"del_{t['id']}",
                                   on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
 # ----------------------------- Custom JavaScript Injection -----------------------------
@@ -1283,35 +1291,17 @@ components.html(
         } catch(e) {}
     }, 100);
 
-    // Persist Scroll memory
-    if (!doc.getElementById('scroll-controls')) {
-        const controls = doc.createElement('div');
-        controls.id = 'scroll-controls';
-        controls.innerHTML = `
-            <button id="scroll-up" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); margin-bottom: 8px;">↑</button>
-            <button id="scroll-down" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);">↓</button>
-        `;
-        controls.style.cssText = 'position: fixed; right: 32px; bottom: 90px; display: flex; flex-direction: column; z-index: 9999; opacity: 0.7; transition: opacity 0.2s ease;';
-        
-        controls.onmouseover = () => controls.style.opacity = '1';
-        controls.onmouseout = () => controls.style.opacity = '0.7';
-
-        doc.body.appendChild(controls);
+    // Persist Scroll memory - remembers the right column's scroll position across
+    // reruns (native mouse-wheel/scrollbar scrolling handles the actual scrolling;
+    // the old floating up/down buttons were unreliable and have been removed).
+    if (!doc.body.dataset.scrollMemoryBound) {
+        doc.body.dataset.scrollMemoryBound = "true";
 
         const getScrollCol = () => {
             const anchor = doc.getElementById('right-col-anchor');
             return anchor ? anchor.closest('div[data-testid="stColumn"]') : null;
         };
 
-        controls.querySelector('#scroll-up').onclick = () => {
-            const col = getScrollCol();
-            if(col) col.scrollTo({top: 0, behavior: 'smooth'});
-        };
-        controls.querySelector('#scroll-down').onclick = () => {
-            const col = getScrollCol();
-            if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
-        };
-        
         const scrollBindTimer = setInterval(() => {
             const col = getScrollCol();
             if (col && !col.dataset.scrollBound) {
@@ -1328,6 +1318,56 @@ components.html(
             }
         }, 300);
     }
+
+    // Fake "sticky" progress bar: mirrors the real bar's content into a
+    // fixed-position clone that only appears once the real one has scrolled
+    // above the column's own top edge, so it reads as anchored throughout the
+    // whole list instead of just its first ~700px (see the CSS comment above
+    // for why real position:sticky doesn't reach that far here). Being a real,
+    // separately-painted element with an opaque background, it also fully
+    // occludes cards passing underneath instead of letting them bleed through.
+    setInterval(() => {
+        const marker = doc.getElementById('overall-progress-marker');
+        const container = marker ? marker.closest('div[data-testid="stElementContainer"]') : null;
+        const bar = container ? container.nextElementSibling : null;
+        const anchor = doc.getElementById('right-col-anchor');
+        const col = anchor ? anchor.closest('div[data-testid="stColumn"]') : null;
+        const existing = doc.getElementById('sticky-progress-clone');
+
+        if (!bar || !col) {
+            if (existing) existing.style.display = 'none';
+            return;
+        }
+
+        let clone = existing;
+        if (!clone) {
+            clone = doc.createElement('div');
+            clone.id = 'sticky-progress-clone';
+            doc.body.appendChild(clone);
+        }
+
+        const colRect = col.getBoundingClientRect();
+        const barRect = bar.getBoundingClientRect();
+        const isDark = doc.body.classList.contains('custom-dark');
+
+        clone.innerHTML = bar.innerHTML;
+        clone.style.cssText = `
+            position: fixed;
+            top: ${colRect.top + 6}px;
+            left: ${colRect.left}px;
+            width: ${Math.max(colRect.width - 15, 0)}px;
+            z-index: 999;
+            padding: 0.6rem 1rem;
+            border-radius: 12px;
+            box-sizing: border-box;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            background: ${isDark ? 'rgba(14, 17, 23, 0.92)' : 'rgba(255, 255, 255, 0.92)'};
+            box-shadow: 0 4px 16px rgba(0, 0, 0, ${isDark ? '0.25' : '0.06'});
+            pointer-events: none;
+            display: ${barRect.top < colRect.top ? 'block' : 'none'};
+        `;
+    }, 100);
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1402,10 +1442,7 @@ components.html(
         const addBlock = addMarker ? addMarker.closest('div[data-testid="stVerticalBlock"]') : null;
         
         [catBlock, priBlock, dueBlock, addBlock].forEach(block => {
-            if (block && !block.classList.contains('progressive-base')) {
-                block.classList.add('progressive-base');
-                block.classList.add('progressive-hidden');
-            }
+            if (block) block.classList.add('progressive-base');
         });
 
         if (taskInput && taskInput.value.trim().length === 0) {
@@ -1415,37 +1452,23 @@ components.html(
             window.dueSelected = false;
         }
 
-        if (window.textLocked) {
-            catBlock?.classList.add('progressive-visible');
-            catBlock?.classList.remove('progressive-hidden');
-        } else {
-            catBlock?.classList.add('progressive-hidden');
-            catBlock?.classList.remove('progressive-visible');
-        }
-
-        if (window.textLocked && window.categorySelected) {
-            priBlock?.classList.add('progressive-visible');
-            priBlock?.classList.remove('progressive-hidden');
-        } else {
-            priBlock?.classList.add('progressive-hidden');
-            priBlock?.classList.remove('progressive-visible');
-        }
-
-        if (window.textLocked && window.categorySelected && window.prioritySelected) {
-            dueBlock?.classList.add('progressive-visible');
-            dueBlock?.classList.remove('progressive-hidden');
-        } else {
-            dueBlock?.classList.add('progressive-hidden');
-            dueBlock?.classList.remove('progressive-visible');
-        }
-
-        if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
-            addBlock?.classList.add('progressive-visible');
-            addBlock?.classList.remove('progressive-hidden');
-        } else {
-            addBlock?.classList.add('progressive-hidden');
-            addBlock?.classList.remove('progressive-visible');
-        }
+        // Always compute the desired visibility from scratch and apply it, every
+        // tick - never conditionally skip based on "have I seen this DOM node
+        // before". A category/priority/due button click reruns only its own
+        // st.fragment, which replaces that fragment's marker with a brand new DOM
+        // node; a stale "first time seen -> force hidden" branch here would snap
+        // an already-unlocked section back to hidden for a tick (or, if that tick
+        // raced with a rerun, get stuck) even though the underlying selection
+        // state said it should stay visible.
+        const setVisible = (block, visible) => {
+            if (!block) return;
+            block.classList.toggle('progressive-visible', visible);
+            block.classList.toggle('progressive-hidden', !visible);
+        };
+        setVisible(catBlock, window.textLocked);
+        setVisible(priBlock, window.textLocked && window.categorySelected);
+        setVisible(dueBlock, window.textLocked && window.categorySelected && window.prioritySelected);
+        setVisible(addBlock, window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected);
     }, 100);
 
     // Finds the bordered task-card block enclosing a button/input that lives
@@ -1466,6 +1489,21 @@ components.html(
             const hBlock = col ? col.closest('[data-testid="stHorizontalBlock"]') : null;
             if (!hBlock) return null;
             node = hBlock;
+        }
+        return null;
+    }
+
+    // Finds which task's card an element lives inside by checking .contains()
+    // from each card marker outward, rather than climbing up from the element -
+    // climbing doesn't reliably reach the card from deep inside the subtasks
+    // expander (its own nested block structure breaks findEnclosingCard's
+    // column/row-pair assumption), but every card's marker->card lookup is the
+    // same reliable pattern already used by the color-forcer poller.
+    function findTaskIdContaining(el) {
+        const markers = doc.querySelectorAll('.task-card-marker');
+        for (const marker of markers) {
+            const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
+            if (card && card.contains(el)) return marker.getAttribute('data-task-id');
         }
         return null;
     }
@@ -1491,7 +1529,21 @@ components.html(
                 el.style.pointerEvents = 'none';
             });
         });
-        setTimeout(() => btn.click(), 250);
+        setTimeout(() => {
+            btn.click();
+            // Streamlit patches list positions in place rather than always
+            // replacing the DOM node, so once the list shrinks this exact
+            // element can end up reused for a *different* surviving task. Left
+            // uncleared, the margin/padding/opacity we forced to 0 here would
+            // silently squash that task's spacing. Clear it once the rerun
+            // triggered by the click above has had time to land.
+            setTimeout(() => {
+                ['overflow', 'maxHeight', 'transition', 'opacity', 'transform',
+                 'marginTop', 'marginBottom', 'paddingTop', 'paddingBottom', 'pointerEvents']
+                    .forEach(p => el.style.removeProperty(p.replace(/[A-Z]/g, m => '-' + m.toLowerCase())));
+                delete el.dataset.collapsing;
+            }, 600);
+        }, 250);
     }
 
     // Streamlit resizes the main content pane the instant the sidebar is
@@ -1666,6 +1718,24 @@ components.html(
         });
     }, 50);
 
+    // Tracks whichever subtask panel the user most recently expanded, so the
+    // '/' hotkey jumps to *that* task's subtask box instead of always the
+    // newest task - only newly-opened <details> update the target, so several
+    // panels can stay open at once without fighting over which one '/' targets.
+    let _prevOpenSubtaskPanels = new Set();
+    setInterval(() => {
+        const nowOpen = new Set();
+        doc.querySelectorAll('div[data-testid="stExpander"] details[open]').forEach(d => {
+            const tid = findTaskIdContaining(d);
+            if (!tid) return;
+            nowOpen.add(tid);
+            if (!_prevOpenSubtaskPanels.has(tid)) {
+                window.lastExpandedTaskId = tid;
+            }
+        });
+        _prevOpenSubtaskPanels = nowOpen;
+    }, 150);
+
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
         
@@ -1795,9 +1865,12 @@ components.html(
 
                 if (key === '/') {
                     let targetInput = null;
-                    
-                    if (window.latestTaskId) {
-                        const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${window.latestTaskId}"]`);
+                    // Target whichever subtask panel was most recently expanded;
+                    // only fall back to the newest task if nothing's been expanded yet.
+                    const focusTaskId = window.lastExpandedTaskId || window.latestTaskId;
+
+                    if (focusTaskId) {
+                        const cardMarker = doc.querySelector(`.task-card-marker[data-task-id="${focusTaskId}"]`);
                         if (cardMarker) {
                             const targetCard = cardMarker.closest('div[data-testid="stVerticalBlock"]');
                             if (targetCard) {
