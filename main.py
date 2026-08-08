@@ -664,6 +664,7 @@ if not st.session_state.logged_in:
                 if s_user and s_pass:
                     if create_user(s_user, s_pass):
                         st.success("Account created! You can now log in.")
+                        st.session_state.switch_to_login = True
                     else:
                         st.error("Username already exists. Pick another one.")
                 else:
@@ -674,6 +675,69 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.username = "guest"
             st.rerun()
+
+    if st.session_state.get("switch_to_login"):
+        components.html(
+            """
+            <script>
+            setTimeout(() => {
+                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                const loginTab = Array.from(tabs).find(t => t.innerText.trim() === 'Login');
+                if (loginTab) {
+                    loginTab.click();
+                    setTimeout(() => {
+                        const userInp = window.parent.document.querySelector('input[aria-label="Username"]');
+                        if (userInp) userInp.focus();
+                    }, 100);
+                }
+            }, 100);
+            </script>
+            """,
+            height=0, width=0
+        )
+        st.session_state.switch_to_login = False
+
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        if (!window.authKeyboardAttached) {
+            window.authKeyboardAttached = true;
+            doc.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    const active = doc.activeElement;
+                    if (!active || active.tagName.toLowerCase() !== 'input') return;
+
+                    const ariaLabel = active.getAttribute('aria-label');
+
+                    if (ariaLabel === 'Username' || ariaLabel === 'Choose a Username') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        active.blur();
+                        const targetLabel = ariaLabel === 'Username' ? 'Password' : 'Choose a Password';
+                        setTimeout(() => {
+                            const passInput = doc.querySelector(`input[aria-label="${targetLabel}"]`);
+                            if (passInput) passInput.focus();
+                        }, 100);
+                    }
+                    else if (ariaLabel === 'Password' || ariaLabel === 'Choose a Password') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        active.blur();
+                        const targetText = ariaLabel === 'Password' ? 'Login' : 'Create Account';
+                        setTimeout(() => {
+                            const btns = Array.from(doc.querySelectorAll('button'));
+                            const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
+                            if (btn) btn.click();
+                        }, 100);
+                    }
+                }
+            }, true);
+        }
+        </script>
+        """,
+        height=0, width=0
+    )
 
 else:
     st.markdown(
@@ -1360,7 +1424,7 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
-        // Fix stuck tooltips by immediately removing focus
+        // Remove focus instantly to prevent stuck tooltips
         setTimeout(() => btn.blur(), 10);
         
         const txt = btn.innerText.trim();
@@ -1376,11 +1440,9 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
-            // Instantly flip the icon so it feels perfectly responsive
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            // Instantly apply visual toggle logic
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1396,7 +1458,6 @@ components.html(
             }
         }
         else if (txt === 'Add task') {
-            // Fades the button via CSS instead of breaking innerText react node sync
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
