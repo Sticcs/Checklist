@@ -194,8 +194,6 @@ def set_done(task_id, done, username):
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND username = ?", (int(done), task_id, username))
         conn.execute("UPDATE subtasks SET done = ? WHERE task_id = ?", (int(done), task_id))
         conn.commit()
-    status = "completed" if done else "unmarked"
-    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -203,7 +201,6 @@ def delete_task(task_id, username):
         conn.execute("DELETE FROM subtasks WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Task deleted"
 
 def clear_completed(username):
     save_state_for_undo(username)
@@ -216,7 +213,6 @@ def clear_completed(username):
             conn.execute(f"DELETE FROM subtasks WHERE task_id IN ({placeholders})", done_ids)
         conn.execute("DELETE FROM tasks WHERE done = 1 AND username = ?", (username,))
         conn.commit()
-    st.session_state.pending_toast = "🧹 Cleared completed tasks"
 
 def clear_all(username):
     save_state_for_undo(username)
@@ -226,7 +222,6 @@ def clear_all(username):
         )
         conn.execute("DELETE FROM tasks WHERE username = ?", (username,))
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Cleared all tasks"
 
 def add_subtask(task_id, text, username):
     save_state_for_undo(username)
@@ -237,7 +232,6 @@ def add_subtask(task_id, text, username):
         )
         conn.execute("UPDATE tasks SET done = 0 WHERE id = ? AND username = ?", (task_id, username))
         conn.commit()
-    st.session_state.pending_toast = "➕ Subtask added"
 
 def set_subtask_done(subtask_id, task_id, done, username):
     save_state_for_undo(username)
@@ -266,7 +260,6 @@ def delete_subtask(subtask_id, task_id, username):
                 conn.execute("UPDATE tasks SET done = 1 WHERE id = ? AND username = ?", (task_id, username))
                     
         conn.commit()
-    st.session_state.pending_toast = "🗑️ Subtask deleted"
 
 def mark_all_completed(username):
     save_state_for_undo(username)
@@ -277,7 +270,6 @@ def mark_all_completed(username):
             (username,)
         )
         conn.commit()
-    st.session_state.pending_toast = "✅ Marked all as completed"
 
 def update_task(task_id, text, priority, category, due_date, username):
     save_state_for_undo(username)
@@ -287,7 +279,6 @@ def update_task(task_id, text, priority, category, due_date, username):
             (text, priority, category, due_date, task_id, username),
         )
         conn.commit()
-    st.session_state.pending_toast = "💾 Task updated"
 
 # ----------------------------- Callback Handlers -----------------------------
 
@@ -1424,7 +1415,7 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
-        // Remove focus instantly to prevent stuck tooltips
+        // Fix stuck tooltips by immediately removing focus
         setTimeout(() => btn.blur(), 10);
         
         const txt = btn.innerText.trim();
@@ -1440,9 +1431,11 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
+            // Instantly flip the icon so it feels perfectly responsive
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
+            // Instantly apply visual toggle logic
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1458,6 +1451,7 @@ components.html(
             }
         }
         else if (txt === 'Add task') {
+            // Fades the button via CSS instead of breaking innerText react node sync
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
@@ -1534,27 +1528,6 @@ components.html(
         doc.body.appendChild(indicator);
     }
 
-    // Elegant Focus bindings for Subtasks (Robust Poller)
-    setInterval(() => {
-        const allCards = doc.querySelectorAll('.task-card-marker');
-        let activeCard = null;
-
-        if (doc.activeElement && doc.activeElement.tagName.toLowerCase() === 'input' && doc.activeElement.placeholder && doc.activeElement.placeholder.includes('Add a subtask')) {
-            const m = doc.activeElement.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
-            if (m) activeCard = m.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || m.closest('div[data-testid="stVerticalBlock"]');
-        }
-
-        allCards.forEach(marker => {
-            const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
-            if (!card) return;
-            if (card === activeCard) {
-                card.classList.add('green-focus-border');
-            } else {
-                card.classList.remove('green-focus-border');
-            }
-        });
-    }, 50);
-
     function setupMagic() {
         const indicator = doc.getElementById('enter-indicator');
         
@@ -1578,13 +1551,13 @@ components.html(
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
-                indicator.innerText = 'Enter to confirm custom tag';
+                indicator.innerText = 'Enter to proceed'; 
                 indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; 
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
                 if (!window.textLocked) {
-                    indicator.innerText = 'Enter to lock text & open options';
+                    indicator.innerText = 'Enter to proceed to options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else if (!window.categorySelected) {
                     indicator.innerText = 'Select a category (Use hotkeys)';
@@ -1596,7 +1569,7 @@ components.html(
                     indicator.innerText = 'Select a due date';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter to finish adding task';
+                    indicator.innerText = 'Enter to create task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
