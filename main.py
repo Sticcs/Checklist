@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import sqlite3
 import hashlib
 import html
+import uuid
 from datetime import date, timedelta, datetime, timezone
 from contextlib import closing
 
@@ -833,7 +834,11 @@ if not st.session_state.logged_in:
         st.write("---")
         if st.button("Continue as Guest", type="secondary", use_container_width=True):
             st.session_state.logged_in = True
-            st.session_state.username = "guest"
+            # Every guest session used to share the literal username "guest", so
+            # any two people who both clicked "Continue as Guest" landed on the
+            # exact same tasks. Each guest session now gets its own throwaway
+            # identity instead, isolated the same way a real account is.
+            st.session_state.username = f"guest_{uuid.uuid4().hex[:12]}"
             st.rerun()
 
 else:
@@ -1076,7 +1081,10 @@ else:
     # ----------------------------- Sidebar -----------------------------
 
     with st.sidebar:
-        st.markdown(f"<div class='profile-indicator'><span>👤</span> {st.session_state.username}</div>", unsafe_allow_html=True)
+        # Guest usernames carry a unique suffix internally (for data isolation
+        # between separate guest sessions) that has no business being shown.
+        display_name = "Guest" if st.session_state.username.startswith("guest_") else st.session_state.username
+        st.markdown(f"<div class='profile-indicator'><span>👤</span> {html.escape(display_name)}</div>", unsafe_allow_html=True)
         if st.button("Sign out", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
