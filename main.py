@@ -329,6 +329,19 @@ st.markdown(
     section[data-testid="stSidebar"] > div:first-child {
         padding-top: 1.25rem !important;
     }
+
+    /* Streamlit's default block-container padding (96px top / 160px bottom) was
+       enough on its own to push total page content past the viewport height,
+       forcing stMain to scroll as a *second*, independent scroll region on top
+       of the task panel's own internal scroll - trimming it down means the page
+       fits in one viewport and only the task list itself needs to scroll. */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+    }
+    [data-testid="stMain"] {
+        overflow: hidden !important;
+    }
     /* Streamlit's default <hr> (from st.write("---")) carries a huge 32px
        top/bottom margin - with several dividers stacked in the sidebar that
        added up to a lot of dead vertical space. */
@@ -438,7 +451,24 @@ st.markdown(
     .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
     .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
     .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
-    
+
+    /* Task card "done" fill (green) - driven entirely by the server-rendered
+       data-done attribute on each card's own marker via :has(), not by a JS
+       poller. This paints the instant the new HTML lands (no per-tick JS delay,
+       so no flash of unstyled content on rerun), and can't drift onto the wrong
+       card the way an optimistic client-side class toggle could when a DOM
+       position gets reused for a different task after a resort (e.g. completed
+       tasks moving to the top of the list). */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .task-card-marker[data-done="true"]) {
+        background-color: rgba(46, 204, 113, 1) !important;
+        border-color: rgba(39, 174, 96, 1) !important;
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+    body.custom-dark div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .task-card-marker[data-done="true"]) {
+        background-color: rgba(29, 131, 72, 1) !important;
+        border-color: rgba(20, 90, 50, 1) !important;
+    }
+
     .meta-tags {
         display: flex;
         gap: 8px;
@@ -852,6 +882,18 @@ else:
 
             st.session_state.task_input = ""
             st.session_state.options_modified = False
+            # Reset the picked options back to defaults too - not just the text
+            # box. Leaving the last selection in place made the category/priority/
+            # due buttons still render as "selected" (red/primary) for the next
+            # task even though the client-side JS flags that actually gate the
+            # Category -> Priority -> Due -> Add reveal chain reset to false the
+            # moment the text box clears. Since the buttons already *looked*
+            # selected, nothing prompted a click to re-set those JS flags, so the
+            # chain would get stuck and Due/Add would never appear.
+            st.session_state.new_category = "House"
+            st.session_state.new_priority = "Medium"
+            st.session_state.new_due_preset = "No date"
+            st.session_state.new_due_custom = None
             if "custom_cat_input" in st.session_state:
                 st.session_state.custom_cat_input = ""
 
@@ -1080,7 +1122,7 @@ else:
             
             for t in filtered:
                 with st.container(border=True):
-                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' data-done='{str(bool(t['done'])).lower()}' style='display:none;'></div>", unsafe_allow_html=True)
                     
                     # Layout: Main task body (left), Stacked buttons (right)
                     col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
@@ -1260,35 +1302,12 @@ components.html(
                 doc.body.classList.remove('custom-dark');
             }
         }
-        
-        try {
-            // Task cards no longer get a priority-tinted background fill (only the
-            // thin left-edge accent bar from .border-High/Medium/Low, painted via
-            // plain CSS in the markup itself) - they only fill solid green once
-            // fully completed.
-            const isDark = doc.body.classList.contains('custom-dark');
-            const markers = doc.querySelectorAll('.task-card-marker');
-            markers.forEach(marker => {
-                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
-                if (!card) return;
-                // Skip cards mid-delete: their own collapse transition owns `style` right now,
-                // and re-stamping it here every 100ms would cut that animation short.
-                if (card.dataset.collapsing === 'true') return;
-
-                const isDone = card.querySelector('.task-row.is-done') !== null;
-
-                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-
-                if (isDone) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-                } else {
-                    card.style.removeProperty('background-color');
-                    card.style.removeProperty('border-color');
-                }
-            });
-        } catch(e) {}
+        // Task card "done" coloring is handled purely by CSS :has() reading the
+        // server-rendered data-done attribute on each card's marker (see the
+        // stylesheet above) - no JS needed, which also means no per-tick delay
+        // where a card briefly shows unstyled after a rerun, and no risk of a
+        // color getting stuck on the wrong card if a resort reuses its DOM
+        // position for a different task.
     }, 100);
 
     // Persist Scroll memory - remembers the right column's scroll position across
@@ -1529,20 +1548,32 @@ components.html(
                 el.style.pointerEvents = 'none';
             });
         });
+        const cleanup = () => {
+            ['overflow', 'maxHeight', 'transition', 'opacity', 'transform',
+             'marginTop', 'marginBottom', 'paddingTop', 'paddingBottom', 'pointerEvents']
+                .forEach(p => el.style.removeProperty(p.replace(/[A-Z]/g, m => '-' + m.toLowerCase())));
+            delete el.dataset.collapsing;
+        };
+
         setTimeout(() => {
             btn.click();
             // Streamlit patches list positions in place rather than always
             // replacing the DOM node, so once the list shrinks this exact
-            // element can end up reused for a *different* surviving task. Left
-            // uncleared, the margin/padding/opacity we forced to 0 here would
-            // silently squash that task's spacing. Clear it once the rerun
-            // triggered by the click above has had time to land.
-            setTimeout(() => {
-                ['overflow', 'maxHeight', 'transition', 'opacity', 'transform',
-                 'marginTop', 'marginBottom', 'paddingTop', 'paddingBottom', 'pointerEvents']
-                    .forEach(p => el.style.removeProperty(p.replace(/[A-Z]/g, m => '-' + m.toLowerCase())));
-                delete el.dataset.collapsing;
-            }, 600);
+            // element can end up reused for a *different* surviving task - which
+            // would otherwise render invisible (opacity still forced to 0 above)
+            // until cleanup ran. Watch for that rerun's content actually landing
+            // on this node and clean up the instant it does, rather than waiting
+            // out a fixed delay that's either too short (still-visible flicker
+            // gap) or leaves a surviving task invisible for an obviously long
+            // stretch (too long).
+            const observer = new MutationObserver(() => {
+                observer.disconnect();
+                cleanup();
+            });
+            observer.observe(el, { childList: true, subtree: true, attributes: true });
+            // Safety net in case this node never mutates (e.g. it really was the
+            // last task and got removed from the tree entirely).
+            setTimeout(() => { observer.disconnect(); cleanup(); }, 800);
         }, 250);
     }
 
@@ -1598,20 +1629,19 @@ components.html(
             // Instantly flip the icon so it feels perfectly responsive
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
-            
-            // Instantly apply visual toggle logic
+
+            // Subtasks aren't reordered by any sort, so an optimistic class toggle
+            // here is safe. Main tasks ARE resorted (completed tasks jump to the
+            // top) - toggling .is-done on "whatever card is at this DOM position"
+            // ahead of the real rerun risks it landing on a *different* task once
+            // the list reorders and Streamlit reuses that position for someone
+            // else. Main-task done styling is driven purely by CSS reading the
+            // server-rendered data-done attribute instead (see stylesheet), so it
+            // only ever reflects the real state, just slightly less instantly.
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="stColumn"]')?.parentElement.querySelector('.subtask-row');
                 if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
-            } else {
-                const card = findEnclosingCard(btn);
-                if (card) {
-                    const mainRow = card.querySelector('.task-row');
-                    const mainTitle = card.querySelector('.task-title');
-                    if (mainRow) mainRow.classList.toggle('is-done', txt === '✔️');
-                    if (mainTitle) mainTitle.classList.toggle('is-done', txt === '✔️');
-                }
             }
         }
         else if (txt === 'Add task') {
