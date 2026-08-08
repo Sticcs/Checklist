@@ -327,7 +327,19 @@ st.markdown(
     """
     <style>
     section[data-testid="stSidebar"] > div:first-child {
-        padding-top: 2rem !important;
+        padding-top: 1.25rem !important;
+    }
+    /* Streamlit's default <hr> (from st.write("---")) carries a huge 32px
+       top/bottom margin - with several dividers stacked in the sidebar that
+       added up to a lot of dead vertical space. */
+    section[data-testid="stSidebar"] hr {
+        margin: 0.75rem 0 !important;
+    }
+    section[data-testid="stSidebar"] h2 {
+        margin-bottom: 0.4rem !important;
+    }
+    section[data-testid="stSidebar"] .profile-indicator {
+        margin-bottom: 0.4rem !important;
     }
 
     /* Destroy Streamlit's janky skeleton loading animations */
@@ -715,18 +727,24 @@ else:
             display: none !important;
         }
 
-        /* --- Sticky "completed" progress bar, anchored to the top of the scroll area --- */
+        /* --- Sticky "completed" progress bar, anchored to the top of the scroll area.
+           Rounded + inset so it reads as a floating pill over the wallpaper instead of
+           a hard-edged slab. --- */
         div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
             position: sticky !important;
-            top: 0 !important;
+            top: 0.4rem !important;
             z-index: 20 !important;
-            padding: 0.5rem 0 !important;
+            padding: 0.6rem 1rem !important;
+            margin: 0 2px 0.4rem 2px !important;
+            border-radius: 12px !important;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.75);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
         }
         body.custom-dark div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
             background: rgba(14, 17, 23, 0.75);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
         }
 
         /* --- Left Control Panel (Glassmorphism & Legibility) --- */
@@ -933,7 +951,8 @@ else:
         _prev_known = st.session_state.get("known_categories", [])
         _prev_selected = st.session_state.get(_cat_key, sidebar_categories)
         _new_categories = [c for c in sidebar_categories if c not in _prev_known]
-        st.session_state[_cat_key] = [c for c in _prev_selected if c in sidebar_categories] + _new_categories
+        _merged = [c for c in _prev_selected if c in sidebar_categories] + _new_categories
+        st.session_state[_cat_key] = list(dict.fromkeys(_merged))  # de-dupe, preserve order
         st.session_state["known_categories"] = sidebar_categories
 
         category_filter = st.multiselect("Category", sidebar_categories, key=_cat_key)
@@ -950,8 +969,7 @@ else:
             if st.button("↪️ Redo", disabled=len(st.session_state.redo_stack) == 0):
                 perform_redo(st.session_state.username)
                 st.rerun()
-            
-        st.write("")
+
         if st.button("Mark all completed"):
             mark_all_completed(st.session_state.username)
             st.rerun()
@@ -1085,10 +1103,16 @@ else:
                         sub_total = len(subtasks)
                         sub_done = sum(1 for s in subtasks if s["done"])
 
+                        # st.empty() gives this slot a stable identity that's explicitly
+                        # blanked every run before being conditionally refilled, instead of
+                        # relying on Streamlit to notice the block was skipped - which is
+                        # what let a stale "Subtasks: X/Y" survive a run where sub_total hit 0.
+                        sub_progress_slot = st.empty()
                         if sub_total > 0:
-                            st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
-                            st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
-                            st.markdown('</div>', unsafe_allow_html=True)
+                            with sub_progress_slot.container():
+                                st.markdown('<div class="subtask-progress-wrap">', unsafe_allow_html=True)
+                                st.progress(sub_done / sub_total, text=f"Subtasks: {sub_done}/{sub_total}")
+                                st.markdown('</div>', unsafe_allow_html=True)
 
                         expander_label = f"📋 Subtasks ({sub_done}/{sub_total})" if sub_total else "📋 Add subtasks"
                         
@@ -1211,22 +1235,30 @@ components.html(
 
     // Sync Background Mode & Force Strict DOM Painting for Colors
     setInterval(() => {
-        const isDark = doc.body.classList.contains('custom-dark');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\d+/g);
         if (rgb && rgb.length >= 3) {
             const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-            if (luma < 128 && !isDark) {
+            // Compare against the *current* class (not just "was it dark before"),
+            // so the very first tick on a fresh load - with no class yet applied -
+            // still resolves to the correct wallpaper instead of requiring a
+            // manual dark->light round trip to self-correct.
+            const shouldBeDark = luma < 128;
+            if (shouldBeDark && !doc.body.classList.contains('custom-dark')) {
                 doc.body.classList.add('custom-dark');
                 doc.body.classList.remove('custom-light');
-            } else if (luma >= 128 && isDark) {
+            } else if (!shouldBeDark && !doc.body.classList.contains('custom-light')) {
                 doc.body.classList.add('custom-light');
                 doc.body.classList.remove('custom-dark');
             }
         }
         
         try {
-            // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
+            // Task cards no longer get a priority-tinted background fill (only the
+            // thin left-edge accent bar from .border-High/Medium/Low, painted via
+            // plain CSS in the markup itself) - they only fill solid green once
+            // fully completed.
+            const isDark = doc.body.classList.contains('custom-dark');
             const markers = doc.querySelectorAll('.task-card-marker');
             markers.forEach(marker => {
                 let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
@@ -1237,24 +1269,15 @@ components.html(
                 if (card.dataset.collapsing === 'true') return;
 
                 const isDone = card.querySelector('.task-row.is-done') !== null;
-                const hasHigh = card.querySelector('.border-High') !== null;
-                const hasMed = card.querySelector('.border-Medium') !== null;
-                const hasLow = card.querySelector('.border-Low') !== null;
-                
+
                 card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-                
+
                 if (isDone) {
                     card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
                     card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-                } else if (hasHigh) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-                } else if (hasMed) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-                } else if (hasLow) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
+                } else {
+                    card.style.removeProperty('background-color');
+                    card.style.removeProperty('border-color');
                 }
             });
         } catch(e) {}
