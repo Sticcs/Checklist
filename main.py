@@ -333,13 +333,23 @@ st.markdown(
     /* Destroy Streamlit's janky skeleton loading animations */
     div[data-testid="stSkeleton"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
     
-    /* Smooth transitions for optimistic UI feedback */
+    /* Smooth, collapsing transitions for optimistic UI deletions */
     .optimistic-fade {
-        transform: scale(0.95) !important;
+        transform: scale(0.95) translateY(-10px) !important;
         opacity: 0 !important;
+        max-height: 0px !important;
+        min-height: 0px !important;
+        height: 0px !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        border-width: 0 !important;
+        overflow: hidden !important;
         pointer-events: none !important;
-        transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
+    
     .optimistic-btn {
         opacity: 0.6 !important;
         pointer-events: none !important;
@@ -352,42 +362,6 @@ st.markdown(
     }
     .block-container {
         transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
-    }
-
-    .stApp {
-        background-attachment: fixed !important;
-        background-size: cover !important;
-        background-position: center !important;
-        transition: background-image 0.3s ease;
-    }
-    [data-testid="stSidebar"] {
-        box-shadow: 5px 0 25px rgba(0,0,0,0.5);
-        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, background-color 0.3s ease !important;
-    }
-    [data-testid="stHeader"] {
-        background: transparent !important;
-    }
-    
-    body.custom-dark .stApp {
-        background-image: url("https://images.unsplash.com/photo-1518800524495-b963b722bd92?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTh8fG1pbmltYWwlMjBkYXJrfGVufDB8fDB8fHww") !important;
-    }
-    body.custom-dark [data-testid="stSidebar"] {
-        background-color: rgba(14, 17, 23, 0.75) !important;
-        backdrop-filter: blur(10px);
-    }
-    
-    body.custom-light .stApp {
-        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
-    }
-    body.custom-light [data-testid="stSidebar"] {
-        background-color: rgba(255, 255, 255, 0.85) !important;
-        box-shadow: 5px 0 25px rgba(0,0,0,0.15);
-        backdrop-filter: blur(10px);
-    }
-    
-    h1, h2, h3, h4 {
-        font-weight: 500 !important;
-        letter-spacing: -0.5px;
     }
 
     /* Stack the icon buttons neatly */
@@ -423,9 +397,9 @@ st.markdown(
     }
     .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     
-    .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
-    .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
-    .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
+    .border-High { border-left: 4px solid #e74c3c; padding-left: 12px; margin-left: -0.4rem; }
+    .border-Medium { border-left: 4px solid #f39c12; padding-left: 12px; margin-left: -0.4rem; }
+    .border-Low { border-left: 4px solid #3498db; padding-left: 12px; margin-left: -0.4rem; }
     
     .meta-tags {
         display: flex;
@@ -514,10 +488,32 @@ st.markdown(
         margin-top: 4rem;
     }
 
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
+    /* PURE CSS TASK COLORS */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
+        border: none !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+        transition: background-color 0.3s ease !important;
+    }
+
+    /* Light Mode Background Colors */
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) { background-color: rgba(250, 219, 216, 0.85) !important; }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) { background-color: rgba(253, 235, 208, 0.85) !important; }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) { background-color: rgba(214, 234, 248, 0.85) !important; }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) { background-color: rgba(46, 204, 113, 1) !important; }
+
+    /* Dark Mode Background Colors */
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-High) { background-color: rgba(100, 30, 22, 0.85) !important; }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Medium) { background-color: rgba(126, 81, 9, 0.85) !important; }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.border-Low) { background-color: rgba(21, 67, 96, 0.85) !important; }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker):has(.task-row.is-done) { background-color: rgba(29, 131, 72, 1) !important; }
+
+    /* Force the inner containers to be transparent so the color bleeds through cleanly */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) > div[data-testid="stVerticalBlock"],
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) > div[data-testid="stVerticalBlock"] > div {
+        background-color: transparent !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -558,6 +554,13 @@ st.markdown(
     .subtask-row.is-done {
         text-decoration: line-through;
         opacity: 0.5;
+    }
+    
+    /* Subtask Divider */
+    .subtask-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(128, 128, 128, 0.2) 10%, rgba(128, 128, 128, 0.2) 90%, transparent);
+        margin: 0.3rem 0;
     }
     
     /* Elegant Minimalist Focus Border for Editing Subtasks */
@@ -631,8 +634,8 @@ if not st.session_state.logged_in:
         
         with tab1:
             with st.form("login_form", border=False):
-                l_user = st.text_input("Username", key="login_user")
-                l_pass = st.text_input("Password", type="password", key="login_pass")
+                l_user = st.text_input("Username", key="login_user", placeholder="Username")
+                l_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Password")
                 if st.form_submit_button("Login", type="primary", use_container_width=True):
                     if verify_user(l_user, l_pass):
                         st.session_state.logged_in = True
@@ -643,12 +646,13 @@ if not st.session_state.logged_in:
                     
         with tab2:
             with st.form("signup_form", border=False):
-                s_user = st.text_input("Choose a Username", key="sign_user")
-                s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
+                s_user = st.text_input("Choose a Username", key="sign_user", placeholder="Choose a Username")
+                s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", placeholder="Choose a Password")
                 if st.form_submit_button("Create Account", type="primary", use_container_width=True):
                     if s_user and s_pass:
                         if create_user(s_user, s_pass):
                             st.success("Account created! You can now log in.")
+                            st.session_state.switch_to_login = True
                         else:
                             st.error("Username already exists. Pick another one.")
                     else:
@@ -660,38 +664,90 @@ if not st.session_state.logged_in:
             st.session_state.username = "guest"
             st.rerun()
 
+    if st.session_state.get("switch_to_login"):
         components.html(
             """
             <script>
-            const doc = window.parent.document;
-            if (!window.authEnterListener) {
-                window.authEnterListener = true;
-                doc.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter') {
-                        const active = doc.activeElement;
-                        if (!active || active.tagName.toLowerCase() !== 'input') return;
-
-                        const labelEl = active.closest('div[data-testid="stTextInput"]');
-                        if (!labelEl) return;
-                        
-                        const label = labelEl.querySelector('label');
-                        if (label && label.innerText.includes('Username')) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            
-                            const form = active.closest('div[data-testid="stForm"]');
-                            if (form) {
-                                const passInput = form.querySelector('input[type="password"]');
-                                if (passInput) passInput.focus();
-                            }
-                        }
-                    }
-                }, true);
-            }
+            setTimeout(() => {
+                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                const loginTab = Array.from(tabs).find(t => t.innerText.trim() === 'Login');
+                if (loginTab) {
+                    loginTab.click();
+                    setTimeout(() => {
+                        const userInp = window.parent.document.querySelector('input[placeholder="Username"]');
+                        if (userInp) userInp.focus();
+                    }, 100);
+                }
+            }, 100);
             </script>
             """,
             height=0, width=0
         )
+        st.session_state.switch_to_login = False
+
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        if (!window.authKeyboardAttached) {
+            window.authKeyboardAttached = true;
+            doc.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    const active = doc.activeElement;
+                    if (!active || active.tagName.toLowerCase() !== 'input') return;
+
+                    const placeholder = active.getAttribute('placeholder');
+                    if (!placeholder) return;
+
+                    if (placeholder.includes('Username')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        active.blur();
+                        const isSignUp = placeholder.includes('Choose');
+                        const targetLabel = isSignUp ? 'Choose a Password' : 'Password';
+                        setTimeout(() => {
+                            const inputs = Array.from(doc.querySelectorAll('input'));
+                            const passInput = inputs.find(i => i.getAttribute('placeholder') === targetLabel);
+                            if (passInput) passInput.focus();
+                        }, 100);
+                    }
+                    else if (placeholder.includes('Password')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        active.blur();
+                        const isSignUp = placeholder.includes('Choose');
+                        const targetText = isSignUp ? 'Create Account' : 'Login';
+                        setTimeout(() => {
+                            const btns = Array.from(doc.querySelectorAll('button'));
+                            const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
+                            if (btn) btn.click();
+                        }, 100);
+                    }
+                }
+            }, true);
+        }
+        
+        // Setup Theme Classes for Task Card Coloring
+        setInterval(() => {
+            const isDark = doc.body.classList.contains('custom-dark');
+            const isLight = doc.body.classList.contains('custom-light');
+            const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
+            const rgb = bg.match(/\\d+/g);
+            if (rgb && rgb.length >= 3) {
+                const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+                if (luma < 128 && !isDark) {
+                    doc.body.classList.add('custom-dark');
+                    doc.body.classList.remove('custom-light');
+                } else if (luma >= 128 && !isLight) {
+                    doc.body.classList.add('custom-light');
+                    doc.body.classList.remove('custom-dark');
+                }
+            }
+        }, 100);
+        </script>
+        """,
+        height=0, width=0
+    )
 
 else:
     st.markdown(
@@ -711,7 +767,7 @@ else:
             display: none !important;
         }
 
-        /* --- Left Control Panel (Glassmorphism & Legibility) --- */
+        /* --- Left Control Panel Aggressive Compacting --- */
         div[data-testid="column"]:has(#left-panel-marker) {
             background: rgba(255, 255, 255, 0.65) !important;
             padding: 1.5rem !important;
@@ -727,20 +783,39 @@ else:
             border: 1px solid rgba(255, 255, 255, 0.08) !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
         }
+        
+        /* Strip the excessive vertical gaps generated by Streamlit's st.container inside the left panel */
+        div[data-testid="column"]:has(#left-panel-marker) > div > div > div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
 
-        /* Captions: Category, Priority, Due */
+        /* Compress the labels (Category, Priority, Due) */
         div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #2c3e50 !important;
             font-weight: 700 !important;
-            font-size: 0.85rem !important;
+            font-size: 0.75rem !important;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-top: 0.5rem;
+            margin-top: 0.2rem !important;
+            margin-bottom: 0.1rem !important;
         }
         body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #ecf0f1 !important;
         }
         
+        /* Make the left panel buttons smaller and tighter */
+        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button {
+            padding: 0.15rem 0.2rem !important;
+            min-height: 1.8rem !important;
+            font-size: 0.8rem !important;
+        }
+        div[data-testid="column"]:has(#left-panel-marker) div[data-baseweb="input"] {
+            font-size: 0.9rem !important;
+        }
+
         /* Fixed-Height Quote Wrapper for 0 Layout Shift */
         .quote-wrapper {
             height: 90px;
@@ -766,9 +841,9 @@ else:
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
-    st.session_state.setdefault("new_category", "House")
-    st.session_state.setdefault("new_priority", "Medium")
-    st.session_state.setdefault("new_due_preset", "No date")
+    st.session_state.setdefault("new_category", None)
+    st.session_state.setdefault("new_priority", None)
+    st.session_state.setdefault("new_due_preset", None)
     st.session_state.setdefault("new_due_custom", None)
     st.session_state.setdefault("options_modified", False)
     st.session_state.setdefault("focus_custom", False)
@@ -804,22 +879,30 @@ else:
     def submit_new_task():
         text = st.session_state.task_input.strip()
         if text:
-            due_date = DUE_PRESETS[st.session_state.new_due_preset]()
-            cat = st.session_state.new_category
+            due_preset = st.session_state.new_due_preset or "No date"
+            due_date = DUE_PRESETS[due_preset]()
+            
+            cat = st.session_state.new_category or "General"
             if cat == "Custom":
                 cat = st.session_state.get("custom_cat_input", "").strip()
                 if not cat:
                     cat = "General"
                     
-            new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
+            pri = st.session_state.new_priority or "Medium"
+            
+            new_id = add_task(text, pri, cat, due_date, st.session_state.username)
             st.session_state.just_added_task_id = new_id
             st.session_state.newly_added_task = {
-                "priority": st.session_state.new_priority,
+                "priority": pri,
                 "due": due_date
             }
             
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
+            st.session_state.new_category = None
+            st.session_state.new_priority = None
+            st.session_state.new_due_preset = None
+            
             if "custom_cat_input" in st.session_state:
                 st.session_state.custom_cat_input = ""
 
@@ -1005,8 +1088,8 @@ else:
             now_time = datetime.now()
             
             for t in filtered:
-                with st.container(border=True):
-                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
+                with st.container():
+                    st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}'></div>", unsafe_allow_html=True)
                     
                     # Layout: Main task body (left), Stacked buttons (right)
                     col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
@@ -1124,7 +1207,9 @@ else:
                             st.button("✔️", key=f"tog_{t['id']}", 
                                       on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                         
-                        st.button("✏️", key=f"edit_{t['id']}", use_container_width=True, on_click=lambda id=t['id']: st.session_state.update({f"editing_{id}": True}))
+                        if st.button("✏️", key=f"edit_{t['id']}", use_container_width=True):
+                            st.session_state[f"editing_{t['id']}"] = True
+                            
                         st.button("🗑️", key=f"del_{t['id']}",
                                   on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
@@ -1134,11 +1219,18 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Setup Progressive States
-    window.textLocked = false;
-    window.categorySelected = false;
-    window.prioritySelected = false;
-    window.dueSelected = false;
+    // Setup Progressive States with SessionStorage to prevent Streamlit rerun wipeouts
+    window.textLocked = sessionStorage.getItem('pd_textLocked') === 'true';
+    window.categorySelected = sessionStorage.getItem('pd_categorySelected') === 'true';
+    window.prioritySelected = sessionStorage.getItem('pd_prioritySelected') === 'true';
+    window.dueSelected = sessionStorage.getItem('pd_dueSelected') === 'true';
+    
+    function savePDState() {
+        sessionStorage.setItem('pd_textLocked', window.textLocked);
+        sessionStorage.setItem('pd_categorySelected', window.categorySelected);
+        sessionStorage.setItem('pd_prioritySelected', window.prioritySelected);
+        sessionStorage.setItem('pd_dueSelected', window.dueSelected);
+    }
     
     const quotes = [
         "Stay locked in.", 
@@ -1159,7 +1251,7 @@ components.html(
                 header.style.opacity = 1; 
             }, 500); 
         }
-    }, 8000); 
+    }, 5000); 
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1241,10 +1333,13 @@ components.html(
         });
 
         if (taskInput && taskInput.value.trim().length === 0) {
-            window.textLocked = false;
-            window.categorySelected = false;
-            window.prioritySelected = false;
-            window.dueSelected = false;
+            if (window.textLocked || window.categorySelected || window.prioritySelected || window.dueSelected) {
+                window.textLocked = false;
+                window.categorySelected = false;
+                window.prioritySelected = false;
+                window.dueSelected = false;
+                savePDState();
+            }
         }
 
         if (window.textLocked) {
@@ -1285,9 +1380,12 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
+        // Remove focus instantly to prevent stuck pseudo-states
+        setTimeout(() => btn.blur(), 10);
+        
         const txt = btn.innerText.trim();
         
-        if (txt === '🗑️') {
+        if (txt === '🗑️' || txt === '✕') {
             const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
             if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
                 const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1298,11 +1396,11 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
-            // Instantly flip the icon
+            // Instantly flip the icon so it feels perfectly responsive
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            // Instantly apply visual toggle logic to trigger CSS :has rules
+            // Apply immediate toggle to visually complete the task
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1324,6 +1422,8 @@ components.html(
             window.categorySelected = false;
             window.prioritySelected = false;
             window.dueSelected = false;
+            savePDState();
+            
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1338,19 +1438,6 @@ components.html(
             });
         }
         
-        const isCat = ['House', 'Work', 'Study', 'Personal', 'Custom'].some(kw => txt.includes(kw));
-        const isPri = ['High', 'Medium', 'Low'].some(kw => txt.includes(kw));
-        const isDue = ['Today', 'Tomorrow', 'This week', 'Next week', 'No date'].some(kw => txt.includes(kw));
-        
-        const isOptionBtn = (isCat || isPri || isDue);
-        if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
-            const block = btn.closest('div[data-testid="stHorizontalBlock"]');
-            if (block) {
-                if (isCat) window.categorySelected = true;
-                if (isPri) window.prioritySelected = true;
-                if (isDue) window.dueSelected = true;
-            }
-        }
     }, true);
 
     if (!doc.getElementById('enter-indicator')) {
@@ -1429,31 +1516,42 @@ components.html(
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
-                indicator.innerText = 'Enter to confirm custom tag';
+                indicator.innerText = 'Enter to proceed'; 
                 indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; 
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
-                if (!window.textLocked) {
-                    indicator.innerText = 'Enter to lock text & open options';
+                // Read visibility state directly from DOM classes to be 100% robust
+                const catBlock = doc.getElementById('step-cat-marker')?.closest('.progressive-base');
+                const priBlock = doc.getElementById('step-pri-marker')?.closest('.progressive-base');
+                const dueBlock = doc.getElementById('step-due-marker')?.closest('.progressive-base');
+                const addBlock = doc.getElementById('step-add-marker')?.closest('.progressive-base');
+
+                const isCatHidden = catBlock?.classList.contains('progressive-hidden') !== false;
+                const isPriHidden = priBlock?.classList.contains('progressive-hidden') !== false;
+                const isDueHidden = dueBlock?.classList.contains('progressive-hidden') !== false;
+                const isAddHidden = addBlock?.classList.contains('progressive-hidden') !== false;
+
+                if (isCatHidden) {
+                    indicator.innerText = 'Enter to proceed to options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
-                } else if (!window.categorySelected) {
+                } else if (isPriHidden) {
                     indicator.innerText = 'Select a category (Use hotkeys)';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
-                } else if (!window.prioritySelected) {
+                } else if (isDueHidden) {
                     indicator.innerText = 'Select a priority';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
-                } else if (!window.dueSelected) {
+                } else if (isAddHidden) {
                     indicator.innerText = 'Select a due date';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter to finish adding task';
+                    indicator.innerText = 'Enter to create task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
                 const addTaskBtn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
                 if (addTaskBtn) {
-                    if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
+                    if (!isAddHidden) {
                         addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; 
                         addTaskBtn.style.borderColor = 'rgba(46, 204, 113, 1)';
                         addTaskBtn.style.color = 'white';
@@ -1503,7 +1601,6 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1550,26 +1647,24 @@ components.html(
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
                         const btn = buttons.find(b => b.innerText.includes(textFragment) || b.innerText.trim() === textFragment);
-                        if(btn) {
-                            btn.click();
-                        }
+                        if(btn) btn.click();
                     };
 
-                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; }
-                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
-                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
-                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
-                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
-                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
+                    if (key === '1') { clickBtn('Today [1]');  }
+                    if (key === '2') { clickBtn('Tomorrow [2]');  }
+                    if (key === '3') { clickBtn('This week [3]');  }
+                    if (key === '4') { clickBtn('Next week [4]');  }
+                    if (key === '5') { clickBtn('Custom');  }
+                    if (key === '6') { clickBtn('No date [6]');  }
                     
-                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
-                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; }
-                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; }
-                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; }
+                    if (key === 'h') { clickBtn('House [H]');  }
+                    if (key === 'w') { clickBtn('Work [W]');  }
+                    if (key === 's') { clickBtn('Study [S]');  }
+                    if (key === 'p') { clickBtn('Personal [P]');  }
                     
-                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; }
-                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; }
-                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; }
+                    if (key === 't') { clickBtn('High [T]');  }
+                    if (key === 'm') { clickBtn('Medium [M]');  }
+                    if (key === 'l') { clickBtn('Low [L]');  }
                     
                     return; 
                 } 
@@ -1606,19 +1701,17 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    if (!window.textLocked) {
-                        window.textLocked = true;
+                    const addBlock = doc.getElementById('step-add-marker')?.closest('.progressive-base');
+                    const isAddHidden = addBlock?.classList.contains('progressive-hidden') !== false;
+
+                    if (isAddHidden) {
                         taskInput.blur(); 
                     } 
-                    else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
+                    else {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
                             if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
                                 btn.classList.add('optimistic-fade');
-                                window.textLocked = false;
-                                window.categorySelected = false;
-                                window.prioritySelected = false;
-                                window.dueSelected = false;
                                 taskInput.value = '';
                                 btn.click();
                             }
