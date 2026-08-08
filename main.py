@@ -369,7 +369,6 @@ st.markdown(
         background-size: cover !important;
         background-position: center !important;
         transition: background-image 0.3s ease;
-        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
@@ -434,9 +433,9 @@ st.markdown(
     }
     .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     
-    .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
-    .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
-    .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
+    .border-High { border-left: 4px solid #e74c3c; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Medium { border-left: 4px solid #f39c12; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Low { border-left: 4px solid #3498db; padding-left: 12px; margin-left: -0.5rem; }
     
     .meta-tags {
         display: flex;
@@ -525,10 +524,47 @@ st.markdown(
         margin-top: 4rem;
     }
 
+    /* Target Task Container Explicitly - NO BORDER & PURE CSS COLORS */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
+        border: none !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+        transition: background-color 0.3s ease !important;
+    }
+
+    /* Light Mode Background Colors */
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-High) {
+        background-color: rgba(250, 219, 216, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Medium) {
+        background-color: rgba(253, 235, 208, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Low) {
+        background-color: rgba(214, 234, 248, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-row.is-done) {
+        background-color: rgba(46, 204, 113, 1) !important;
+    }
+
+    /* Dark Mode Background Colors */
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-High) {
+        background-color: rgba(100, 30, 22, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Medium) {
+        background-color: rgba(126, 81, 9, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Low) {
+        background-color: rgba(21, 67, 96, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-row.is-done) {
+        background-color: rgba(29, 131, 72, 1) !important;
+    }
+
+    /* Force inner container to let colors bleed through */
+    div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"] {
+        background-color: transparent !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -570,12 +606,12 @@ st.markdown(
         text-decoration: line-through;
         opacity: 0.5;
     }
-
+    
     /* Subtask Divider */
     .subtask-divider {
         height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(128, 128, 128, 0.3) 10%, rgba(128, 128, 128, 0.3) 90%, transparent);
-        margin: 0.2rem 0;
+        background: linear-gradient(90deg, transparent, rgba(128, 128, 128, 0.2) 10%, rgba(128, 128, 128, 0.2) 90%, transparent);
+        margin: 0.3rem 0;
     }
     
     /* Elegant Minimalist Focus Border for Editing Subtasks */
@@ -702,25 +738,6 @@ if not st.session_state.logged_in:
         """
         <script>
         const doc = window.parent.document;
-
-        // Initial Background setup fix for Light Mode
-        setInterval(() => {
-            const isDark = doc.body.classList.contains('custom-dark');
-            const isLight = doc.body.classList.contains('custom-light');
-            const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-            const rgb = bg.match(/\\d+/g);
-            if (rgb && rgb.length >= 3) {
-                const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-                if (luma < 128 && !isDark) {
-                    doc.body.classList.add('custom-dark');
-                    doc.body.classList.remove('custom-light');
-                } else if (luma >= 128 && !isLight) {
-                    doc.body.classList.add('custom-light');
-                    doc.body.classList.remove('custom-dark');
-                }
-            }
-        }, 100);
-
         if (!window.authKeyboardAttached) {
             window.authKeyboardAttached = true;
             doc.addEventListener('keydown', function(e) {
@@ -1120,7 +1137,7 @@ else:
                             for i, s in enumerate(subtasks):
                                 if i > 0:
                                     st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
-                                sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
+                                sc_main, sc_btn = st.columns([9, 1], vertical_alignment="center")
                                 with sc_main:
                                     sub_class = "is-done" if s["done"] else ""
                                     st.markdown(
@@ -1128,15 +1145,17 @@ else:
                                         unsafe_allow_html=True,
                                     )
                                 with sc_btn:
-                                    if s["done"]:
-                                        st.button("↩️", key=f"subtog_{s['id']}", 
-                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                    else:
-                                        st.button("✔️", key=f"subtog_{s['id']}", 
-                                                  on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                        
-                                    st.button("🗑️", key=f"subdel_{s['id']}",
-                                              on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
+                                    c1, c2 = st.columns(2)
+                                    with c1:
+                                        if s["done"]:
+                                            st.button("↩️", key=f"subtog_{s['id']}", 
+                                                      on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                        else:
+                                            st.button("✔️", key=f"subtog_{s['id']}", 
+                                                      on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                    with c2:
+                                        st.button("🗑️", key=f"subdel_{s['id']}",
+                                                  on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
 
                             st.caption("⚡ Press `/` to quickly start typing a subtask")
                             new_sc1, new_sc2 = st.columns([6, 1.5])
@@ -1196,6 +1215,7 @@ else:
                         
                         if st.button("✏️", key=f"edit_{t['id']}", use_container_width=True):
                             st.session_state[f"editing_{t['id']}"] = True
+                            
                         st.button("🗑️", key=f"del_{t['id']}",
                                   on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
@@ -1205,12 +1225,24 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Setup Progressive States
-    window.textLocked = false;
-    window.categorySelected = false;
-    window.prioritySelected = false;
-    window.dueSelected = false;
-    
+    // Initial Background setup fix for Light Mode
+    setInterval(() => {
+        const isDark = doc.body.classList.contains('custom-dark');
+        const isLight = doc.body.classList.contains('custom-light');
+        const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
+        const rgb = bg.match(/\\d+/g);
+        if (rgb && rgb.length >= 3) {
+            const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+            if (luma < 128 && !isDark) {
+                doc.body.classList.add('custom-dark');
+                doc.body.classList.remove('custom-light');
+            } else if (luma >= 128 && !isLight) {
+                doc.body.classList.add('custom-light');
+                doc.body.classList.remove('custom-dark');
+            }
+        }
+    }, 100);
+
     const quotes = [
         "Stay locked in.", 
         "September is coming.", 
@@ -1231,63 +1263,6 @@ components.html(
             }, 500); 
         }
     }, 5000); 
-
-    // Initial Background setup fix for Light Mode
-    setInterval(() => {
-        const isDark = doc.body.classList.contains('custom-dark');
-        const isLight = doc.body.classList.contains('custom-light');
-        const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-        const rgb = bg.match(/\\d+/g);
-        if (rgb && rgb.length >= 3) {
-            const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-            if (luma < 128 && !isDark) {
-                doc.body.classList.add('custom-dark');
-                doc.body.classList.remove('custom-light');
-            } else if (luma >= 128 && !isLight) {
-                doc.body.classList.add('custom-light');
-                doc.body.classList.remove('custom-dark');
-            }
-        }
-    }, 100);
-
-    // Custom Task Container Coloring Sync
-    setInterval(() => {
-        const isDark = doc.body.classList.contains('custom-dark');
-        
-        try {
-            const markers = doc.querySelectorAll('.task-card-marker');
-            markers.forEach(marker => {
-                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card) return;
-                
-                const isDone = card.querySelector('.task-row.is-done') !== null;
-                const hasHigh = card.querySelector('.border-High') !== null;
-                const hasMed = card.querySelector('.border-Medium') !== null;
-                const hasLow = card.querySelector('.border-Low') !== null;
-                
-                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-                
-                if (isDone) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-                } else if (hasHigh) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-                } else if (hasMed) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-                } else if (hasLow) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
-                }
-                
-                let innerDiv = card.querySelector('div[data-testid="stVerticalBlock"]');
-                if (innerDiv) {
-                    innerDiv.style.setProperty('background-color', 'transparent', 'important');
-                }
-            });
-        } catch(e) {}
-    }, 50);
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1368,14 +1343,41 @@ components.html(
             }
         });
 
-        if (taskInput && taskInput.value.trim().length === 0) {
-            window.textLocked = false;
-            window.categorySelected = false;
-            window.prioritySelected = false;
-            window.dueSelected = false;
+        // Re-calculate state dynamically to avoid "stuck" inputs based on UI button colors
+        let catActive = false;
+        let priActive = false;
+        let dueActive = false;
+
+        if (catBlock) {
+            const btns = Array.from(catBlock.querySelectorAll('button'));
+            catActive = btns.some(b => window.getComputedStyle(b).backgroundColor === 'rgb(255, 75, 75)');
+        }
+        if (priBlock) {
+            const btns = Array.from(priBlock.querySelectorAll('button'));
+            priActive = btns.some(b => window.getComputedStyle(b).backgroundColor === 'rgb(255, 75, 75)');
+        }
+        if (dueBlock) {
+            const btns = Array.from(dueBlock.querySelectorAll('button'));
+            dueActive = btns.some(b => window.getComputedStyle(b).backgroundColor === 'rgb(255, 75, 75)');
         }
 
-        if (window.textLocked) {
+        const isTextFilled = taskInput && taskInput.value.trim().length > 0;
+        // Text is locked if it's filled AND any of the lower menus are visible or active
+        const textLocked = isTextFilled && (catActive || doc.activeElement !== taskInput);
+
+        if (!isTextFilled) {
+            catBlock?.classList.add('progressive-hidden');
+            catBlock?.classList.remove('progressive-visible');
+            priBlock?.classList.add('progressive-hidden');
+            priBlock?.classList.remove('progressive-visible');
+            dueBlock?.classList.add('progressive-hidden');
+            dueBlock?.classList.remove('progressive-visible');
+            addBlock?.classList.add('progressive-hidden');
+            addBlock?.classList.remove('progressive-visible');
+            return;
+        }
+
+        if (textLocked) {
             catBlock?.classList.add('progressive-visible');
             catBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1383,7 +1385,7 @@ components.html(
             catBlock?.classList.remove('progressive-visible');
         }
 
-        if (window.textLocked && window.categorySelected) {
+        if (textLocked && catActive) {
             priBlock?.classList.add('progressive-visible');
             priBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1391,7 +1393,7 @@ components.html(
             priBlock?.classList.remove('progressive-visible');
         }
 
-        if (window.textLocked && window.categorySelected && window.prioritySelected) {
+        if (textLocked && catActive && priActive) {
             dueBlock?.classList.add('progressive-visible');
             dueBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1399,7 +1401,7 @@ components.html(
             dueBlock?.classList.remove('progressive-visible');
         }
 
-        if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
+        if (textLocked && catActive && priActive && dueActive) {
             addBlock?.classList.add('progressive-visible');
             addBlock?.classList.remove('progressive-hidden');
         } else {
@@ -1413,6 +1415,7 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
+        // Remove focus instantly to prevent stuck pseudo-states
         setTimeout(() => btn.blur(), 10);
         
         const txt = btn.innerText.trim();
@@ -1428,9 +1431,11 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
+            // Instantly flip the icon
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
+            // Apply immediate toggle to visually complete the task
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1448,11 +1453,6 @@ components.html(
         else if (txt === 'Add task') {
             btn.classList.add('optimistic-fade');
             
-            window.textLocked = false;
-            window.categorySelected = false;
-            window.prioritySelected = false;
-            window.dueSelected = false;
-            
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1465,16 +1465,6 @@ components.html(
                 const c = m.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || m.closest('div[data-testid="stVerticalBlock"]');
                 if (c) c.classList.add('optimistic-fade');
             });
-        }
-        
-        const isCat = ['House', 'Work', 'Study', 'Personal', 'Custom'].some(kw => txt.includes(kw));
-        const isPri = ['High', 'Medium', 'Low'].some(kw => txt.includes(kw));
-        const isDue = ['Today', 'Tomorrow', 'This week', 'Next week', 'No date'].some(kw => txt.includes(kw));
-        
-        if ((isCat || isPri || isDue) && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
-            if (isCat) window.categorySelected = true;
-            if (isPri) window.prioritySelected = true;
-            if (isDue) window.dueSelected = true;
         }
     }, true);
 
@@ -1559,16 +1549,27 @@ components.html(
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
-                if (!window.textLocked) {
+                // Read visibility state directly from DOM classes to be 100% robust
+                const catBlock = doc.getElementById('step-cat-marker')?.closest('.progressive-base');
+                const priBlock = doc.getElementById('step-pri-marker')?.closest('.progressive-base');
+                const dueBlock = doc.getElementById('step-due-marker')?.closest('.progressive-base');
+                const addBlock = doc.getElementById('step-add-marker')?.closest('.progressive-base');
+
+                const isCatHidden = catBlock?.classList.contains('progressive-hidden') !== false;
+                const isPriHidden = priBlock?.classList.contains('progressive-hidden') !== false;
+                const isDueHidden = dueBlock?.classList.contains('progressive-hidden') !== false;
+                const isAddHidden = addBlock?.classList.contains('progressive-hidden') !== false;
+
+                if (isCatHidden) {
                     indicator.innerText = 'Enter to proceed to options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
-                } else if (!window.categorySelected) {
+                } else if (isPriHidden) {
                     indicator.innerText = 'Select a category (Use hotkeys)';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
-                } else if (!window.prioritySelected) {
+                } else if (isDueHidden) {
                     indicator.innerText = 'Select a priority';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
-                } else if (!window.dueSelected) {
+                } else if (isAddHidden) {
                     indicator.innerText = 'Select a due date';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
                 } else {
@@ -1578,7 +1579,7 @@ components.html(
                 
                 const addTaskBtn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
                 if (addTaskBtn) {
-                    if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
+                    if (!isAddHidden) {
                         addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; 
                         addTaskBtn.style.borderColor = 'rgba(46, 204, 113, 1)';
                         addTaskBtn.style.color = 'white';
@@ -1679,21 +1680,21 @@ components.html(
                         }
                     };
 
-                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; }
-                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
-                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
-                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
-                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
-                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
+                    if (key === '1') { clickBtn('Today [1]');  }
+                    if (key === '2') { clickBtn('Tomorrow [2]');  }
+                    if (key === '3') { clickBtn('This week [3]');  }
+                    if (key === '4') { clickBtn('Next week [4]');  }
+                    if (key === '5') { clickBtn('Custom');  }
+                    if (key === '6') { clickBtn('No date [6]');  }
                     
-                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
-                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; }
-                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; }
-                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; }
+                    if (key === 'h') { clickBtn('House [H]');  }
+                    if (key === 'w') { clickBtn('Work [W]');  }
+                    if (key === 's') { clickBtn('Study [S]');  }
+                    if (key === 'p') { clickBtn('Personal [P]');  }
                     
-                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; }
-                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; }
-                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; }
+                    if (key === 't') { clickBtn('High [T]');  }
+                    if (key === 'm') { clickBtn('Medium [M]');  }
+                    if (key === 'l') { clickBtn('Low [L]');  }
                     
                     return; 
                 } 
@@ -1730,19 +1731,17 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    if (!window.textLocked) {
-                        window.textLocked = true;
+                    const addBlock = doc.getElementById('step-add-marker')?.closest('.progressive-base');
+                    const isAddHidden = addBlock?.classList.contains('progressive-hidden') !== false;
+
+                    if (isAddHidden) {
                         taskInput.blur(); 
                     } 
-                    else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
+                    else {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
                             if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
                                 btn.classList.add('optimistic-fade');
-                                window.textLocked = false;
-                                window.categorySelected = false;
-                                window.prioritySelected = false;
-                                window.dueSelected = false;
                                 taskInput.value = '';
                                 btn.click();
                             }
