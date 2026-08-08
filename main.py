@@ -521,12 +521,20 @@ st.markdown(
         margin-bottom: 0.7rem !important;
     }
 
-    /* Force transparency on Streamlit Expander to allow parent background to bleed through */
+    /* Subtask panel: its own neutral surface, isolated from the parent task's
+       priority color-coding (which is painted on the card behind it). */
     div[data-testid="stExpander"] {
         border: none !important;
-        background: transparent !important;
-        background-color: transparent !important;
-        transition: all 0.3s ease;
+        background: rgba(255, 255, 255, 0.92) !important;
+        border-radius: 10px !important;
+        padding: 0.15rem 0.7rem 0.35rem 0.7rem !important;
+        margin-top: 0.45rem !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        transition: background-color 0.3s ease;
+    }
+    body.custom-dark div[data-testid="stExpander"] {
+        background: rgba(255, 255, 255, 0.07) !important;
+        box-shadow: none;
     }
     div[data-testid="stExpanderDetails"] {
         background: transparent !important;
@@ -673,11 +681,28 @@ else:
             overflow-y: scroll !important;
             scroll-behavior: smooth !important;
             padding-right: 15px !important;
-            -ms-overflow-style: none !important; 
-            scrollbar-width: none !important; 
+            padding-bottom: 3rem !important;
+            -ms-overflow-style: none !important;
+            scrollbar-width: none !important;
+            mask-image: linear-gradient(to bottom, black calc(100% - 36px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 36px), transparent 100%);
         }
         div[data-testid="stColumn"]:has(#right-col-anchor)::-webkit-scrollbar {
             display: none !important;
+        }
+
+        /* --- Sticky "completed" progress bar, anchored to the top of the scroll area --- */
+        div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 20 !important;
+            padding: 0.5rem 0 !important;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.75);
+        }
+        body.custom-dark div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
+            background: rgba(14, 17, 23, 0.75);
         }
 
         /* --- Left Control Panel (Glassmorphism & Legibility) --- */
@@ -977,8 +1002,9 @@ else:
         st.write("")
         if tasks:
             done_count = sum(1 for t in tasks if t["done"])
+            st.markdown("<div id='overall-progress-marker'></div>", unsafe_allow_html=True)
             st.progress(done_count / len(tasks), text=f"{done_count} / {len(tasks)} completed")
-        
+
         st.write("")
 
         if not filtered:
@@ -1050,19 +1076,20 @@ else:
                                               on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
 
                             st.caption("⚡ Press `/` to quickly start typing a subtask")
-                            new_sc1, new_sc2 = st.columns([6, 1.5])
-                            with new_sc1:
-                                st.text_input(
-                                    "New subtask",
-                                    key=f"new_sub_{t['id']}",
-                                    placeholder="Add a subtask... (Press '/' to focus)",
-                                    label_visibility="collapsed",
-                                    on_change=handle_subtask_add, 
-                                    args=(t['id'], st.session_state.username)
-                                )
-                            with new_sc2:
-                                st.button("Add", key=f"addsub_{t['id']}", use_container_width=True,
-                                          on_click=handle_subtask_add, args=(t['id'], st.session_state.username))
+                            with st.form(key=f"add_sub_form_{t['id']}", clear_on_submit=True, border=False):
+                                new_sc1, new_sc2 = st.columns([6, 1.5])
+                                with new_sc1:
+                                    st.text_input(
+                                        "New subtask",
+                                        key=f"new_sub_{t['id']}",
+                                        placeholder="Add a subtask... (Press '/' to focus)",
+                                        label_visibility="collapsed",
+                                    )
+                                with new_sc2:
+                                    st.form_submit_button(
+                                        "Add", use_container_width=True,
+                                        on_click=handle_subtask_add, args=(t['id'], st.session_state.username)
+                                    )
 
                         if st.session_state.get(f"editing_{t['id']}"):
                             with st.form(f"edit_form_{t['id']}"):
