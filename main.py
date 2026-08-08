@@ -628,7 +628,14 @@ st.markdown(
         justify-content: center;
         font-size: 0.75rem;
     }
-    
+    .guest-note {
+        font-size: 0.72rem;
+        font-style: italic;
+        opacity: 0.55;
+        margin: -0.5rem 0 0.6rem 30px;
+        line-height: 1.3;
+    }
+
     div[data-testid="stButton"] button {
         width: 100%;
         height: auto !important;
@@ -1083,8 +1090,11 @@ else:
     with st.sidebar:
         # Guest usernames carry a unique suffix internally (for data isolation
         # between separate guest sessions) that has no business being shown.
-        display_name = "Guest" if st.session_state.username.startswith("guest_") else st.session_state.username
+        is_guest = st.session_state.username.startswith("guest_")
+        display_name = "Guest" if is_guest else st.session_state.username
         st.markdown(f"<div class='profile-indicator'><span>👤</span> {html.escape(display_name)}</div>", unsafe_allow_html=True)
+        if is_guest:
+            st.markdown("<div class='guest-note'>Tasks won't be saved after you sign out</div>", unsafe_allow_html=True)
         if st.button("Sign out", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
