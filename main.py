@@ -202,8 +202,6 @@ def set_done(task_id, done, username):
             st.session_state[f"subchk_{s['id']}"] = bool(done)
                 
         conn.commit()
-    status = "completed" if done else "unmarked"
-    st.session_state.pending_toast = f"✅ Task {status}"
 
 def delete_task(task_id, username):
     save_state_for_undo(username)
@@ -405,13 +403,16 @@ st.markdown(
         letter-spacing: -0.5px;
     }
     
-    /* --- COMPLETELY REMOVE CHECKBOXES FROM UI --- */
+    /* --- INVISIBLY HIDE CHECKBOXES SO THEY REMAIN CLICKABLE BY JS --- */
     div[data-testid="stCheckbox"] {
-        display: none !important; 
-        width: 0 !important;
-        height: 0 !important;
+        position: absolute !important;
+        left: -9999px !important;
+        opacity: 0 !important;
+        width: 0px !important;
+        height: 0px !important;
         margin: 0 !important;
         padding: 0 !important;
+        overflow: hidden !important;
     }
 
     /* Stack the icon buttons neatly */
@@ -976,7 +977,7 @@ else:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
         # Minimalist Ctrl+Click Tip Badge
-        st.markdown("<div class='ctrl-tip-badge'>💡 Tip: Hold Ctrl and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
+        st.markdown("<div class='ctrl-tip-badge'>💡 Tip: Hold Ctrl (or Cmd) and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
         
         # New UI Task Data payload for the Custom Toast Notification
         new_task_toast = st.session_state.get("newly_added_task")
@@ -1025,7 +1026,7 @@ else:
                     col_main, col_btns = st.columns([9, 0.7], vertical_alignment="center")
                     
                     with col_main:
-                        # Hidden Checkbox!
+                        # Invisibly Hidden Checkbox
                         st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}", 
                                     on_change=handle_task_check, args=(t["id"], bool(t["done"]), st.session_state.username), label_visibility="collapsed")
                         
@@ -1067,7 +1068,7 @@ else:
                             for s in subtasks:
                                 sc_main, sc_btn = st.columns([9, 0.7], vertical_alignment="center")
                                 with sc_main:
-                                    # Hidden Checkbox!
+                                    # Invisibly Hidden Checkbox
                                     st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
                                                 on_change=handle_subtask_check, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), label_visibility="collapsed")
                                     
@@ -1140,12 +1141,15 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Track Ctrl Key State for Cursor Hint
+    // Track Ctrl/Cmd Key State for Cursor Hint
     doc.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey) doc.body.classList.add('ctrl-pressed');
     });
     doc.addEventListener('keyup', (e) => {
         if (!e.ctrlKey && !e.metaKey) doc.body.classList.remove('ctrl-pressed');
+    });
+    window.addEventListener('blur', () => {
+        doc.body.classList.remove('ctrl-pressed');
     });
     
     // Bulletproof Ctrl+Click System for Checkboxes
@@ -1165,25 +1169,33 @@ components.html(
 
             const subtaskRow = e.target.closest('.subtask-row');
             if (subtaskRow) {
-                const expanderDetails = subtaskRow.closest('div[data-testid="stExpanderDetails"]');
-                if (expanderDetails) {
-                    // Find matching checkbox in the subtask row container
-                    const container = subtaskRow.closest('div[data-testid="column"]')?.parentElement;
-                    const chk = container ? container.querySelector('input[type="checkbox"]') : null;
-                    if (chk) {
-                        chk.click();
-                        return;
+                const col = subtaskRow.closest('div[data-testid="column"]');
+                if (col) {
+                    // Try to click label first (best for React), fallback to input
+                    const label = col.querySelector('div[data-testid="stCheckbox"] label');
+                    if (label) {
+                        label.click();
+                    } else {
+                        const chk = col.querySelector('input[type="checkbox"]');
+                        if (chk) chk.click();
                     }
                 }
             } else {
-                // Find main task hidden checkbox inside the card
-                const mainChk = card.querySelector('input[type="checkbox"]');
-                if (mainChk) {
-                    mainChk.click();
+                // Main task click
+                const taskRow = e.target.closest('.task-row');
+                const searchRoot = taskRow ? taskRow.closest('div[data-testid="column"]') : card;
+                if (searchRoot) {
+                    const label = searchRoot.querySelector('div[data-testid="stCheckbox"] label');
+                    if (label) {
+                        label.click();
+                    } else {
+                        const chk = searchRoot.querySelector('input[type="checkbox"]');
+                        if (chk) chk.click();
+                    }
                 }
             }
         }
-    }, true);
+    }, true); // Enforce capture phase to run before Streamlit link wrappers
     
     // Setup Progressive States
     window.textLocked = false;
@@ -1228,6 +1240,7 @@ components.html(
             }
         }
         
+        // Use JavaScript .setProperty with '!important' to strictly override Streamlit
         const markers = doc.querySelectorAll('.task-card-marker');
         markers.forEach(marker => {
             let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
@@ -1642,6 +1655,7 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
+                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1684,6 +1698,7 @@ components.html(
                     return;
                 }
 
+                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
@@ -1757,10 +1772,12 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
+                    // Lock text on first Enter
                     if (!window.textLocked) {
                         window.textLocked = true;
                         taskInput.blur(); 
                     } 
+                    // Add Task on subsequent Enter ONLY IF all sections are filled
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
