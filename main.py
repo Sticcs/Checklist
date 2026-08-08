@@ -502,6 +502,30 @@ st.markdown(
     }
     
     div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
+
+    /* Category/Priority/Due option rows: size each button to its own label
+       instead of forcing equal-width columns (which wrapped longer labels
+       onto two lines while shorter ones sat on one, at any zoom level).
+       Buttons wrap onto a new row instead of being squeezed. */
+    div[data-testid="stElementContainer"]:has(.option-row-marker) ~ div[data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        row-gap: 0.4rem !important;
+    }
+    div[data-testid="stElementContainer"]:has(.option-row-marker) ~ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 0 1 auto !important;
+        width: auto !important;
+    }
+    div[data-testid="stElementContainer"]:has(.option-row-marker) ~ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {
+        width: auto !important;
+        white-space: nowrap !important;
+        padding-left: 0.9rem !important;
+        padding-right: 0.9rem !important;
+    }
+    div[data-testid="stElementContainer"]:has(.option-row-marker) ~ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button p,
+    div[data-testid="stElementContainer"]:has(.option-row-marker) ~ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button * {
+        white-space: nowrap !important;
+    }
+
     section[data-testid="stSidebar"] button {
         border-radius: 6px;
         font-weight: 400;
@@ -821,7 +845,7 @@ else:
     # app, so clicking Category/Priority/Due no longer flickers/re-renders the task list.
     @st.fragment
     def render_category_picker():
-        st.markdown("<div id='step-cat-marker'></div>", unsafe_allow_html=True)
+        st.markdown("<div id='step-cat-marker' class='option-row-marker'></div>", unsafe_allow_html=True)
         st.caption("Category")
         cat_cols = st.columns(len(CATEGORIES), gap="small")
         for col, cat in zip(cat_cols, CATEGORIES):
@@ -846,7 +870,7 @@ else:
 
     @st.fragment
     def render_priority_picker():
-        st.markdown("<div id='step-pri-marker'></div>", unsafe_allow_html=True)
+        st.markdown("<div id='step-pri-marker' class='option-row-marker'></div>", unsafe_allow_html=True)
         st.caption("Priority")
         pri_cols = st.columns(len(PRIORITIES), gap="small")
         for col, pri in zip(pri_cols, PRIORITIES):
@@ -861,7 +885,7 @@ else:
 
     @st.fragment
     def render_due_picker():
-        st.markdown("<div id='step-due-marker'></div>", unsafe_allow_html=True)
+        st.markdown("<div id='step-due-marker' class='option-row-marker'></div>", unsafe_allow_html=True)
         st.caption("Due")
         due_cols = st.columns(len(DUE_PRESETS), gap="small")
         for i, (col, preset) in enumerate(zip(due_cols, DUE_PRESETS.keys())):
@@ -897,7 +921,22 @@ else:
         st.header("Filters")
         search = st.text_input("Search", label_visibility="collapsed", placeholder="Search tasks...")
         status_filter = st.radio("Status", ["All", "Active", "Completed"], horizontal=True, label_visibility="collapsed")
-        category_filter = st.multiselect("Category", sidebar_categories, default=sidebar_categories)
+
+        # `default=` only seeds st.multiselect the very first time it's created; on
+        # later reruns Streamlit keeps whatever was last selected. If a category
+        # disappears (e.g. after Clear all) that stale selection can end up outside
+        # the new `options` list, which breaks the widget - and every task added
+        # afterwards silently fails the filter. Reconcile it by hand each run: drop
+        # categories that no longer exist, and auto-include ones seen for the first
+        # time so newly added tasks aren't hidden.
+        _cat_key = "category_filter_widget"
+        _prev_known = st.session_state.get("known_categories", [])
+        _prev_selected = st.session_state.get(_cat_key, sidebar_categories)
+        _new_categories = [c for c in sidebar_categories if c not in _prev_known]
+        st.session_state[_cat_key] = [c for c in _prev_selected if c in sidebar_categories] + _new_categories
+        st.session_state["known_categories"] = sidebar_categories
+
+        category_filter = st.multiselect("Category", sidebar_categories, key=_cat_key)
         sort_by = st.selectbox("Sort by", ["Priority", "Due date", "Newest first"])
         
         st.write("---")
@@ -1522,10 +1561,16 @@ components.html(
             });
         }
         
-        const isCat = ['House', 'Work', 'Study', 'Personal', 'Custom'].some(kw => txt.includes(kw));
-        const isPri = ['High', 'Medium', 'Low'].some(kw => txt.includes(kw));
-        const isDue = ['Today', 'Tomorrow', 'This week', 'Next week', 'No date'].some(kw => txt.includes(kw));
-        
+        // Match by the trailing hotkey bracket, not the label text: the category
+        // "Custom" button and the due-preset "Custom [5]" button both contain the
+        // substring "Custom", so plain text matching mis-detects which group a
+        // click belongs to (and can leave Due/Add stuck hidden).
+        const bracketMatch = txt.match(/\[([^\]]+)\]$/);
+        const bracketKey = bracketMatch ? bracketMatch[1] : null;
+        const isCat = ['H', 'W', 'S', 'P'].includes(bracketKey) || txt === 'Custom';
+        const isPri = ['T', 'M', 'L'].includes(bracketKey);
+        const isDue = ['1', '2', '3', '4', '5', '6'].includes(bracketKey);
+
         const isOptionBtn = (isCat || isPri || isDue);
         if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
             const block = btn.closest('div[data-testid="stHorizontalBlock"]');
@@ -1714,8 +1759,12 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Intercept and destroy Streamlit native hotkeys for our mapped keys
-                if (isHotkey || key === '/') {
+                // Intercept and destroy Streamlit native hotkeys for our mapped keys —
+                // but only once the task box already has text. Before that, a
+                // hotkey-shaped letter (h/w/s/p/t/m/l/1-6) is just the first
+                // character of a new task; consuming it here would focus the
+                // (still-empty) box without actually typing the letter into it.
+                if ((isHotkey && hasText) || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -1784,7 +1833,7 @@ components.html(
                     if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
                     if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
                     if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
-                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
+                    if (key === '5') { clickBtn('Custom [5]'); window.dueSelected = true; }
                     if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
                     
                     if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
