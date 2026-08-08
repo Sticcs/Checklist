@@ -560,6 +560,13 @@ st.markdown(
         opacity: 0.5;
     }
     
+    /* Subtask Divider */
+    .subtask-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(128, 128, 128, 0.2) 10%, rgba(128, 128, 128, 0.2) 90%, transparent);
+        margin: 0.3rem 0;
+    }
+    
     /* Elegant Minimalist Focus Border for Editing Subtasks */
     .green-focus-border {
         border-color: rgba(46, 204, 113, 0.8) !important;
@@ -1012,7 +1019,9 @@ else:
                         is_expanded = (st.session_state.active_task_id == t["id"])
                         
                         with st.expander(expander_label, expanded=is_expanded):
-                            for s in subtasks:
+                            for i, s in enumerate(subtasks):
+                                if i > 0:
+                                    st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
                                 sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
                                 with sc_main:
                                     sub_class = "is-done" if s["done"] else ""
@@ -1354,27 +1363,29 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
-            // Instantly flip the icon so it feels perfectly responsive
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            // Instantly apply visual toggle logic
-            const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
-            if (isSubtask) {
-                const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
-                if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
-            } else {
-                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || btn.closest('div[data-testid="stVerticalBlock"]');
+            const isMain = btn.getAttribute('title')?.startsWith('Mark task');
+            const isSub = btn.getAttribute('title')?.startsWith('Mark subtask');
+
+            if (isMain) {
+                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
                 if (card) {
                     const mainRow = card.querySelector('.task-row');
                     const mainTitle = card.querySelector('.task-title');
                     if (mainRow) mainRow.classList.toggle('is-done', txt === '✔️');
                     if (mainTitle) mainTitle.classList.toggle('is-done', txt === '✔️');
                 }
+            } else if (isSub) {
+                const subRowBlock = btn.closest('div[data-testid="stHorizontalBlock"]');
+                if (subRowBlock) {
+                    const subRow = subRowBlock.querySelector('.subtask-row');
+                    if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
+                }
             }
         }
         else if (txt === 'Add task') {
-            // Fades the button via CSS instead of breaking innerText react node sync
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
@@ -1569,7 +1580,6 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1612,7 +1622,6 @@ components.html(
                     return;
                 }
 
-                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
@@ -1686,12 +1695,10 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    // Lock text on first Enter
                     if (!window.textLocked) {
                         window.textLocked = true;
                         taskInput.blur(); 
                     } 
-                    // Add Task on subsequent Enter ONLY IF all sections are filled
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
