@@ -32,7 +32,6 @@ if "pending_toast" in st.session_state:
     del st.session_state.pending_toast
 
 def _sync_checkboxes_with_db(username):
-    """Explicitly forces Streamlit to overwrite its checkbox cache with the true DB state."""
     tasks = get_tasks(username)
     for t in tasks:
         st.session_state[f"chk_{t['id']}"] = bool(t['done'])
@@ -353,12 +352,6 @@ st.markdown(
         pointer-events: none !important;
         transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
     }
-    .optimistic-btn {
-        opacity: 0.6 !important;
-        pointer-events: none !important;
-        filter: grayscale(1) !important;
-        transition: all 0.1s ease !important;
-    }
 
     section.main, [data-testid="stMain"] {
         transition: margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
@@ -403,25 +396,24 @@ st.markdown(
         letter-spacing: -0.5px;
     }
     
-    /* --- INVISIBLY HIDE CHECKBOXES SO THEY REMAIN CLICKABLE BY JS --- */
+    /* --- COMPLETELY INVISIBLE CHECKBOXES SO JS CAN CLICK THEM --- */
     div[data-testid="stCheckbox"] {
-        position: absolute !important;
+        position: fixed !important;
+        top: -9999px !important;
         left: -9999px !important;
         opacity: 0 !important;
-        width: 0px !important;
-        height: 0px !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
+        pointer-events: none !important;
+        z-index: -100 !important;
     }
 
-    /* Stack the icon buttons neatly */
-    div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {
-        padding: 0.1rem 0 !important;
-        min-height: 2rem !important;
-        margin-bottom: 0.2rem !important;
+    /* Target Task Container Explicitly */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
+        border-radius: 14px !important;
+        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
+        margin-bottom: 0.7rem !important;
+        overflow: hidden;
     }
-
+    
     /* Dynamic cursor when Ctrl is held */
     body.ctrl-pressed div[data-testid="stVerticalBlockBorderWrapper"] {
         cursor: crosshair !important;
@@ -432,14 +424,14 @@ st.markdown(
     }
 
     .task-row {
-        padding: 0.8rem 0;
-        border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+        padding: 0.5rem 0;
         display: flex;
         flex-direction: column;
         justify-content: center;
         transition: opacity 0.05s ease;
+        margin-left: 0.5rem;
     }
-    .task-row.is-done { opacity: 0.4; }
+    .task-row.is-done { opacity: 0.6; }
     .task-title {
         font-size: 1.05rem;
         font-weight: 400;
@@ -457,9 +449,9 @@ st.markdown(
     }
     .new-task-anim { animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     
-    .border-High { border-left: 2px solid #e74c3c; padding-left: 12px; }
-    .border-Medium { border-left: 2px solid #f39c12; padding-left: 12px; }
-    .border-Low { border-left: 2px solid #3498db; padding-left: 12px; }
+    .border-High { border-left: 4px solid #e74c3c; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Medium { border-left: 4px solid #f39c12; padding-left: 12px; margin-left: -0.5rem; }
+    .border-Low { border-left: 4px solid #3498db; padding-left: 12px; margin-left: -0.5rem; }
     
     .meta-tags {
         display: flex;
@@ -496,26 +488,6 @@ st.markdown(
         line-height: 1;
     }
     
-    .profile-indicator {
-        font-size: 0.85rem;
-        font-weight: 500;
-        opacity: 0.75;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 0.8rem;
-    }
-    .profile-indicator span {
-        background: rgba(128, 128, 128, 0.2);
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.75rem;
-    }
-    
     div[data-testid="stButton"] button { 
         width: 100%;
         height: auto !important;
@@ -546,12 +518,6 @@ st.markdown(
         border-radius: 12px;
         background: rgba(128,128,128,0.1);
         margin-top: 4rem;
-    }
-
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
-        border-radius: 14px !important;
-        padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
-        margin-bottom: 0.7rem !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -644,14 +610,38 @@ st.markdown(
     /* Minimalist Ctrl+Click Tip Badge */
     .ctrl-tip-badge {
         font-size: 0.8rem;
-        opacity: 0.7;
+        opacity: 0.8;
         background: rgba(128, 128, 128, 0.12);
-        padding: 4px 10px;
+        padding: 6px 12px;
         border-radius: 6px;
         display: inline-block;
         margin-bottom: 1rem;
         font-weight: 500;
         letter-spacing: 0.2px;
+    }
+    
+    /* CSS Fallback for Background Coloring */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.is-done) {
+        background-color: rgba(46, 204, 113, 1) !important;
+        border-color: rgba(39, 174, 96, 1) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-High):not(:has(.is-done)) {
+        background-color: rgba(250, 219, 216, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Medium):not(:has(.is-done)) {
+        background-color: rgba(253, 235, 208, 0.85) !important;
+    }
+    body.custom-light div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Low):not(:has(.is-done)) {
+        background-color: rgba(214, 234, 248, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-High):not(:has(.is-done)) {
+        background-color: rgba(100, 30, 22, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Medium):not(:has(.is-done)) {
+        background-color: rgba(126, 81, 9, 0.85) !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlockBorderWrapper"]:has(.border-Low):not(:has(.is-done)) {
+        background-color: rgba(21, 67, 96, 0.85) !important;
     }
     </style>
     """,
@@ -977,7 +967,7 @@ else:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
         # Minimalist Ctrl+Click Tip Badge
-        st.markdown("<div class='ctrl-tip-badge'>💡 Tip: Hold Ctrl (or Cmd) and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
+        st.markdown("<div class='ctrl-tip-badge'>💡 <strong>Tip:</strong> Hold Ctrl (or Cmd) and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
         
         # New UI Task Data payload for the Custom Toast Notification
         new_task_toast = st.session_state.get("newly_added_task")
@@ -1023,11 +1013,12 @@ else:
                 with st.container(border=True):
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
-                    col_main, col_btns = st.columns([9, 0.7], vertical_alignment="center")
+                    # Layout: Main task body (left), Stacked buttons (right)
+                    col_main, col_btns = st.columns([9, 0.6], vertical_alignment="center")
                     
                     with col_main:
                         # Invisibly Hidden Checkbox
-                        st.checkbox("", value=bool(t["done"]), key=f"chk_{t['id']}", 
+                        st.checkbox("HiddenMainChk", value=bool(t["done"]), key=f"chk_{t['id']}", 
                                     on_change=handle_task_check, args=(t["id"], bool(t["done"]), st.session_state.username), label_visibility="collapsed")
                         
                         done_class = "is-done" if t["done"] else ""
@@ -1066,10 +1057,10 @@ else:
                         
                         with st.expander(expander_label, expanded=is_expanded):
                             for s in subtasks:
-                                sc_main, sc_btn = st.columns([9, 0.7], vertical_alignment="center")
+                                sc_main, sc_btn = st.columns([9, 0.6], vertical_alignment="center")
                                 with sc_main:
                                     # Invisibly Hidden Checkbox
-                                    st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
+                                    st.checkbox("HiddenSubChk", value=bool(s["done"]), key=f"subchk_{s['id']}",
                                                 on_change=handle_subtask_check, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), label_visibility="collapsed")
                                     
                                     sub_class = "is-done" if s["done"] else ""
@@ -1160,42 +1151,40 @@ components.html(
             
             // Allow expander chevron summary click
             if (e.target.tagName.toLowerCase() === 'summary' || e.target.closest('summary')) return;
-            // Allow action buttons
+            // Allow actual action buttons to work normally
             if (e.target.closest('button')) return;
 
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
 
-            const subtaskRow = e.target.closest('.subtask-row');
-            if (subtaskRow) {
-                const col = subtaskRow.closest('div[data-testid="column"]');
-                if (col) {
-                    // Try to click label first (best for React), fallback to input
-                    const label = col.querySelector('div[data-testid="stCheckbox"] label');
-                    if (label) {
-                        label.click();
-                    } else {
-                        const chk = col.querySelector('input[type="checkbox"]');
-                        if (chk) chk.click();
-                    }
+            let targetChk = null;
+
+            const expanderDetails = e.target.closest('div[data-testid="stExpanderDetails"]');
+            if (expanderDetails) {
+                // Clicked inside a subtask row
+                const subRowBlock = e.target.closest('div[data-testid="stHorizontalBlock"]');
+                if (subRowBlock) {
+                    targetChk = subRowBlock.querySelector('input[type="checkbox"]');
                 }
             } else {
-                // Main task click
-                const taskRow = e.target.closest('.task-row');
-                const searchRoot = taskRow ? taskRow.closest('div[data-testid="column"]') : card;
-                if (searchRoot) {
-                    const label = searchRoot.querySelector('div[data-testid="stCheckbox"] label');
-                    if (label) {
-                        label.click();
-                    } else {
-                        const chk = searchRoot.querySelector('input[type="checkbox"]');
-                        if (chk) chk.click();
-                    }
+                // Clicked main task area. Get the FIRST checkbox in the card.
+                targetChk = card.querySelector('input[type="checkbox"]');
+            }
+
+            if (targetChk) {
+                try {
+                    // React native setter bypass
+                    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "checked").set;
+                    nativeSetter.call(targetChk, !targetChk.checked);
+                    targetChk.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch (err) {
+                    // Fallback to normal click if React setter fails
+                    targetChk.click();
                 }
             }
         }
-    }, true); // Enforce capture phase to run before Streamlit link wrappers
+    }, true); 
     
     // Setup Progressive States
     window.textLocked = false;
@@ -1224,7 +1213,7 @@ components.html(
         }
     }, 8000); 
 
-    // Sync Background Mode & Bulletproof Task Card Colors
+    // Sync Background Mode & Force Strict DOM Painting for Colors
     setInterval(() => {
         const isDark = doc.body.classList.contains('custom-dark');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
@@ -1240,34 +1229,36 @@ components.html(
             }
         }
         
-        // Use JavaScript .setProperty with '!important' to strictly override Streamlit
-        const markers = doc.querySelectorAll('.task-card-marker');
-        markers.forEach(marker => {
-            let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-            if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
-            if (!card) return;
-            
-            const isDone = card.querySelector('.task-row.is-done') !== null;
-            const hasHigh = card.querySelector('.border-High') !== null;
-            const hasMed = card.querySelector('.border-Medium') !== null;
-            const hasLow = card.querySelector('.border-Low') !== null;
-            
-            card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-            
-            if (isDone) {
-                card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-            } else if (hasHigh) {
-                card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-            } else if (hasMed) {
-                card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-            } else if (hasLow) {
-                card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
-            }
-        });
+        try {
+            // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
+            const markers = doc.querySelectorAll('.task-card-marker');
+            markers.forEach(marker => {
+                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
+                if (!card) return;
+                
+                const isDone = card.querySelector('.task-row.is-done') !== null;
+                const hasHigh = card.querySelector('.border-High') !== null;
+                const hasMed = card.querySelector('.border-Medium') !== null;
+                const hasLow = card.querySelector('.border-Low') !== null;
+                
+                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
+                
+                if (isDone) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
+                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
+                } else if (hasHigh) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
+                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
+                } else if (hasMed) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
+                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
+                } else if (hasLow) {
+                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
+                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
+                }
+            });
+        } catch(e) {}
     }, 100);
 
     // Persist Scroll memory
@@ -1433,7 +1424,7 @@ components.html(
         }
     }, 100);
 
-    // --- TRUE OPTIMISTIC UI: Event Delegation ---
+    // --- Event Delegation & UI Triggers ---
     doc.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
@@ -1451,8 +1442,8 @@ components.html(
             }
         }
         else if (txt === 'Add task') {
-            btn.classList.add('optimistic-btn');
-            btn.innerText = 'Adding...';
+            // Fades the button via CSS instead of breaking innerText react node sync
+            btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
             window.categorySelected = false;
@@ -1463,15 +1454,6 @@ components.html(
                 inputs[0].value = ''; 
                 inputs[0].blur();
             }
-            
-            setTimeout(() => {
-                btn.classList.remove('optimistic-btn');
-                btn.innerText = 'Add task';
-            }, 1000);
-        }
-        else if (txt === 'Add') {
-            btn.classList.add('optimistic-btn');
-            btn.innerText = '...';
         }
         else if (txt.includes('Clear completed') || txt.includes('Clear all')) {
             const markers = doc.querySelectorAll('.task-card-marker');
@@ -1504,6 +1486,64 @@ components.html(
             }
         }
     }, true);
+
+    // Fast Checkbox Cascade Override (Visual updates instantly on state change)
+    doc.addEventListener('change', function(e) {
+        if (e.target && e.target.type === 'checkbox') {
+            const block = e.target.closest('div[data-testid="column"]')?.parentElement;
+            const isSubtask = e.target.closest('div[data-testid="stExpanderDetails"]') !== null;
+            const containerMarker = e.target.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
+            const container = containerMarker ? (containerMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || containerMarker.closest('div[data-testid="stVerticalBlock"]')) : null;
+            const isChecked = e.target.checked;
+            
+            if (block) {
+                const row = block.querySelector('.task-row');
+                const subRow = block.querySelector('.subtask-row');
+                
+                if (row && !isSubtask) {
+                    row.classList.toggle('is-done', isChecked);
+                    const title = row.querySelector('.task-title');
+                    if (title) title.classList.toggle('is-done', isChecked);
+                    
+                    if (container) {
+                        const subRows = container.querySelectorAll('.subtask-row');
+                        subRows.forEach(sr => sr.classList.toggle('is-done', isChecked));
+                        const subChecks = container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]');
+                        subChecks.forEach(sc => sc.checked = isChecked);
+                    }
+                }
+                
+                if (subRow && isSubtask) {
+                    subRow.classList.toggle('is-done', isChecked);
+                    
+                    if (container) {
+                        const parentRow = container.querySelector('.task-row');
+                        const parentCheck = container.querySelector('input[type="checkbox"]'); 
+                        const allSubChecks = Array.from(container.querySelectorAll('div[data-testid="stExpanderDetails"] input[type="checkbox"]'));
+                        
+                        if (!isChecked) {
+                            if (parentRow) {
+                                parentRow.classList.remove('is-done');
+                                const title = parentRow.querySelector('.task-title');
+                                if (title) title.classList.remove('is-done');
+                            }
+                            if (parentCheck) parentCheck.checked = false;
+                        } else {
+                            const allDone = allSubChecks.every(c => c.checked);
+                            if (allDone) {
+                                if (parentRow) {
+                                    parentRow.classList.add('is-done');
+                                    const title = parentRow.querySelector('.task-title');
+                                    if (title) title.classList.add('is-done');
+                                }
+                                if (parentCheck) parentCheck.checked = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     if (!doc.getElementById('enter-indicator')) {
         const style = doc.createElement('style');
@@ -1655,7 +1695,6 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
-                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1698,7 +1737,6 @@ components.html(
                     return;
                 }
 
-                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
@@ -1772,27 +1810,20 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    // Lock text on first Enter
                     if (!window.textLocked) {
                         window.textLocked = true;
                         taskInput.blur(); 
                     } 
-                    // Add Task on subsequent Enter ONLY IF all sections are filled
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
                             if(btn.innerText.includes('Add task') && !btn.innerText.includes('Cancel')) {
-                                btn.classList.add('optimistic-btn');
-                                btn.innerText = 'Adding...';
+                                btn.classList.add('optimistic-fade');
                                 window.textLocked = false;
                                 window.categorySelected = false;
                                 window.prioritySelected = false;
                                 window.dueSelected = false;
                                 taskInput.value = '';
-                                setTimeout(() => {
-                                    btn.classList.remove('optimistic-btn');
-                                    btn.innerText = 'Add task';
-                                }, 1000);
                                 btn.click();
                             }
                         });
