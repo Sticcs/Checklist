@@ -291,8 +291,11 @@ def update_task(task_id, text, priority, category, due_date, username):
 
 # ----------------------------- Callback Handlers -----------------------------
 
-def handle_task_toggle(task_id, current_done, username):
-    set_done(task_id, not current_done, username)
+def handle_task_check(task_id, current_done, username):
+    key = f"chk_{task_id}"
+    val = st.session_state.get(key)
+    new_done = not current_done if val is None else val
+    set_done(task_id, new_done, username)
 
 def handle_task_delete(task_id, username):
     st.session_state.active_task_id = None
@@ -306,13 +309,23 @@ def handle_subtask_add(task_id, username):
         add_subtask(task_id, new_text, username)
         st.session_state[key] = "" 
 
-def handle_subtask_toggle(subtask_id, task_id, current_done, username):
+def handle_subtask_check(subtask_id, task_id, current_done, username):
     st.session_state.active_task_id = task_id
-    set_subtask_done(subtask_id, task_id, not current_done, username)
+    key = f"subchk_{subtask_id}"
+    val = st.session_state.get(key)
+    new_done = not current_done if val is None else val
+    set_subtask_done(subtask_id, task_id, new_done, username)
 
 def handle_subtask_delete(subtask_id, task_id, username):
     st.session_state.active_task_id = task_id
     delete_subtask(subtask_id, task_id, username)
+
+def handle_task_toggle(task_id, current_done, username):
+    set_done(task_id, not current_done, username)
+
+def handle_subtask_toggle(subtask_id, task_id, current_done, username):
+    st.session_state.active_task_id = task_id
+    set_subtask_done(subtask_id, task_id, not current_done, username)
 
 # ----------------------------- Styles & Theming -----------------------------
 
@@ -369,7 +382,7 @@ st.markdown(
         background-size: cover !important;
         background-position: center !important;
         transition: background-image 0.3s ease;
-        /* Force fallback light background to prevent flicker */
+        /* Default fallback to light mode */
         background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     [data-testid="stSidebar"] {
@@ -401,12 +414,33 @@ st.markdown(
         font-weight: 500 !important;
         letter-spacing: -0.5px;
     }
+    
+    /* --- INVISIBLY HIDE CHECKBOXES SO THEY REMAIN CLICKABLE BY JS --- */
+    div[data-testid="stCheckbox"] {
+        position: absolute !important;
+        left: -9999px !important;
+        opacity: 0 !important;
+        width: 0px !important;
+        height: 0px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
 
     /* Stack the icon buttons neatly */
     div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {
         padding: 0.1rem 0 !important;
         min-height: 2rem !important;
         margin-bottom: 0.2rem !important;
+    }
+
+    /* Dynamic cursor when Ctrl is held */
+    body.ctrl-pressed div[data-testid="stVerticalBlockBorderWrapper"] {
+        cursor: crosshair !important;
+    }
+    body.ctrl-pressed div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        transform: scale(0.995);
+        transition: transform 0.1s ease;
     }
 
     .task-row {
@@ -519,7 +553,7 @@ st.markdown(
         border: 1px solid rgba(128, 128, 128, 0.2);
     }
     
-    /* Professional Selection styling for options */
+    /* Professional Selection styling for options (CSS Backend Matching) */
     div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button[kind="primary"] {
         background-color: #2c3e50 !important;
         border-color: #2c3e50 !important;
@@ -539,10 +573,13 @@ st.markdown(
         margin-top: 4rem;
     }
 
+    /* Target Task Container Explicitly - NO BORDER */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(div[data-testid="stExpander"]) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
+        border: none !important;
+        box-shadow: none !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -871,9 +908,9 @@ else:
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
-    st.session_state.setdefault("new_category", "House")
-    st.session_state.setdefault("new_priority", "Medium")
-    st.session_state.setdefault("new_due_preset", "No date")
+    st.session_state.setdefault("new_category", None)
+    st.session_state.setdefault("new_priority", None)
+    st.session_state.setdefault("new_due_preset", None)
     st.session_state.setdefault("new_due_custom", None)
     st.session_state.setdefault("options_modified", False)
     st.session_state.setdefault("focus_custom", False)
@@ -909,22 +946,30 @@ else:
     def submit_new_task():
         text = st.session_state.task_input.strip()
         if text:
-            due_date = DUE_PRESETS[st.session_state.new_due_preset]()
-            cat = st.session_state.new_category
+            due_preset = st.session_state.new_due_preset or "No date"
+            due_date = DUE_PRESETS[due_preset]()
+            
+            cat = st.session_state.new_category or "General"
             if cat == "Custom":
                 cat = st.session_state.get("custom_cat_input", "").strip()
                 if not cat:
                     cat = "General"
                     
-            new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
+            pri = st.session_state.new_priority or "Medium"
+            
+            new_id = add_task(text, pri, cat, due_date, st.session_state.username)
             st.session_state.just_added_task_id = new_id
             st.session_state.newly_added_task = {
-                "priority": st.session_state.new_priority,
+                "priority": pri,
                 "due": due_date
             }
             
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
+            st.session_state.new_category = None
+            st.session_state.new_priority = None
+            st.session_state.new_due_preset = None
+            
             if "custom_cat_input" in st.session_state:
                 st.session_state.custom_cat_input = ""
 
@@ -1069,6 +1114,9 @@ else:
     with right_col:
         st.markdown("<div id='right-col-anchor'></div>", unsafe_allow_html=True)
         
+        # Minimalist Ctrl+Click Tip Badge
+        st.markdown("<div class='ctrl-tip-badge'>💡 <strong>Tip:</strong> Hold Ctrl (or Cmd) and click anywhere on a task to complete it</div>", unsafe_allow_html=True)
+        
         # New UI Task Data payload for the Custom Toast Notification
         new_task_toast = st.session_state.get("newly_added_task")
         if new_task_toast:
@@ -1164,7 +1212,9 @@ else:
                     is_expanded = (st.session_state.active_task_id == t["id"])
                     
                     with st.expander(expander_label, expanded=is_expanded):
-                        for s in subtasks:
+                        for i, s in enumerate(subtasks):
+                            if i > 0:
+                                st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
                             sc1, sc2, sc3 = st.columns([0.5, 6.5, 1], vertical_alignment="center")
                             with sc1:
                                 st.checkbox("", value=bool(s["done"]), key=f"subchk_{s['id']}",
@@ -1233,11 +1283,18 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Setup Progressive States
-    window.textLocked = false;
-    window.categorySelected = false;
-    window.prioritySelected = false;
-    window.dueSelected = false;
+    // Setup Progressive States with SessionStorage to prevent Streamlit rerun wipeouts
+    window.textLocked = sessionStorage.getItem('pd_textLocked') === 'true';
+    window.categorySelected = sessionStorage.getItem('pd_categorySelected') === 'true';
+    window.prioritySelected = sessionStorage.getItem('pd_prioritySelected') === 'true';
+    window.dueSelected = sessionStorage.getItem('pd_dueSelected') === 'true';
+    
+    function savePDState() {
+        sessionStorage.setItem('pd_textLocked', window.textLocked);
+        sessionStorage.setItem('pd_categorySelected', window.categorySelected);
+        sessionStorage.setItem('pd_prioritySelected', window.prioritySelected);
+        sessionStorage.setItem('pd_dueSelected', window.dueSelected);
+    }
     
     const quotes = [
         "Stay locked in.", 
@@ -1260,9 +1317,10 @@ components.html(
         }
     }, 5000); 
 
-    // Sync Background Mode & Force Strict DOM Painting for Colors
+    // Initial Background setup fix for Light Mode
     setInterval(() => {
         const isDark = doc.body.classList.contains('custom-dark');
+        const isLight = doc.body.classList.contains('custom-light');
         const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
         const rgb = bg.match(/\\d+/g);
         if (rgb && rgb.length >= 3) {
@@ -1270,42 +1328,11 @@ components.html(
             if (luma < 128 && !isDark) {
                 doc.body.classList.add('custom-dark');
                 doc.body.classList.remove('custom-light');
-            } else if (luma >= 128 && isDark) {
+            } else if (luma >= 128 && !isLight) {
                 doc.body.classList.add('custom-light');
                 doc.body.classList.remove('custom-dark');
             }
         }
-        
-        try {
-            // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
-            const markers = doc.querySelectorAll('.task-card-marker');
-            markers.forEach(marker => {
-                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
-                if (!card) return;
-                
-                const isDone = card.querySelector('.task-row.is-done') !== null;
-                const hasHigh = card.querySelector('.border-High') !== null;
-                const hasMed = card.querySelector('.border-Medium') !== null;
-                const hasLow = card.querySelector('.border-Low') !== null;
-                
-                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-                
-                if (isDone) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-                } else if (hasHigh) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-                } else if (hasMed) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-                } else if (hasLow) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
-                }
-            });
-        } catch(e) {}
     }, 100);
 
     // Custom Minimalist Notification Toast Trigger
@@ -1388,10 +1415,13 @@ components.html(
         });
 
         if (taskInput && taskInput.value.trim().length === 0) {
-            window.textLocked = false;
-            window.categorySelected = false;
-            window.prioritySelected = false;
-            window.dueSelected = false;
+            if (window.textLocked || window.categorySelected || window.prioritySelected || window.dueSelected) {
+                window.textLocked = false;
+                window.categorySelected = false;
+                window.prioritySelected = false;
+                window.dueSelected = false;
+                savePDState();
+            }
         }
 
         if (window.textLocked) {
@@ -1454,6 +1484,8 @@ components.html(
             window.categorySelected = false;
             window.prioritySelected = false;
             window.dueSelected = false;
+            savePDState();
+            
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1494,6 +1526,7 @@ components.html(
                 if (isCat) window.categorySelected = true;
                 if (isPri) window.prioritySelected = true;
                 if (isDue) window.dueSelected = true;
+                savePDState();
             }
         }
     }, true);
@@ -1778,21 +1811,21 @@ components.html(
                         }
                     };
 
-                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; }
-                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
-                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
-                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
-                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
-                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
+                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; savePDState(); }
+                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; savePDState(); }
+                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; savePDState(); }
+                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; savePDState(); }
+                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; savePDState(); }
+                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; savePDState(); }
                     
-                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
-                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; }
-                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; }
-                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; }
+                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; savePDState(); }
+                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; savePDState(); }
+                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; savePDState(); }
+                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; savePDState(); }
                     
-                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; }
-                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; }
-                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; }
+                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; savePDState(); }
+                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; savePDState(); }
+                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; savePDState(); }
                     
                     return; 
                 } 
@@ -1831,6 +1864,7 @@ components.html(
                     
                     if (!window.textLocked) {
                         window.textLocked = true;
+                        savePDState();
                         taskInput.blur(); 
                     } 
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
@@ -1842,6 +1876,7 @@ components.html(
                                 window.categorySelected = false;
                                 window.prioritySelected = false;
                                 window.dueSelected = false;
+                                savePDState();
                                 taskInput.value = '';
                                 btn.click();
                             }
