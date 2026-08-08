@@ -31,6 +31,15 @@ if "pending_toast" in st.session_state:
     st.toast(st.session_state.pending_toast)
     del st.session_state.pending_toast
 
+def _sync_checkboxes_with_db(username):
+    tasks = get_tasks(username)
+    for t in tasks:
+        st.session_state[f"chk_{t['id']}"] = bool(t['done'])
+        
+    subtasks = get_all_subtasks(username)
+    for s in subtasks:
+        st.session_state[f"subchk_{s['id']}"] = bool(s['done'])
+
 # ----------------------------- Security & Auth -----------------------------
 
 def hash_password(password):
@@ -340,6 +349,13 @@ st.markdown(
         pointer-events: none !important;
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
+    
+    .optimistic-btn {
+        opacity: 0.6 !important;
+        pointer-events: none !important;
+        filter: grayscale(1) !important;
+        transition: all 0.1s ease !important;
+    }
 
     section.main, [data-testid="stMain"] {
         transition: margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
@@ -353,8 +369,6 @@ st.markdown(
         background-size: cover !important;
         background-position: center !important;
         transition: background-image 0.3s ease;
-        /* Default fallback to light mode */
-        background-image: url("https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80") !important;
     }
     [data-testid="stSidebar"] {
         box-shadow: 5px 0 25px rgba(0,0,0,0.5);
@@ -516,7 +530,9 @@ st.markdown(
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
         margin-bottom: 0.7rem !important;
         border: none !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+        box-shadow: none !important;
+        background-color: transparent !important;
+        transition: background-color 0.3s ease !important;
     }
 
     /* Force transparency on Streamlit Expander to allow parent background to bleed through */
@@ -636,8 +652,8 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            l_user = st.text_input("Username", key="login_user", placeholder="Username")
-            l_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Password")
+            l_user = st.text_input("Username", key="login_user")
+            l_pass = st.text_input("Password", type="password", key="login_pass")
             if st.button("Login", type="primary", use_container_width=True):
                 if verify_user(l_user, l_pass):
                     st.session_state.logged_in = True
@@ -647,13 +663,12 @@ if not st.session_state.logged_in:
                     st.error("Invalid username or password.")
                     
         with tab2:
-            s_user = st.text_input("Choose a Username", key="sign_user", placeholder="Choose a Username")
-            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", placeholder="Choose a Password")
+            s_user = st.text_input("Choose a Username", key="sign_user")
+            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
             if st.button("Create Account", type="primary", use_container_width=True):
                 if s_user and s_pass:
                     if create_user(s_user, s_pass):
                         st.success("Account created! You can now log in.")
-                        st.session_state.switch_to_login = True
                     else:
                         st.error("Username already exists. Pick another one.")
                 else:
@@ -664,91 +679,6 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.username = "guest"
             st.rerun()
-
-    if st.session_state.get("switch_to_login"):
-        components.html(
-            """
-            <script>
-            setTimeout(() => {
-                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                const loginTab = Array.from(tabs).find(t => t.innerText.trim() === 'Login');
-                if (loginTab) {
-                    loginTab.click();
-                    setTimeout(() => {
-                        const userInp = window.parent.document.querySelector('input[placeholder="Username"]');
-                        if (userInp) userInp.focus();
-                    }, 100);
-                }
-            }, 100);
-            </script>
-            """,
-            height=0, width=0
-        )
-        st.session_state.switch_to_login = False
-
-    components.html(
-        """
-        <script>
-        const doc = window.parent.document;
-        if (!window.authKeyboardAttached) {
-            window.authKeyboardAttached = true;
-            doc.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    const active = doc.activeElement;
-                    if (!active || active.tagName.toLowerCase() !== 'input') return;
-
-                    const placeholder = active.getAttribute('placeholder');
-                    if (!placeholder) return;
-
-                    if (placeholder.includes('Username')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        active.blur();
-                        const isSignUp = placeholder.includes('Choose');
-                        const targetLabel = isSignUp ? 'Choose a Password' : 'Password';
-                        setTimeout(() => {
-                            const inputs = Array.from(doc.querySelectorAll('input'));
-                            const passInput = inputs.find(i => i.getAttribute('placeholder') === targetLabel);
-                            if (passInput) passInput.focus();
-                        }, 100);
-                    }
-                    else if (placeholder.includes('Password')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        active.blur();
-                        const isSignUp = placeholder.includes('Choose');
-                        const targetText = isSignUp ? 'Create Account' : 'Login';
-                        setTimeout(() => {
-                            const btns = Array.from(doc.querySelectorAll('button'));
-                            const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
-                            if (btn) btn.click();
-                        }, 100);
-                    }
-                }
-            }, true);
-        }
-        
-        // Initial Background setup fix for Light Mode
-        setInterval(() => {
-            const isDark = doc.body.classList.contains('custom-dark');
-            const isLight = doc.body.classList.contains('custom-light');
-            const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-            const rgb = bg.match(/\\d+/g);
-            if (rgb && rgb.length >= 3) {
-                const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-                if (luma < 128 && !isDark) {
-                    doc.body.classList.add('custom-dark');
-                    doc.body.classList.remove('custom-light');
-                } else if (luma >= 128 && !isLight) {
-                    doc.body.classList.add('custom-light');
-                    doc.body.classList.remove('custom-dark');
-                }
-            }
-        }, 100);
-        </script>
-        """,
-        height=0, width=0
-    )
 
 else:
     st.markdown(
@@ -768,7 +698,7 @@ else:
             display: none !important;
         }
 
-        /* --- Left Control Panel Aggressive Compacting & Glassmorphism --- */
+        /* --- Left Control Panel (Glassmorphism & Legibility) --- */
         div[data-testid="column"]:has(#left-panel-marker) {
             background: rgba(255, 255, 255, 0.65) !important;
             padding: 1.5rem !important;
@@ -784,39 +714,20 @@ else:
             border: 1px solid rgba(255, 255, 255, 0.08) !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
         }
-        
-        /* Strip the excessive vertical gaps generated by Streamlit's st.container inside the left panel */
-        div[data-testid="column"]:has(#left-panel-marker) > div > div > div[data-testid="stVerticalBlock"] {
-            gap: 0.25rem !important;
-        }
-        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
-            gap: 0.25rem !important;
-        }
 
-        /* Compress the labels (Category, Priority, Due) */
+        /* Captions: Category, Priority, Due */
         div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #2c3e50 !important;
             font-weight: 700 !important;
-            font-size: 0.75rem !important;
+            font-size: 0.85rem !important;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-top: 0.2rem !important;
-            margin-bottom: 0.1rem !important;
+            margin-top: 0.5rem;
         }
         body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #ecf0f1 !important;
         }
         
-        /* Make the left panel buttons smaller and tighter */
-        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button {
-            padding: 0.15rem 0.2rem !important;
-            min-height: 1.8rem !important;
-            font-size: 0.8rem !important;
-        }
-        div[data-testid="column"]:has(#left-panel-marker) div[data-baseweb="input"] {
-            font-size: 0.9rem !important;
-        }
-
         /* Fixed-Height Quote Wrapper for 0 Layout Shift */
         .quote-wrapper {
             height: 90px;
@@ -842,9 +753,9 @@ else:
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
-    st.session_state.setdefault("new_category", None)
-    st.session_state.setdefault("new_priority", None)
-    st.session_state.setdefault("new_due_preset", None)
+    st.session_state.setdefault("new_category", "House")
+    st.session_state.setdefault("new_priority", "Medium")
+    st.session_state.setdefault("new_due_preset", "No date")
     st.session_state.setdefault("new_due_custom", None)
     st.session_state.setdefault("options_modified", False)
     st.session_state.setdefault("focus_custom", False)
@@ -880,30 +791,22 @@ else:
     def submit_new_task():
         text = st.session_state.task_input.strip()
         if text:
-            due_preset = st.session_state.new_due_preset or "No date"
-            due_date = DUE_PRESETS[due_preset]()
-            
-            cat = st.session_state.new_category or "General"
+            due_date = DUE_PRESETS[st.session_state.new_due_preset]()
+            cat = st.session_state.new_category
             if cat == "Custom":
                 cat = st.session_state.get("custom_cat_input", "").strip()
                 if not cat:
                     cat = "General"
                     
-            pri = st.session_state.new_priority or "Medium"
-            
-            new_id = add_task(text, pri, cat, due_date, st.session_state.username)
+            new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
             st.session_state.just_added_task_id = new_id
             st.session_state.newly_added_task = {
-                "priority": pri,
+                "priority": st.session_state.new_priority,
                 "due": due_date
             }
             
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
-            st.session_state.new_category = None
-            st.session_state.new_priority = None
-            st.session_state.new_due_preset = None
-            
             if "custom_cat_input" in st.session_state:
                 st.session_state.custom_cat_input = ""
 
@@ -1093,7 +996,7 @@ else:
                     st.markdown(f"<div class='task-card-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
                     
                     # Layout: Main task body (left), Stacked buttons (right)
-                    col_main, col_btns = st.columns([9.2, 0.8], vertical_alignment="center")
+                    col_main, col_btns = st.columns([9, 0.8], vertical_alignment="center")
                     
                     with col_main:
                         done_class = "is-done" if t["done"] else ""
@@ -1134,7 +1037,7 @@ else:
                             for i, s in enumerate(subtasks):
                                 if i > 0:
                                     st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
-                                sc_main, sc_btn = st.columns([9, 1.2], vertical_alignment="center")
+                                sc_main, sc_btn = st.columns([9, 1], vertical_alignment="center")
                                 with sc_main:
                                     sub_class = "is-done" if s["done"] else ""
                                     st.markdown(
@@ -1142,17 +1045,14 @@ else:
                                         unsafe_allow_html=True,
                                     )
                                 with sc_btn:
-                                    c1, c2 = st.columns(2)
-                                    with c1:
+                                    sc_b1, sc_b2 = st.columns(2)
+                                    with sc_b1:
                                         if s["done"]:
-                                            st.button("↩️", key=f"subtog_{s['id']}", help="Mark incomplete", 
-                                                      on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                            st.button("↩️", key=f"subtog_{s['id']}", on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
                                         else:
-                                            st.button("✔️", key=f"subtog_{s['id']}", help="Mark complete", 
-                                                      on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
-                                    with c2:
-                                        st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
-                                                  on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
+                                            st.button("✔️", key=f"subtog_{s['id']}", on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
+                                    with sc_b2:
+                                        st.button("🗑️", key=f"subdel_{s['id']}", on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
 
                             st.caption("⚡ Press `/` to quickly start typing a subtask")
                             new_sc1, new_sc2 = st.columns([6, 1.5])
@@ -1204,17 +1104,12 @@ else:
                                         
                     with col_btns:
                         if t["done"]:
-                            st.button("↩️", key=f"tog_{t['id']}", help="Mark incomplete", 
-                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
+                            st.button("↩️", key=f"tog_{t['id']}", on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                         else:
-                            st.button("✔️", key=f"tog_{t['id']}", help="Mark complete", 
-                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
+                            st.button("✔️", key=f"tog_{t['id']}", on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                         
-                        if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
-                            st.session_state[f"editing_{t['id']}"] = True
-                            
-                        st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
-                                  on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
+                        st.button("✏️", key=f"edit_{t['id']}", use_container_width=True, on_click=lambda id=t['id']: st.session_state.update({f"editing_{id}": True}))
+                        st.button("🗑️", key=f"del_{t['id']}", on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
 # ----------------------------- Custom JavaScript Injection -----------------------------
 components.html(
@@ -1222,18 +1117,11 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Setup Progressive States with SessionStorage to prevent Streamlit rerun wipeouts
-    window.textLocked = sessionStorage.getItem('pd_textLocked') === 'true';
-    window.categorySelected = sessionStorage.getItem('pd_categorySelected') === 'true';
-    window.prioritySelected = sessionStorage.getItem('pd_prioritySelected') === 'true';
-    window.dueSelected = sessionStorage.getItem('pd_dueSelected') === 'true';
-    
-    function savePDState() {
-        sessionStorage.setItem('pd_textLocked', window.textLocked);
-        sessionStorage.setItem('pd_categorySelected', window.categorySelected);
-        sessionStorage.setItem('pd_prioritySelected', window.prioritySelected);
-        sessionStorage.setItem('pd_dueSelected', window.dueSelected);
-    }
+    // Setup Progressive States
+    window.textLocked = false;
+    window.categorySelected = false;
+    window.prioritySelected = false;
+    window.dueSelected = false;
     
     const quotes = [
         "Stay locked in.", 
@@ -1254,58 +1142,96 @@ components.html(
                 header.style.opacity = 1; 
             }, 500); 
         }
-    }, 5000); 
+    }, 8000); 
 
-    // Custom Task Container Coloring & Dark Mode Sync
+    // Aggressive Task Box Color Injection (Forces transparency on blockers)
     setInterval(() => {
         const isDark = doc.body.classList.contains('custom-dark');
-        const isLight = doc.body.classList.contains('custom-light');
-        const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-        const rgb = bg.match(/\\d+/g);
-        if (rgb && rgb.length >= 3) {
-            const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-            if (luma < 128 && !isDark) {
-                doc.body.classList.add('custom-dark');
-                doc.body.classList.remove('custom-light');
-            } else if (luma >= 128 && !isLight) {
-                doc.body.classList.add('custom-light');
-                doc.body.classList.remove('custom-dark');
-            }
-        }
+        const markers = doc.querySelectorAll('.task-card-marker');
         
-        try {
-            // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
-            const markers = doc.querySelectorAll('.task-card-marker');
-            markers.forEach(marker => {
-                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card) return;
-                
-                const isDone = card.querySelector('.task-row.is-done') !== null;
-                const hasHigh = card.querySelector('.border-High') !== null;
-                const hasMed = card.querySelector('.border-Medium') !== null;
-                const hasLow = card.querySelector('.border-Low') !== null;
-                
+        markers.forEach(marker => {
+            let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            if (!card) return;
+            
+            const isDone = card.querySelector('.task-row.is-done') !== null;
+            const hasHigh = card.querySelector('.border-High') !== null;
+            const hasMed = card.querySelector('.border-Medium') !== null;
+            const hasLow = card.querySelector('.border-Low') !== null;
+            
+            let bgColor = '';
+            let borderColor = '';
+
+            if (isDone) {
+                bgColor = isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)';
+                borderColor = isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)';
+            } else if (hasHigh) {
+                bgColor = isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)';
+                borderColor = 'rgba(231, 76, 60, 0.8)';
+            } else if (hasMed) {
+                bgColor = isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)';
+                borderColor = 'rgba(243, 156, 18, 0.8)';
+            } else if (hasLow) {
+                bgColor = isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)';
+                borderColor = 'rgba(52, 152, 219, 0.8)';
+            }
+
+            if (bgColor) {
+                card.style.setProperty('background-color', bgColor, 'important');
+                card.style.setProperty('border-color', borderColor, 'important');
                 card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
                 
-                if (isDone) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-                } else if (hasHigh) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-                } else if (hasMed) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-                } else if (hasLow) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
-                } else {
-                    card.style.removeProperty('background-color');
-                    card.style.removeProperty('border-color');
+                // Force the inner container to be transparent so the color bleeds through
+                let innerDiv = card.querySelector('div[data-testid="stVerticalBlock"]');
+                if (innerDiv) {
+                    innerDiv.style.setProperty('background-color', 'transparent', 'important');
                 }
-            });
-        } catch(e) {}
+            }
+        });
     }, 100);
+
+    // Persist Scroll memory
+    if (!doc.getElementById('scroll-controls')) {
+        const controls = doc.createElement('div');
+        controls.id = 'scroll-controls';
+        controls.innerHTML = `
+            <button id="scroll-up" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); margin-bottom: 8px;">↑</button>
+            <button id="scroll-down" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);">↓</button>
+        `;
+        controls.style.cssText = 'position: fixed; right: 32px; bottom: 90px; display: flex; flex-direction: column; z-index: 9999; opacity: 0.7; transition: opacity 0.2s ease;';
+        
+        controls.onmouseover = () => controls.style.opacity = '1';
+        controls.onmouseout = () => controls.style.opacity = '0.7';
+
+        doc.body.appendChild(controls);
+
+        const getScrollCol = () => {
+            const anchor = doc.getElementById('right-col-anchor');
+            return anchor ? anchor.closest('div[data-testid="column"]') : null;
+        };
+
+        controls.querySelector('#scroll-up').onclick = () => {
+            const col = getScrollCol();
+            if(col) col.scrollTo({top: 0, behavior: 'smooth'});
+        };
+        controls.querySelector('#scroll-down').onclick = () => {
+            const col = getScrollCol();
+            if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
+        };
+        
+        setInterval(() => {
+            const col = getScrollCol();
+            if (col && !col.dataset.scrollBound) {
+                col.dataset.scrollBound = "true";
+                const savedScroll = sessionStorage.getItem('rightColScroll');
+                if (savedScroll !== null) {
+                    col.scrollTop = parseInt(savedScroll);
+                }
+                col.addEventListener('scroll', () => {
+                    sessionStorage.setItem('rightColScroll', col.scrollTop);
+                });
+            }
+        }, 300);
+    }
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1387,13 +1313,10 @@ components.html(
         });
 
         if (taskInput && taskInput.value.trim().length === 0) {
-            if (window.textLocked || window.categorySelected || window.prioritySelected || window.dueSelected) {
-                window.textLocked = false;
-                window.categorySelected = false;
-                window.prioritySelected = false;
-                window.dueSelected = false;
-                savePDState();
-            }
+            window.textLocked = false;
+            window.categorySelected = false;
+            window.prioritySelected = false;
+            window.dueSelected = false;
         }
 
         if (window.textLocked) {
@@ -1434,12 +1357,9 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
-        // Remove focus instantly to prevent stuck tooltips
-        setTimeout(() => btn.blur(), 10);
-        
         const txt = btn.innerText.trim();
         
-        if (txt === 'Del' || txt === '✕' || txt === '🗑️') {
+        if (txt === '🗑️' || txt === '✕') {
             const marker = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]')?.querySelector('.task-card-marker');
             if (marker && !e.target.closest('div[data-testid="stExpanderDetails"]')) {
                 const card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1450,11 +1370,11 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
-            // Instantly flip the icon so it feels perfectly responsive
+            // Instantly flip the icon so it feels responsive
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            // Instantly apply visual toggle logic
+            // Apply immediate toggle to visually complete the task
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1470,15 +1390,12 @@ components.html(
             }
         }
         else if (txt === 'Add task') {
-            // Fades the button via CSS instead of breaking innerText react node sync
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
             window.categorySelected = false;
             window.prioritySelected = false;
             window.dueSelected = false;
-            savePDState();
-            
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1499,13 +1416,9 @@ components.html(
         
         const isOptionBtn = (isCat || isPri || isDue);
         if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
-            const block = btn.closest('div[data-testid="stHorizontalBlock"]');
-            if (block) {
-                if (isCat) window.categorySelected = true;
-                if (isPri) window.prioritySelected = true;
-                if (isDue) window.dueSelected = true;
-                savePDState();
-            }
+            if (isCat) window.categorySelected = true;
+            if (isPri) window.prioritySelected = true;
+            if (isDue) window.dueSelected = true;
         }
     }, true);
 
@@ -1585,13 +1498,13 @@ components.html(
 
             if (customInput && doc.activeElement === customInput) {
                 indicator.classList.add('visible');
-                indicator.innerText = 'Enter to proceed'; 
+                indicator.innerText = 'Enter to confirm custom tag';
                 indicator.style.backgroundColor = 'rgba(155, 89, 182, 0.95)'; 
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
                 if (!window.textLocked) {
-                    indicator.innerText = 'Enter to proceed to options';
+                    indicator.innerText = 'Enter to lock text & open options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
                 } else if (!window.categorySelected) {
                     indicator.innerText = 'Select a category (Use hotkeys)';
@@ -1603,7 +1516,7 @@ components.html(
                     indicator.innerText = 'Select a due date';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
                 } else {
-                    indicator.innerText = 'Enter to create task';
+                    indicator.innerText = 'Enter to finish adding task';
                     indicator.style.backgroundColor = 'rgba(46, 204, 113, 0.95)';
                 }
                 
@@ -1705,36 +1618,24 @@ components.html(
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
                         const btn = buttons.find(b => b.innerText.includes(textFragment) || b.innerText.trim() === textFragment);
-                        if(btn) {
-                            const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
-                            if(parentRow) {
-                                const siblings = parentRow.querySelectorAll('button');
-                                siblings.forEach(sib => {
-                                    sib.style.removeProperty('background-color');
-                                    sib.style.removeProperty('border-color');
-                                    sib.style.removeProperty('color');
-                                });
-                            }
-                            
-                            btn.click();
-                        }
+                        if(btn) btn.click();
                     };
 
-                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; savePDState(); }
-                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; savePDState(); }
-                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; savePDState(); }
-                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; savePDState(); }
-                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; savePDState(); }
-                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; savePDState(); }
+                    if (key === '1') { clickBtn('Today [1]'); window.dueSelected = true; }
+                    if (key === '2') { clickBtn('Tomorrow [2]'); window.dueSelected = true; }
+                    if (key === '3') { clickBtn('This week [3]'); window.dueSelected = true; }
+                    if (key === '4') { clickBtn('Next week [4]'); window.dueSelected = true; }
+                    if (key === '5') { clickBtn('Custom'); window.dueSelected = true; }
+                    if (key === '6') { clickBtn('No date [6]'); window.dueSelected = true; }
                     
-                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; savePDState(); }
-                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; savePDState(); }
-                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; savePDState(); }
-                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; savePDState(); }
+                    if (key === 'h') { clickBtn('House [H]'); window.categorySelected = true; }
+                    if (key === 'w') { clickBtn('Work [W]'); window.categorySelected = true; }
+                    if (key === 's') { clickBtn('Study [S]'); window.categorySelected = true; }
+                    if (key === 'p') { clickBtn('Personal [P]'); window.categorySelected = true; }
                     
-                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; savePDState(); }
-                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; savePDState(); }
-                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; savePDState(); }
+                    if (key === 't') { clickBtn('High [T]'); window.prioritySelected = true; }
+                    if (key === 'm') { clickBtn('Medium [M]'); window.prioritySelected = true; }
+                    if (key === 'l') { clickBtn('Low [L]'); window.prioritySelected = true; }
                     
                     return; 
                 } 
@@ -1773,7 +1674,6 @@ components.html(
                     
                     if (!window.textLocked) {
                         window.textLocked = true;
-                        savePDState();
                         taskInput.blur(); 
                     } 
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
@@ -1785,7 +1685,6 @@ components.html(
                                 window.categorySelected = false;
                                 window.prioritySelected = false;
                                 window.dueSelected = false;
-                                savePDState();
                                 taskInput.value = '';
                                 btn.click();
                             }
