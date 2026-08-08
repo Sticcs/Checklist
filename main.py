@@ -333,13 +333,23 @@ st.markdown(
     /* Destroy Streamlit's janky skeleton loading animations */
     div[data-testid="stSkeleton"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
     
-    /* Smooth transitions for optimistic UI feedback */
+    /* Smooth, collapsing transitions for optimistic UI deletions */
     .optimistic-fade {
-        transform: scale(0.95) !important;
+        transform: scale(0.95) translateY(-10px) !important;
         opacity: 0 !important;
+        max-height: 0px !important;
+        min-height: 0px !important;
+        height: 0px !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        border-width: 0 !important;
+        overflow: hidden !important;
         pointer-events: none !important;
-        transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
+    
     .optimistic-btn {
         opacity: 0.6 !important;
         pointer-events: none !important;
@@ -1132,7 +1142,7 @@ components.html(
                 header.style.opacity = 1; 
             }, 500); 
         }
-    }, 8000); 
+    }, 5000); 
 
     // Sync Background Mode & Force Strict DOM Painting for Colors
     setInterval(() => {
@@ -1350,6 +1360,9 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
+        // Fix stuck tooltips by immediately removing focus
+        setTimeout(() => btn.blur(), 10);
+        
         const txt = btn.innerText.trim();
         
         if (txt === '🗑️') {
@@ -1363,29 +1376,27 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
+            // Instantly flip the icon so it feels perfectly responsive
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            const isMain = btn.getAttribute('title')?.startsWith('Mark task');
-            const isSub = btn.getAttribute('title')?.startsWith('Mark subtask');
-
-            if (isMain) {
-                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+            // Instantly apply visual toggle logic
+            const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
+            if (isSubtask) {
+                const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
+                if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
+            } else {
+                const card = btn.closest('div[data-testid="stVerticalBlockBorderWrapper"]') || btn.closest('div[data-testid="stVerticalBlock"]');
                 if (card) {
                     const mainRow = card.querySelector('.task-row');
                     const mainTitle = card.querySelector('.task-title');
                     if (mainRow) mainRow.classList.toggle('is-done', txt === '✔️');
                     if (mainTitle) mainTitle.classList.toggle('is-done', txt === '✔️');
                 }
-            } else if (isSub) {
-                const subRowBlock = btn.closest('div[data-testid="stHorizontalBlock"]');
-                if (subRowBlock) {
-                    const subRow = subRowBlock.querySelector('.subtask-row');
-                    if (subRow) subRow.classList.toggle('is-done', txt === '✔️');
-                }
             }
         }
         else if (txt === 'Add task') {
+            // Fades the button via CSS instead of breaking innerText react node sync
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
@@ -1580,6 +1591,7 @@ components.html(
             const isHotkey = ['1','2','3','4','5','6','h','w','s','p','t','m','l'].includes(key);
 
             if (!isTyping) {
+                // Intercept and destroy Streamlit native hotkeys for our mapped keys
                 if (isHotkey || key === '/') {
                     e.preventDefault();
                     e.stopPropagation();
