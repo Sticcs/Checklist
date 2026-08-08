@@ -333,23 +333,13 @@ st.markdown(
     /* Destroy Streamlit's janky skeleton loading animations */
     div[data-testid="stSkeleton"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
     
-    /* Smooth, collapsing transitions for optimistic UI deletions */
+    /* Smooth transitions for optimistic UI feedback */
     .optimistic-fade {
-        transform: scale(0.95) translateY(-10px) !important;
+        transform: scale(0.95) !important;
         opacity: 0 !important;
-        max-height: 0px !important;
-        min-height: 0px !important;
-        height: 0px !important;
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
-        border-width: 0 !important;
-        overflow: hidden !important;
         pointer-events: none !important;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
     }
-    
     .optimistic-btn {
         opacity: 0.6 !important;
         pointer-events: none !important;
@@ -362,6 +352,36 @@ st.markdown(
     }
     .block-container {
         transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    }
+
+    .stApp {
+        background-attachment: fixed !important;
+        background-size: cover !important;
+        background-position: center !important;
+        transition: background-image 0.3s ease;
+    }
+    [data-testid="stSidebar"] {
+        box-shadow: 5px 0 25px rgba(0,0,0,0.5);
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, background-color 0.3s ease !important;
+    }
+    [data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    
+    body.custom-dark [data-testid="stSidebar"] {
+        background-color: rgba(14, 17, 23, 0.75) !important;
+        backdrop-filter: blur(10px);
+    }
+    
+    body.custom-light [data-testid="stSidebar"] {
+        background-color: rgba(255, 255, 255, 0.85) !important;
+        box-shadow: 5px 0 25px rgba(0,0,0,0.15);
+        backdrop-filter: blur(10px);
+    }
+    
+    h1, h2, h3, h4 {
+        font-weight: 500 !important;
+        letter-spacing: -0.5px;
     }
 
     /* Stack the icon buttons neatly */
@@ -488,7 +508,7 @@ st.markdown(
         margin-top: 4rem;
     }
 
-    /* PURE CSS TASK COLORS */
+    /* Target Task Container Explicitly - NO BORDER & PURE CSS COLORS */
     div[data-testid="stVerticalBlockBorderWrapper"]:has(.task-card-marker) {
         border-radius: 14px !important;
         padding: 0.6rem 0.9rem 0.9rem 0.9rem !important;
@@ -633,30 +653,28 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            with st.form("login_form", border=False):
-                l_user = st.text_input("Username", key="login_user", placeholder="Username")
-                l_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Password")
-                if st.form_submit_button("Login", type="primary", use_container_width=True):
-                    if verify_user(l_user, l_pass):
-                        st.session_state.logged_in = True
-                        st.session_state.username = l_user.strip()
-                        st.rerun()
-                    else:
-                        st.error("Invalid username or password.")
+            l_user = st.text_input("Username", key="login_user", placeholder="Username")
+            l_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Password")
+            if st.button("Login", type="primary", use_container_width=True):
+                if verify_user(l_user, l_pass):
+                    st.session_state.logged_in = True
+                    st.session_state.username = l_user.strip()
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
                     
         with tab2:
-            with st.form("signup_form", border=False):
-                s_user = st.text_input("Choose a Username", key="sign_user", placeholder="Choose a Username")
-                s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", placeholder="Choose a Password")
-                if st.form_submit_button("Create Account", type="primary", use_container_width=True):
-                    if s_user and s_pass:
-                        if create_user(s_user, s_pass):
-                            st.success("Account created! You can now log in.")
-                            st.session_state.switch_to_login = True
-                        else:
-                            st.error("Username already exists. Pick another one.")
+            s_user = st.text_input("Choose a Username", key="sign_user", placeholder="Choose a Username")
+            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", placeholder="Choose a Password")
+            if st.button("Create Account", type="primary", use_container_width=True):
+                if s_user and s_pass:
+                    if create_user(s_user, s_pass):
+                        st.success("Account created! You can now log in.")
+                        st.session_state.switch_to_login = True
                     else:
-                        st.warning("Please fill in both fields.")
+                        st.error("Username already exists. Pick another one.")
+                else:
+                    st.warning("Please fill in both fields.")
                     
         st.write("---")
         if st.button("Continue as Guest", type="secondary", use_container_width=True):
@@ -688,12 +706,14 @@ if not st.session_state.logged_in:
     components.html(
         """
         <script>
-        const doc = window.parent.document;
-        if (!window.authKeyboardAttached) {
-            window.authKeyboardAttached = true;
-            doc.addEventListener('keydown', function(e) {
+        const parentWindow = window.parent;
+        const parentDoc = parentWindow.document;
+
+        if (!parentWindow.authKeyboardAttached) {
+            parentWindow.authKeyboardAttached = true;
+            parentDoc.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') {
-                    const active = doc.activeElement;
+                    const active = parentDoc.activeElement;
                     if (!active || active.tagName.toLowerCase() !== 'input') return;
 
                     const placeholder = active.getAttribute('placeholder');
@@ -701,24 +721,22 @@ if not st.session_state.logged_in:
 
                     if (placeholder.includes('Username')) {
                         e.preventDefault();
-                        e.stopPropagation();
                         active.blur();
                         const isSignUp = placeholder.includes('Choose');
                         const targetLabel = isSignUp ? 'Choose a Password' : 'Password';
                         setTimeout(() => {
-                            const inputs = Array.from(doc.querySelectorAll('input'));
+                            const inputs = Array.from(parentDoc.querySelectorAll('input'));
                             const passInput = inputs.find(i => i.getAttribute('placeholder') === targetLabel);
                             if (passInput) passInput.focus();
                         }, 100);
                     }
                     else if (placeholder.includes('Password')) {
                         e.preventDefault();
-                        e.stopPropagation();
                         active.blur();
                         const isSignUp = placeholder.includes('Choose');
                         const targetText = isSignUp ? 'Create Account' : 'Login';
                         setTimeout(() => {
-                            const btns = Array.from(doc.querySelectorAll('button'));
+                            const btns = Array.from(parentDoc.querySelectorAll('button'));
                             const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
                             if (btn) btn.click();
                         }, 100);
@@ -727,20 +745,20 @@ if not st.session_state.logged_in:
             }, true);
         }
         
-        // Setup Theme Classes for Task Card Coloring
+        // Initial Background setup fix for Light/Dark Mode sync
         setInterval(() => {
-            const isDark = doc.body.classList.contains('custom-dark');
-            const isLight = doc.body.classList.contains('custom-light');
-            const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
+            const isDark = parentDoc.body.classList.contains('custom-dark');
+            const isLight = parentDoc.body.classList.contains('custom-light');
+            const bg = window.getComputedStyle(parentDoc.querySelector('.stApp') || parentDoc.body).backgroundColor;
             const rgb = bg.match(/\\d+/g);
             if (rgb && rgb.length >= 3) {
                 const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
                 if (luma < 128 && !isDark) {
-                    doc.body.classList.add('custom-dark');
-                    doc.body.classList.remove('custom-light');
+                    parentDoc.body.classList.add('custom-dark');
+                    parentDoc.body.classList.remove('custom-light');
                 } else if (luma >= 128 && !isLight) {
-                    doc.body.classList.add('custom-light');
-                    doc.body.classList.remove('custom-dark');
+                    parentDoc.body.classList.add('custom-light');
+                    parentDoc.body.classList.remove('custom-dark');
                 }
             }
         }, 100);
@@ -767,7 +785,7 @@ else:
             display: none !important;
         }
 
-        /* --- Left Control Panel Aggressive Compacting --- */
+        /* --- Left Control Panel (Glassmorphism & Legibility) --- */
         div[data-testid="column"]:has(#left-panel-marker) {
             background: rgba(255, 255, 255, 0.65) !important;
             padding: 1.5rem !important;
@@ -783,39 +801,20 @@ else:
             border: 1px solid rgba(255, 255, 255, 0.08) !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
         }
-        
-        /* Strip the excessive vertical gaps generated by Streamlit's st.container inside the left panel */
-        div[data-testid="column"]:has(#left-panel-marker) > div > div > div[data-testid="stVerticalBlock"] {
-            gap: 0.25rem !important;
-        }
-        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
-            gap: 0.25rem !important;
-        }
 
-        /* Compress the labels (Category, Priority, Due) */
+        /* Captions: Category, Priority, Due */
         div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #2c3e50 !important;
             font-weight: 700 !important;
-            font-size: 0.75rem !important;
+            font-size: 0.85rem !important;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-top: 0.2rem !important;
-            margin-bottom: 0.1rem !important;
+            margin-top: 0.5rem;
         }
         body.custom-dark div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stCaptionContainer"] p {
             color: #ecf0f1 !important;
         }
         
-        /* Make the left panel buttons smaller and tighter */
-        div[data-testid="column"]:has(#left-panel-marker) div[data-testid="stButton"] button {
-            padding: 0.15rem 0.2rem !important;
-            min-height: 1.8rem !important;
-            font-size: 0.8rem !important;
-        }
-        div[data-testid="column"]:has(#left-panel-marker) div[data-baseweb="input"] {
-            font-size: 0.9rem !important;
-        }
-
         /* Fixed-Height Quote Wrapper for 0 Layout Shift */
         .quote-wrapper {
             height: 90px;
@@ -841,9 +840,9 @@ else:
     # ----------------------------- Main App Flow (Logged In) -----------------------------
     
     st.session_state.setdefault("task_input", "")
-    st.session_state.setdefault("new_category", None)
-    st.session_state.setdefault("new_priority", None)
-    st.session_state.setdefault("new_due_preset", None)
+    st.session_state.setdefault("new_category", "House")
+    st.session_state.setdefault("new_priority", "Medium")
+    st.session_state.setdefault("new_due_preset", "No date")
     st.session_state.setdefault("new_due_custom", None)
     st.session_state.setdefault("options_modified", False)
     st.session_state.setdefault("focus_custom", False)
@@ -879,30 +878,22 @@ else:
     def submit_new_task():
         text = st.session_state.task_input.strip()
         if text:
-            due_preset = st.session_state.new_due_preset or "No date"
-            due_date = DUE_PRESETS[due_preset]()
-            
-            cat = st.session_state.new_category or "General"
+            due_date = DUE_PRESETS[st.session_state.new_due_preset]()
+            cat = st.session_state.new_category
             if cat == "Custom":
                 cat = st.session_state.get("custom_cat_input", "").strip()
                 if not cat:
                     cat = "General"
                     
-            pri = st.session_state.new_priority or "Medium"
-            
-            new_id = add_task(text, pri, cat, due_date, st.session_state.username)
+            new_id = add_task(text, st.session_state.new_priority, cat, due_date, st.session_state.username)
             st.session_state.just_added_task_id = new_id
             st.session_state.newly_added_task = {
-                "priority": pri,
+                "priority": st.session_state.new_priority,
                 "due": due_date
             }
             
             st.session_state.task_input = "" 
             st.session_state.options_modified = False
-            st.session_state.new_category = None
-            st.session_state.new_priority = None
-            st.session_state.new_due_preset = None
-            
             if "custom_cat_input" in st.session_state:
                 st.session_state.custom_cat_input = ""
 
@@ -1207,9 +1198,7 @@ else:
                             st.button("✔️", key=f"tog_{t['id']}", 
                                       on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                         
-                        if st.button("✏️", key=f"edit_{t['id']}", use_container_width=True):
-                            st.session_state[f"editing_{t['id']}"] = True
-                            
+                        st.button("✏️", key=f"edit_{t['id']}", use_container_width=True, on_click=lambda id=t['id']: st.session_state.update({f"editing_{id}": True}))
                         st.button("🗑️", key=f"del_{t['id']}",
                                   on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
@@ -1219,18 +1208,11 @@ components.html(
     <script>
     const doc = window.parent.document;
     
-    // Setup Progressive States with SessionStorage to prevent Streamlit rerun wipeouts
-    window.textLocked = sessionStorage.getItem('pd_textLocked') === 'true';
-    window.categorySelected = sessionStorage.getItem('pd_categorySelected') === 'true';
-    window.prioritySelected = sessionStorage.getItem('pd_prioritySelected') === 'true';
-    window.dueSelected = sessionStorage.getItem('pd_dueSelected') === 'true';
-    
-    function savePDState() {
-        sessionStorage.setItem('pd_textLocked', window.textLocked);
-        sessionStorage.setItem('pd_categorySelected', window.categorySelected);
-        sessionStorage.setItem('pd_prioritySelected', window.prioritySelected);
-        sessionStorage.setItem('pd_dueSelected', window.dueSelected);
-    }
+    // Setup Progressive States
+    window.textLocked = false;
+    window.categorySelected = false;
+    window.prioritySelected = false;
+    window.dueSelected = false;
     
     const quotes = [
         "Stay locked in.", 
@@ -1333,13 +1315,10 @@ components.html(
         });
 
         if (taskInput && taskInput.value.trim().length === 0) {
-            if (window.textLocked || window.categorySelected || window.prioritySelected || window.dueSelected) {
-                window.textLocked = false;
-                window.categorySelected = false;
-                window.prioritySelected = false;
-                window.dueSelected = false;
-                savePDState();
-            }
+            window.textLocked = false;
+            window.categorySelected = false;
+            window.prioritySelected = false;
+            window.dueSelected = false;
         }
 
         if (window.textLocked) {
@@ -1380,9 +1359,6 @@ components.html(
         const btn = e.target.closest('button');
         if (!btn) return;
         
-        // Remove focus instantly to prevent stuck pseudo-states
-        setTimeout(() => btn.blur(), 10);
-        
         const txt = btn.innerText.trim();
         
         if (txt === '🗑️' || txt === '✕') {
@@ -1396,11 +1372,11 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
-            // Instantly flip the icon so it feels perfectly responsive
+            // Instantly flip the icon
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            // Apply immediate toggle to visually complete the task
+            // Instantly apply visual toggle logic to trigger CSS :has rules
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1418,12 +1394,6 @@ components.html(
         else if (txt === 'Add task') {
             btn.classList.add('optimistic-fade');
             
-            window.textLocked = false;
-            window.categorySelected = false;
-            window.prioritySelected = false;
-            window.dueSelected = false;
-            savePDState();
-            
             const inputs = doc.querySelectorAll('input[placeholder="E.g., Review Big O time complexity"]');
             if(inputs.length) {
                 inputs[0].value = ''; 
@@ -1438,6 +1408,16 @@ components.html(
             });
         }
         
+        const isCat = ['House', 'Work', 'Study', 'Personal', 'Custom'].some(kw => txt.includes(kw));
+        const isPri = ['High', 'Medium', 'Low'].some(kw => txt.includes(kw));
+        const isDue = ['Today', 'Tomorrow', 'This week', 'Next week', 'No date'].some(kw => txt.includes(kw));
+        
+        const isOptionBtn = (isCat || isPri || isDue);
+        if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
+            if (isCat) window.categorySelected = true;
+            if (isPri) window.prioritySelected = true;
+            if (isDue) window.dueSelected = true;
+        }
     }, true);
 
     if (!doc.getElementById('enter-indicator')) {
@@ -1493,8 +1473,8 @@ components.html(
         });
     }, 50);
 
-    function setupMagic() {
-        const indicator = doc.getElementById('enter-indicator');
+    if (!window.parent.magicKeyboardAttached) {
+        window.parent.magicKeyboardAttached = true;
         
         setInterval(() => {
             const inputs = doc.querySelectorAll('input[type="text"]');
@@ -1521,27 +1501,16 @@ components.html(
             } else if (taskInput && taskInput.value.trim().length > 0) {
                 indicator.classList.add('visible');
                 
-                // Read visibility state directly from DOM classes to be 100% robust
-                const catBlock = doc.getElementById('step-cat-marker')?.closest('.progressive-base');
-                const priBlock = doc.getElementById('step-pri-marker')?.closest('.progressive-base');
-                const dueBlock = doc.getElementById('step-due-marker')?.closest('.progressive-base');
-                const addBlock = doc.getElementById('step-add-marker')?.closest('.progressive-base');
-
-                const isCatHidden = catBlock?.classList.contains('progressive-hidden') !== false;
-                const isPriHidden = priBlock?.classList.contains('progressive-hidden') !== false;
-                const isDueHidden = dueBlock?.classList.contains('progressive-hidden') !== false;
-                const isAddHidden = addBlock?.classList.contains('progressive-hidden') !== false;
-
-                if (isCatHidden) {
+                if (!window.textLocked) {
                     indicator.innerText = 'Enter to proceed to options';
                     indicator.style.backgroundColor = 'rgba(243, 156, 18, 0.95)';
-                } else if (isPriHidden) {
+                } else if (!window.categorySelected) {
                     indicator.innerText = 'Select a category (Use hotkeys)';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
-                } else if (isDueHidden) {
+                } else if (!window.prioritySelected) {
                     indicator.innerText = 'Select a priority';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
-                } else if (isAddHidden) {
+                } else if (!window.dueSelected) {
                     indicator.innerText = 'Select a due date';
                     indicator.style.backgroundColor = 'rgba(52, 152, 219, 0.95)';
                 } else {
@@ -1551,7 +1520,7 @@ components.html(
                 
                 const addTaskBtn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Add task') && !b.innerText.includes('Cancel'));
                 if (addTaskBtn) {
-                    if (!isAddHidden) {
+                    if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         addTaskBtn.style.backgroundColor = 'rgba(46, 204, 113, 1)'; 
                         addTaskBtn.style.borderColor = 'rgba(46, 204, 113, 1)';
                         addTaskBtn.style.color = 'white';
@@ -1581,10 +1550,7 @@ components.html(
             }
         }, 200);
 
-        if (window.magicKeyboardAttached) return;
-        window.magicKeyboardAttached = true;
-
-        doc.addEventListener('keydown', function(e) {
+        window.parent.document.addEventListener('keydown', function(e) {
             const inputs = doc.querySelectorAll('input[type="text"]');
             let taskInput = null;
             let customInput = null;
@@ -1647,7 +1613,9 @@ components.html(
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
                         const btn = buttons.find(b => b.innerText.includes(textFragment) || b.innerText.trim() === textFragment);
-                        if(btn) btn.click();
+                        if(btn) {
+                            btn.click();
+                        }
                     };
 
                     if (key === '1') { clickBtn('Today [1]');  }
@@ -1705,6 +1673,7 @@ components.html(
                     const isAddHidden = addBlock?.classList.contains('progressive-hidden') !== false;
 
                     if (isAddHidden) {
+                        window.textLocked = true;
                         taskInput.blur(); 
                     } 
                     else {
@@ -1721,8 +1690,6 @@ components.html(
             }
         }, true); 
     }
-    
-    setTimeout(setupMagic, 500);
     </script>
     """,
     height=0,
