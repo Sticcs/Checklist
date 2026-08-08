@@ -385,7 +385,8 @@ st.markdown(
     }
 
     /* Stack the icon buttons neatly */
-    div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {
+    div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button,
+    div[data-testid="column"]:nth-child(2) div[data-testid="stFormSubmitButton"] button {
         padding: 0.1rem 0 !important;
         min-height: 2rem !important;
         margin-bottom: 0.2rem !important;
@@ -476,17 +477,20 @@ st.markdown(
         font-size: 0.75rem;
     }
     
-    div[data-testid="stButton"] button { 
+    div[data-testid="stButton"] button,
+    div[data-testid="stFormSubmitButton"] button {
         width: 100%;
         height: auto !important;
         padding: 0.4rem 0.2rem !important;
         transition: background-color 0.05s ease, border-color 0.05s ease, color 0.05s ease, transform 0.05s ease !important;
     }
-    div[data-testid="stButton"] button:active {
+    div[data-testid="stButton"] button:active,
+    div[data-testid="stFormSubmitButton"] button:active {
         transform: scale(0.97) !important;
     }
-    
-    .stButton button p, .stButton button * {
+
+    .stButton button p, .stButton button *,
+    div[data-testid="stFormSubmitButton"] button p, div[data-testid="stFormSubmitButton"] button * {
         white-space: normal !important;
         line-height: 1.2 !important;
         margin: 0 !important;
@@ -494,6 +498,12 @@ st.markdown(
         text-align: center;
     }
     
+    /* Auth forms should sit flush like the plain widgets they replaced */
+    div[data-testid="stForm"]:has(input[type="password"]) {
+        padding: 0 !important;
+        border: none !important;
+    }
+
     div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
     section[data-testid="stSidebar"] button {
         border-radius: 6px;
@@ -653,28 +663,33 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            l_user = st.text_input("Username", key="login_user", placeholder="Username")
-            l_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Password")
-            if st.button("Login", type="primary", use_container_width=True):
-                if verify_user(l_user, l_pass):
-                    st.session_state.logged_in = True
-                    st.session_state.username = l_user.strip()
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
-                    
-        with tab2:
-            s_user = st.text_input("Choose a Username", key="sign_user", placeholder="Choose a Username")
-            s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", placeholder="Choose a Password")
-            if st.button("Create Account", type="primary", use_container_width=True):
-                if s_user and s_pass:
-                    if create_user(s_user, s_pass):
-                        st.success("Account created! You can now log in.")
-                        st.session_state.switch_to_login = True
+            login_ok = False
+            with st.form("login_form", border=False):
+                l_user = st.text_input("Username", key="login_user", placeholder="Username")
+                l_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Password")
+                if st.form_submit_button("Login", type="primary", use_container_width=True):
+                    if verify_user(l_user, l_pass):
+                        st.session_state.logged_in = True
+                        st.session_state.username = l_user.strip()
+                        login_ok = True
                     else:
-                        st.error("Username already exists. Pick another one.")
-                else:
-                    st.warning("Please fill in both fields.")
+                        st.error("Invalid username or password.")
+            if login_ok:
+                st.rerun()
+
+        with tab2:
+            with st.form("signup_form", border=False):
+                s_user = st.text_input("Choose a Username", key="sign_user", placeholder="Choose a Username")
+                s_pass = st.text_input("Choose a Password", type="password", key="sign_pass", placeholder="Choose a Password")
+                if st.form_submit_button("Create Account", type="primary", use_container_width=True):
+                    if s_user and s_pass:
+                        if create_user(s_user, s_pass):
+                            st.success("Account created! You can now log in.")
+                            st.session_state.switch_to_login = True
+                        else:
+                            st.error("Username already exists. Pick another one.")
+                    else:
+                        st.warning("Please fill in both fields.")
                     
         st.write("---")
         if st.button("Continue as Guest", type="secondary", use_container_width=True):
@@ -709,39 +724,28 @@ if not st.session_state.logged_in:
         const parentWindow = window.parent;
         const parentDoc = parentWindow.document;
 
+        // Enter on the username field jumps to the password field instead of
+        // submitting the form; Enter on the password field falls through to
+        // Streamlit's native form submit.
         if (!parentWindow.authKeyboardAttached) {
             parentWindow.authKeyboardAttached = true;
             parentDoc.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    const active = parentDoc.activeElement;
-                    if (!active || active.tagName.toLowerCase() !== 'input') return;
+                if (e.key !== 'Enter') return;
 
-                    const placeholder = active.getAttribute('placeholder');
-                    if (!placeholder) return;
+                const active = e.target;
+                if (!active || active.tagName.toLowerCase() !== 'input') return;
 
-                    if (placeholder.includes('Username')) {
-                        e.preventDefault();
-                        active.blur();
-                        const isSignUp = placeholder.includes('Choose');
-                        const targetLabel = isSignUp ? 'Choose a Password' : 'Password';
-                        setTimeout(() => {
-                            const inputs = Array.from(parentDoc.querySelectorAll('input'));
-                            const passInput = inputs.find(i => i.getAttribute('placeholder') === targetLabel);
-                            if (passInput) passInput.focus();
-                        }, 100);
-                    }
-                    else if (placeholder.includes('Password')) {
-                        e.preventDefault();
-                        active.blur();
-                        const isSignUp = placeholder.includes('Choose');
-                        const targetText = isSignUp ? 'Create Account' : 'Login';
-                        setTimeout(() => {
-                            const btns = Array.from(parentDoc.querySelectorAll('button'));
-                            const btn = btns.find(b => b.innerText.trim() === targetText && b.closest('div[data-testid="stButton"]'));
-                            if (btn) btn.click();
-                        }, 100);
-                    }
-                }
+                const placeholder = active.getAttribute('placeholder') || '';
+                if (!placeholder.includes('Username')) return;
+
+                const form = active.closest('div[data-testid="stForm"]');
+                if (!form) return;
+                const passInput = form.querySelector('input[type="password"]');
+                if (!passInput) return;
+
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                passInput.focus();
             }, true);
         }
         
