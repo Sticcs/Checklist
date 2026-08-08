@@ -1012,7 +1012,8 @@ else:
                         is_expanded = (st.session_state.active_task_id == t["id"])
                         
                         with st.expander(expander_label, expanded=is_expanded):
-                            for s in subtasks:
+                            # Wrap subtasks in enumerate to detect the last item
+                            for i, s in enumerate(subtasks):
                                 sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
                                 with sc_main:
                                     sub_class = "is-done" if s["done"] else ""
@@ -1030,6 +1031,10 @@ else:
                                         
                                     st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
                                               on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
+
+                                # Add a minimalistic divider between subtasks
+                                if i < len(subtasks) - 1:
+                                    st.markdown("<hr style='margin: 0.15rem 0; border: none; border-top: 1px solid rgba(128, 128, 128, 0.15);' />", unsafe_allow_html=True)
 
                             st.caption("⚡ Press `/` to quickly start typing a subtask")
                             new_sc1, new_sc2 = st.columns([6, 1.5])
