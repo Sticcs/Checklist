@@ -25,8 +25,6 @@ if "just_added_task_id" not in st.session_state:
     st.session_state.just_added_task_id = None
 if "newly_added_task" not in st.session_state:
     st.session_state.newly_added_task = None
-if "auth_msg" not in st.session_state:
-    st.session_state.auth_msg = None
 
 # Global Toast Queue
 if "pending_toast" in st.session_state:
@@ -315,27 +313,6 @@ def handle_subtask_toggle(subtask_id, task_id, current_done, username):
 def handle_subtask_delete(subtask_id, task_id, username):
     st.session_state.active_task_id = task_id
     delete_subtask(subtask_id, task_id, username)
-
-def attempt_login():
-    l_user = st.session_state.get("login_user", "")
-    l_pass = st.session_state.get("login_pass", "")
-    if verify_user(l_user, l_pass):
-        st.session_state.logged_in = True
-        st.session_state.username = l_user.strip()
-        st.session_state.auth_msg = None
-    else:
-        st.session_state.auth_msg = ("error", "Invalid username or password.")
-
-def attempt_signup():
-    s_user = st.session_state.get("sign_user", "")
-    s_pass = st.session_state.get("sign_pass", "")
-    if s_user and s_pass:
-        if create_user(s_user, s_pass):
-            st.session_state.auth_msg = ("success", "Account created! You can now log in.")
-        else:
-            st.session_state.auth_msg = ("error", "Username already exists. Pick another one.")
-    else:
-        st.session_state.auth_msg = ("warning", "Please fill in both fields.")
 
 # ----------------------------- Styles & Theming -----------------------------
 
@@ -650,36 +627,71 @@ if not st.session_state.logged_in:
         st.markdown("<h1 style='text-align: center; margin-top: 2rem;'>✅ My Checklist</h1>", unsafe_allow_html=True)
         st.write("")
         
-        # Display any auth messages from callbacks
-        if st.session_state.auth_msg:
-            msg_type, msg_text = st.session_state.auth_msg
-            if msg_type == "error":
-                st.error(msg_text)
-            elif msg_type == "success":
-                st.success(msg_text)
-            elif msg_type == "warning":
-                st.warning(msg_text)
-            st.session_state.auth_msg = None
-        
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
         
         with tab1:
-            st.text_input("Username", key="login_user")
-            # Binding on_change directly to the password field triggers the function when Enter is pressed
-            st.text_input("Password", type="password", key="login_pass", on_change=attempt_login)
-            st.button("Login", type="primary", use_container_width=True, on_click=attempt_login)
+            with st.form("login_form", border=False):
+                l_user = st.text_input("Username", key="login_user")
+                l_pass = st.text_input("Password", type="password", key="login_pass")
+                if st.form_submit_button("Login", type="primary", use_container_width=True):
+                    if verify_user(l_user, l_pass):
+                        st.session_state.logged_in = True
+                        st.session_state.username = l_user.strip()
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password.")
                     
         with tab2:
-            st.text_input("Choose a Username", key="sign_user")
-            # Binding on_change directly to the password field triggers the function when Enter is pressed
-            st.text_input("Choose a Password", type="password", key="sign_pass", on_change=attempt_signup)
-            st.button("Create Account", type="primary", use_container_width=True, on_click=attempt_signup)
+            with st.form("signup_form", border=False):
+                s_user = st.text_input("Choose a Username", key="sign_user")
+                s_pass = st.text_input("Choose a Password", type="password", key="sign_pass")
+                if st.form_submit_button("Create Account", type="primary", use_container_width=True):
+                    if s_user and s_pass:
+                        if create_user(s_user, s_pass):
+                            st.success("Account created! You can now log in.")
+                        else:
+                            st.error("Username already exists. Pick another one.")
+                    else:
+                        st.warning("Please fill in both fields.")
                     
         st.write("---")
         if st.button("Continue as Guest", type="secondary", use_container_width=True):
             st.session_state.logged_in = True
             st.session_state.username = "guest"
             st.rerun()
+
+        components.html(
+            """
+            <script>
+            const doc = window.parent.document;
+            if (!window.authEnterListener) {
+                window.authEnterListener = true;
+                doc.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        const active = doc.activeElement;
+                        if (!active || active.tagName.toLowerCase() !== 'input') return;
+
+                        const labelEl = active.closest('div[data-testid="stTextInput"]');
+                        if (!labelEl) return;
+                        
+                        const label = labelEl.querySelector('label');
+                        if (label && label.innerText.includes('Username')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            const form = active.closest('div[data-testid="stForm"]');
+                            if (form) {
+                                const passInput = form.querySelector('input[type="password"]');
+                                if (passInput) passInput.focus();
+                            }
+                        }
+                    }
+                }, true);
+            }
+            </script>
+            """,
+            height=0, width=0
+        )
 
 else:
     st.markdown(
@@ -1036,6 +1048,8 @@ else:
                         
                         with st.expander(expander_label, expanded=is_expanded):
                             for i, s in enumerate(subtasks):
+                                if i > 0:
+                                    st.markdown('<div class="subtask-divider"></div>', unsafe_allow_html=True)
                                 sc_main, sc_btn = st.columns([9, 0.8], vertical_alignment="center")
                                 with sc_main:
                                     sub_class = "is-done" if s["done"] else ""
@@ -1045,18 +1059,14 @@ else:
                                     )
                                 with sc_btn:
                                     if s["done"]:
-                                        st.button("↩️", key=f"subtog_{s['id']}", help="Mark incomplete", 
+                                        st.button("↩️", key=f"subtog_{s['id']}", 
                                                   on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
                                     else:
-                                        st.button("✔️", key=f"subtog_{s['id']}", help="Mark complete", 
+                                        st.button("✔️", key=f"subtog_{s['id']}", 
                                                   on_click=handle_subtask_toggle, args=(s["id"], t["id"], bool(s["done"]), st.session_state.username), use_container_width=True)
                                         
-                                    st.button("🗑️", key=f"subdel_{s['id']}", help="Delete subtask",
+                                    st.button("🗑️", key=f"subdel_{s['id']}",
                                               on_click=handle_subtask_delete, args=(s["id"], t["id"], st.session_state.username), use_container_width=True)
-                                
-                                # Subtask Divider
-                                if i < len(subtasks) - 1:
-                                    st.markdown("<hr style='margin: 0.15rem 0; border: none; border-top: 1px solid rgba(128, 128, 128, 0.15);' />", unsafe_allow_html=True)
 
                             st.caption("⚡ Press `/` to quickly start typing a subtask")
                             new_sc1, new_sc2 = st.columns([6, 1.5])
@@ -1108,15 +1118,14 @@ else:
                                         
                     with col_btns:
                         if t["done"]:
-                            st.button("↩️", key=f"tog_{t['id']}", help="Mark incomplete", 
+                            st.button("↩️", key=f"tog_{t['id']}", 
                                       on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                         else:
-                            st.button("✔️", key=f"tog_{t['id']}", help="Mark complete", 
+                            st.button("✔️", key=f"tog_{t['id']}", 
                                       on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
                         
-                        if st.button("✏️", key=f"edit_{t['id']}", help="Edit task", use_container_width=True):
-                            st.session_state[f"editing_{t['id']}"] = True
-                        st.button("🗑️", key=f"del_{t['id']}", help="Delete task",
+                        st.button("✏️", key=f"edit_{t['id']}", use_container_width=True, on_click=lambda id=t['id']: st.session_state.update({f"editing_{id}": True}))
+                        st.button("🗑️", key=f"del_{t['id']}",
                                   on_click=handle_task_delete, args=(t["id"], st.session_state.username), use_container_width=True)
 
 # ----------------------------- Custom JavaScript Injection -----------------------------
@@ -1151,98 +1160,6 @@ components.html(
             }, 500); 
         }
     }, 8000); 
-
-    // Sync Background Mode & Force Strict DOM Painting for Colors
-    setInterval(() => {
-        const isDark = doc.body.classList.contains('custom-dark');
-        const bg = window.getComputedStyle(doc.querySelector('.stApp') || doc.body).backgroundColor;
-        const rgb = bg.match(/\d+/g);
-        if (rgb && rgb.length >= 3) {
-            const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-            if (luma < 128 && !isDark) {
-                doc.body.classList.add('custom-dark');
-                doc.body.classList.remove('custom-light');
-            } else if (luma >= 128 && isDark) {
-                doc.body.classList.add('custom-light');
-                doc.body.classList.remove('custom-dark');
-            }
-        }
-        
-        try {
-            // Forcefully inject background colors via JS bypassing Streamlit's class engine entirely
-            const markers = doc.querySelectorAll('.task-card-marker');
-            markers.forEach(marker => {
-                let card = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card) card = marker.closest('div[data-testid="stVerticalBlock"]');
-                if (!card) return;
-                
-                const isDone = card.querySelector('.task-row.is-done') !== null;
-                const hasHigh = card.querySelector('.border-High') !== null;
-                const hasMed = card.querySelector('.border-Medium') !== null;
-                const hasLow = card.querySelector('.border-Low') !== null;
-                
-                card.style.setProperty('transition', 'background-color 0.3s ease, border-color 0.3s ease', 'important');
-                
-                if (isDone) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(29, 131, 72, 1)' : 'rgba(46, 204, 113, 1)', 'important');
-                    card.style.setProperty('border-color', isDark ? 'rgba(20, 90, 50, 1)' : 'rgba(39, 174, 96, 1)', 'important');
-                } else if (hasHigh) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(100, 30, 22, 0.85)' : 'rgba(250, 219, 216, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(231, 76, 60, 0.8)', 'important');
-                } else if (hasMed) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(126, 81, 9, 0.85)' : 'rgba(253, 235, 208, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(243, 156, 18, 0.8)', 'important');
-                } else if (hasLow) {
-                    card.style.setProperty('background-color', isDark ? 'rgba(21, 67, 96, 0.85)' : 'rgba(214, 234, 248, 0.85)', 'important');
-                    card.style.setProperty('border-color', 'rgba(52, 152, 219, 0.8)', 'important');
-                }
-            });
-        } catch(e) {}
-    }, 100);
-
-    // Persist Scroll memory
-    if (!doc.getElementById('scroll-controls')) {
-        const controls = doc.createElement('div');
-        controls.id = 'scroll-controls';
-        controls.innerHTML = `
-            <button id="scroll-up" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); margin-bottom: 8px;">↑</button>
-            <button id="scroll-down" style="background: rgba(128, 128, 128, 0.2); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: inherit; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);">↓</button>
-        `;
-        controls.style.cssText = 'position: fixed; right: 32px; bottom: 90px; display: flex; flex-direction: column; z-index: 9999; opacity: 0.7; transition: opacity 0.2s ease;';
-        
-        controls.onmouseover = () => controls.style.opacity = '1';
-        controls.onmouseout = () => controls.style.opacity = '0.7';
-
-        doc.body.appendChild(controls);
-
-        const getScrollCol = () => {
-            const anchor = doc.getElementById('right-col-anchor');
-            return anchor ? anchor.closest('div[data-testid="column"]') : null;
-        };
-
-        controls.querySelector('#scroll-up').onclick = () => {
-            const col = getScrollCol();
-            if(col) col.scrollTo({top: 0, behavior: 'smooth'});
-        };
-        controls.querySelector('#scroll-down').onclick = () => {
-            const col = getScrollCol();
-            if(col) col.scrollTo({top: col.scrollHeight, behavior: 'smooth'});
-        };
-        
-        setInterval(() => {
-            const col = getScrollCol();
-            if (col && !col.dataset.scrollBound) {
-                col.dataset.scrollBound = "true";
-                const savedScroll = sessionStorage.getItem('rightColScroll');
-                if (savedScroll !== null) {
-                    col.scrollTop = parseInt(savedScroll);
-                }
-                col.addEventListener('scroll', () => {
-                    sessionStorage.setItem('rightColScroll', col.scrollTop);
-                });
-            }
-        }, 300);
-    }
 
     // Custom Minimalist Notification Toast Trigger
     setInterval(() => {
@@ -1381,11 +1298,11 @@ components.html(
             }
         }
         else if (txt === '✔️' || txt === '↩️') {
-            // Instantly flip the icon so it feels perfectly responsive
+            // Instantly flip the icon
             const p = btn.querySelector('p');
             if (p) p.innerText = txt === '✔️' ? '↩️' : '✔️';
             
-            // Instantly apply visual toggle logic
+            // Instantly apply visual toggle logic to trigger CSS :has rules
             const isSubtask = btn.closest('div[data-testid="stExpanderDetails"]') !== null;
             if (isSubtask) {
                 const subRow = btn.closest('div[data-testid="column"]')?.parentElement.querySelector('.subtask-row');
@@ -1401,7 +1318,6 @@ components.html(
             }
         }
         else if (txt === 'Add task') {
-            // Fades the button via CSS instead of breaking innerText react node sync
             btn.classList.add('optimistic-fade');
             
             window.textLocked = false;
@@ -1430,15 +1346,6 @@ components.html(
         if (isOptionBtn && !txt.includes('Add task') && btn.closest('div[data-testid="stHorizontalBlock"]')) {
             const block = btn.closest('div[data-testid="stHorizontalBlock"]');
             if (block) {
-                block.querySelectorAll('button').forEach(b => {
-                    b.style.backgroundColor = '';
-                    b.style.borderColor = 'rgba(128, 128, 128, 0.2)';
-                    b.style.color = '';
-                });
-                btn.style.backgroundColor = '#ff4b4b';
-                btn.style.borderColor = '#ff4b4b';
-                btn.style.color = 'white';
-                
                 if (isCat) window.categorySelected = true;
                 if (isPri) window.prioritySelected = true;
                 if (isDue) window.dueSelected = true;
@@ -1639,25 +1546,11 @@ components.html(
                     return;
                 }
 
-                // Execute Hotkey selection (Even if Text is Locked, as long as it has text)
                 if (hasText && isHotkey) {
                     const clickBtn = (textFragment) => {
                         const buttons = Array.from(doc.querySelectorAll('button'));
                         const btn = buttons.find(b => b.innerText.includes(textFragment) || b.innerText.trim() === textFragment);
                         if(btn) {
-                            const parentRow = btn.closest('div[data-testid="stHorizontalBlock"]');
-                            if(parentRow) {
-                                const siblings = parentRow.querySelectorAll('button');
-                                siblings.forEach(sib => {
-                                    sib.style.removeProperty('background-color');
-                                    sib.style.removeProperty('border-color');
-                                    sib.style.removeProperty('color');
-                                });
-                            }
-                            btn.style.backgroundColor = '#ff4b4b';
-                            btn.style.borderColor = '#ff4b4b';
-                            btn.style.color = 'white';
-                            
                             btn.click();
                         }
                     };
@@ -1713,12 +1606,10 @@ components.html(
                 if (taskInput && taskInput.value.trim().length > 0) {
                     e.preventDefault(); 
                     
-                    // Lock text on first Enter
                     if (!window.textLocked) {
                         window.textLocked = true;
                         taskInput.blur(); 
                     } 
-                    // Add Task on subsequent Enter ONLY IF all sections are filled
                     else if (window.textLocked && window.categorySelected && window.prioritySelected && window.dueSelected) {
                         const buttons = doc.querySelectorAll('button');
                         buttons.forEach(btn => {
