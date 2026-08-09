@@ -2,23 +2,30 @@ import { useEffect } from 'react'
 import { isTypingElement } from '../utils/isTypingElement'
 
 interface Params {
+  focusedTaskId: number | null
   latestTaskId: number | null
   lastExpandedTaskId: number | null
   onConsumeLatest: () => void
 }
 
-// '/' focuses the most-recently-added task's subtask input, falling back to
-// whichever panel was last expanded by hand once the "just added" hint is
-// consumed - matches the priority order from the Streamlit version.
-export function useSubtaskFocusHotkey({ latestTaskId, lastExpandedTaskId, onConsumeLatest }: Params) {
+// '/' targets, in priority order: the task currently focused by a plain
+// click, then the most-recently-added task, then whichever panel was last
+// expanded by hand - and opens/focuses ITS subtask input. With no task in
+// any of those states, it focuses the main task-entry input instead, so '/'
+// always does something useful from anywhere on the page.
+export function useSubtaskFocusHotkey({ focusedTaskId, latestTaskId, lastExpandedTaskId, onConsumeLatest }: Params) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== '/') return
       if (isTypingElement(document.activeElement)) return
-
-      const targetId = latestTaskId ?? lastExpandedTaskId
-      if (targetId === null) return
       e.preventDefault()
+
+      const targetId = focusedTaskId ?? latestTaskId ?? lastExpandedTaskId
+      if (targetId === null) {
+        const mainInput = document.querySelector('.task-text-input') as HTMLInputElement | null
+        mainInput?.focus()
+        return
+      }
 
       const focusInput = () => {
         const input = document.getElementById(`subtask-input-${targetId}`) as HTMLInputElement | null
@@ -41,10 +48,10 @@ export function useSubtaskFocusHotkey({ latestTaskId, lastExpandedTaskId, onCons
         setTimeout(focusInput, 50)
       }
 
-      if (latestTaskId !== null) onConsumeLatest()
+      if (focusedTaskId === null && latestTaskId !== null) onConsumeLatest()
     }
 
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [latestTaskId, lastExpandedTaskId, onConsumeLatest])
+  }, [focusedTaskId, latestTaskId, lastExpandedTaskId, onConsumeLatest])
 }

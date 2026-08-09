@@ -21,9 +21,10 @@ export function TaskListPage() {
   const [pinnedOnly, setPinnedOnly] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>('Priority')
 
-  const [armedTaskId, setArmedTaskId] = useState<number | null>(null)
+  const [focusedTaskId, setFocusedTaskId] = useState<number | null>(null)
   const [latestTaskId, setLatestTaskId] = useState<number | null>(null)
   const [lastExpandedTaskId, setLastExpandedTaskId] = useState<number | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const tasks = useMemo(() => data?.tasks ?? [], [data])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
@@ -60,10 +61,12 @@ export function TaskListPage() {
   const todayIso = toISODate(new Date())
   const doneCount = tasks.filter((t) => t.done).length
 
-  // Click-to-complete via event delegation: a click lands either inside a
-  // card's "content area" (data-task-content-id) - which arms it, or confirms
-  // and toggles it if it was already armed - or anywhere else (buttons,
-  // expander, blank space), which just disarms whatever was armed.
+  // Click-to-complete via event delegation: Ctrl/Cmd+click anywhere inside a
+  // card's "content area" (data-task-content-id) toggles it done immediately
+  // - no confirmation step. A plain click there instead focuses that task
+  // (so '/' routes to its subtask input, see useSubtaskFocusHotkey); clicking
+  // the already-focused task's content again clears focus, as does clicking
+  // anywhere else (buttons, expander, blank space).
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement
@@ -71,46 +74,60 @@ export function TaskListPage() {
       const clickedId = contentArea ? Number(contentArea.getAttribute('data-task-content-id')) : null
 
       if (clickedId === null) {
-        setArmedTaskId((prev) => (prev !== null ? null : prev))
+        setFocusedTaskId((prev) => (prev !== null ? null : prev))
         return
       }
 
-      setArmedTaskId((prev) => {
-        if (prev === clickedId) {
-          const task = tasksById.get(clickedId)
-          if (task) toggleDone.mutate({ id: clickedId, done: !task.done })
-          return null
-        }
-        return clickedId
-      })
+      if (e.ctrlKey || e.metaKey) {
+        const task = tasksById.get(clickedId)
+        if (task) toggleDone.mutate({ id: clickedId, done: !task.done })
+        return
+      }
+
+      setFocusedTaskId((prev) => (prev === clickedId ? null : clickedId))
     }
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
   }, [tasksById, toggleDone])
 
   useSubtaskFocusHotkey({
+    focusedTaskId,
     latestTaskId,
     lastExpandedTaskId,
     onConsumeLatest: () => setLatestTaskId(null),
   })
 
   return (
-    <div className="app-layout">
-      <Sidebar
-        search={search}
-        onSearchChange={setSearch}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        availableCategories={availableCategories}
-        categoryFilter={categoryFilter}
-        onCategoryFilterChange={setCategoryFilter}
-        pinnedOnly={pinnedOnly}
-        onPinnedOnlyChange={setPinnedOnly}
-        sortBy={sortBy}
-        onSortByChange={setSortBy}
-        canUndo={data?.can_undo ?? false}
-        canRedo={data?.can_redo ?? false}
-      />
+    <div className={`app-layout${sidebarOpen ? '' : ' sidebar-closed'}`}>
+      {!sidebarOpen && (
+        <button
+          type="button"
+          className="sidebar-toggle-btn"
+          onClick={() => setSidebarOpen(true)}
+          title="Open sidebar"
+        >
+          ☰
+        </button>
+      )}
+
+      {sidebarOpen && (
+        <Sidebar
+          search={search}
+          onSearchChange={setSearch}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          availableCategories={availableCategories}
+          categoryFilter={categoryFilter}
+          onCategoryFilterChange={setCategoryFilter}
+          pinnedOnly={pinnedOnly}
+          onPinnedOnlyChange={setPinnedOnly}
+          sortBy={sortBy}
+          onSortByChange={setSortBy}
+          canUndo={data?.can_undo ?? false}
+          canRedo={data?.can_redo ?? false}
+          onClose={() => setSidebarOpen(false)}
+        />
+      )}
 
       <div className="content-area">
         <div className="task-entry-panel">
@@ -137,7 +154,7 @@ export function TaskListPage() {
                   <TaskCard
                     key={task.id}
                     task={task}
-                    armed={armedTaskId === task.id}
+                    focused={focusedTaskId === task.id}
                     todayIso={todayIso}
                     onExpandSubtasks={setLastExpandedTaskId}
                   />

@@ -7,12 +7,12 @@ import { useAddSubtask, useDeleteSubtask, useToggleSubtask } from '../hooks/useS
 
 interface Props {
   task: Task
-  armed: boolean
+  focused: boolean
   todayIso: string
   onExpandSubtasks?: (taskId: number) => void
 }
 
-export function TaskCard({ task, armed, todayIso, onExpandSubtasks }: Props) {
+export function TaskCard({ task, focused, todayIso, onExpandSubtasks }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [editPriority, setEditPriority] = useState(task.priority)
@@ -77,7 +77,7 @@ export function TaskCard({ task, armed, todayIso, onExpandSubtasks }: Props) {
       transition={{ duration: 0.25, ease: 'easeOut' }}
       data-task-id={task.id}
       data-priority={task.priority}
-      className={`task-card${task.done ? ' done' : ''}${armed ? ' armed' : ''}`}
+      className={`task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}`}
     >
       {editing ? (
         <form className="edit-form" onSubmit={saveEdit}>

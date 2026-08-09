@@ -22,6 +22,7 @@ interface Props {
   onSortByChange: (v: SortBy) => void
   canUndo: boolean
   canRedo: boolean
+  onClose: () => void
 }
 
 const ACTIVITY_META: Record<string, { icon: string; label: string }> = {
@@ -51,6 +52,7 @@ export function Sidebar({
   onSortByChange,
   canUndo,
   canRedo,
+  onClose,
 }: Props) {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -71,73 +73,80 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-profile">
-        <div className="profile-indicator">
-          <span className="profile-avatar">👤</span>
-          {user?.is_guest ? 'Guest' : user?.username}
+      <div className="sidebar-header">
+        <div className="sidebar-profile">
+          <div className="profile-indicator">
+            <span className="profile-avatar">👤</span>
+            {user?.is_guest ? 'Guest' : user?.username}
+          </div>
+          {user?.is_guest && <p className="guest-note">Tasks won't be saved after you sign out</p>}
+          <div className="sidebar-profile-actions">
+            <button type="button" className="btn-secondary" onClick={() => logout()}>
+              Sign out
+            </button>
+            <button type="button" className="icon-btn theme-toggle" onClick={toggleTheme} title="Toggle theme">
+              {theme === 'light' ? '🌙' : '☀️'}
+            </button>
+          </div>
         </div>
-        {user?.is_guest && <p className="guest-note">Tasks won't be saved after you sign out</p>}
-        <div className="sidebar-profile-actions">
-          <button type="button" className="btn-secondary" onClick={() => logout()}>
-            Sign out
-          </button>
-          <button type="button" className="icon-btn theme-toggle" onClick={toggleTheme} title="Toggle theme">
-            {theme === 'light' ? '🌙' : '☀️'}
-          </button>
-        </div>
+        <button type="button" className="icon-btn" onClick={onClose} title="Close sidebar">
+          ✕
+        </button>
       </div>
 
       <hr />
 
-      <h3 className="sidebar-heading">Filters</h3>
-      <input
-        className="search-input"
-        placeholder="Search tasks..."
-        value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
-      />
-      <div className="status-filter-row">
-        {(['All', 'Active', 'Completed'] as const).map((s) => (
-          <label key={s} className="radio-label">
-            <input
-              type="radio"
-              name="status-filter"
-              checked={statusFilter === s}
-              onChange={() => onStatusFilterChange(s)}
-            />
-            {s}
-          </label>
-        ))}
-      </div>
-      <label className="checkbox-label">
-        <input type="checkbox" checked={pinnedOnly} onChange={(e) => onPinnedOnlyChange(e.target.checked)} />
-        📌 Pinned only
-      </label>
-
-      {availableCategories.length > 0 && (
-        <div className="category-filter">
-          <p className="sidebar-subheading">Category</p>
-          {availableCategories.map((cat) => (
-            <label key={cat} className="checkbox-label">
+      <div className="sidebar-filters">
+        <h3 className="sidebar-heading">Filters</h3>
+        <input
+          className="search-input"
+          placeholder="Search tasks..."
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+        />
+        <div className="status-filter-row">
+          {(['All', 'Active', 'Completed'] as const).map((s) => (
+            <label key={s} className="radio-label">
               <input
-                type="checkbox"
-                checked={categoryFilter.includes(cat)}
-                onChange={() => toggleCategory(cat)}
+                type="radio"
+                name="status-filter"
+                checked={statusFilter === s}
+                onChange={() => onStatusFilterChange(s)}
               />
-              {cat}
+              {s}
             </label>
           ))}
         </div>
-      )}
+        <label className="checkbox-label">
+          <input type="checkbox" checked={pinnedOnly} onChange={(e) => onPinnedOnlyChange(e.target.checked)} />
+          📌 Pinned only
+        </label>
 
-      <label className="sort-select">
-        Sort by
-        <select value={sortBy} onChange={(e) => onSortByChange(e.target.value as SortBy)}>
-          <option>Priority</option>
-          <option>Due date</option>
-          <option>Newest first</option>
-        </select>
-      </label>
+        {availableCategories.length > 0 && (
+          <div className="category-filter">
+            <p className="sidebar-subheading">Category</p>
+            {availableCategories.map((cat) => (
+              <label key={cat} className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={categoryFilter.includes(cat)}
+                  onChange={() => toggleCategory(cat)}
+                />
+                {cat}
+              </label>
+            ))}
+          </div>
+        )}
+
+        <label className="sort-select">
+          Sort by
+          <select value={sortBy} onChange={(e) => onSortByChange(e.target.value as SortBy)}>
+            <option>Priority</option>
+            <option>Due date</option>
+            <option>Newest first</option>
+          </select>
+        </label>
+      </div>
 
       <hr />
 
@@ -150,15 +159,17 @@ export function Sidebar({
         </button>
       </div>
 
-      <button type="button" className="btn-secondary btn-block" onClick={() => markAllCompleted.mutate()}>
-        Mark all completed
-      </button>
-      <button type="button" className="btn-secondary btn-block" onClick={() => clearCompleted.mutate()}>
-        Clear completed
-      </button>
-      <button type="button" className="btn-secondary btn-block" onClick={() => clearAll.mutate()}>
-        Clear all
-      </button>
+      <div className="sidebar-bulk-actions">
+        <button type="button" className="btn-secondary btn-block" onClick={() => markAllCompleted.mutate()}>
+          Mark all completed
+        </button>
+        <button type="button" className="btn-secondary btn-block" onClick={() => clearCompleted.mutate()}>
+          Clear completed
+        </button>
+        <button type="button" className="btn-secondary btn-block" onClick={() => clearAll.mutate()}>
+          Clear all
+        </button>
+      </div>
 
       <hr />
 
