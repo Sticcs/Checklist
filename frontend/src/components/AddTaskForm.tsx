@@ -4,6 +4,7 @@ import { CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS } from '../constants'
 import { computeDueDate, DUE_PRESET_ORDER, type DuePreset } from '../utils/dueDatePresets'
 import { isTypingElement } from '../utils/isTypingElement'
 import { useAddTask } from '../hooks/useTasks'
+import { DateInput } from './DateInput'
 
 const DUE_KEYS: Record<DuePreset, string> = {
   Today: '1',
@@ -76,10 +77,16 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     setCustomDueDate('')
   }
 
-  const submit = () => {
-    if (!addVisible || !category || !priority || !duePreset) return
+  // Accepts an optional freshly-typed custom date so Enter-to-submit inside
+  // the date field itself (see DateInput's onEnter below) can go straight
+  // through with the value just read off the DOM, without waiting on
+  // customDueDate state to catch up first.
+  const submit = (customDateOverride?: string) => {
+    if (!category || !priority || !duePreset) return
+    const effectiveCustomDate = customDateOverride ?? customDueDate
+    if (duePreset === 'Custom' && effectiveCustomDate === '') return
     const finalCategory = category === 'Custom' ? customCategory.trim() || 'General' : category
-    const dueDate = computeDueDate(duePreset, customDueDate || null)
+    const dueDate = computeDueDate(duePreset, effectiveCustomDate || null)
     // Collapse the option rows immediately - the mutation is optimistic, so
     // the task itself already appears in the list right away too. Waiting
     // for the server round trip here just left the buttons sitting on
@@ -267,16 +274,14 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
               ))}
             </div>
             {duePreset === 'Custom' && (
-              <input
-                type="date"
+              <DateInput
                 className="custom-input"
                 value={customDueDate}
                 autoFocus
-                onChange={(e) => setCustomDueDate(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' || customDueDate === '') return
-                  e.preventDefault()
-                  submit()
+                onCommit={setCustomDueDate}
+                onEnter={(next) => {
+                  if (next === '') return
+                  submit(next)
                 }}
               />
             )}
@@ -288,7 +293,7 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
             key="add-task-btn"
             type="button"
             className="btn-add-task btn-primary"
-            onClick={submit}
+            onClick={() => submit()}
             {...sectionMotion}
           >
             Add task

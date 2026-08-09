@@ -18,6 +18,7 @@ import {
   useToggleSubtask,
 } from '../hooks/useSubtasks'
 import { daysUntil } from '../utils/dueDatePresets'
+import { DateInput } from './DateInput'
 
 interface Props {
   task: Task
@@ -77,17 +78,12 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
     }
     return [...counts.entries()].sort((a, b) => a[0] - b[0])
   })()
-  const subtaskDueTallyText = subtaskDueTally
-    .map(([d, count]) => {
-      const label =
-        d < 0
-          ? `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue`
-          : d === 0
-            ? 'due today'
-            : `due in ${d} day${d === 1 ? '' : 's'}`
-      return `${count} ${label}`
-    })
-    .join(', ')
+  const subtaskDueTallyLabel = (d: number): string =>
+    d < 0
+      ? `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue`
+      : d === 0
+        ? 'due today'
+        : `due in ${d} day${d === 1 ? '' : 's'}`
 
   // A one-shot glow that plays exactly once on the false->true transition
   // (not on every render while done, and not on initial mount if the task
@@ -190,7 +186,7 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                 </option>
               ))}
             </select>
-            <input type="date" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} />
+            <DateInput value={editDueDate} onCommit={setEditDueDate} />
           </div>
           <div className="edit-form-actions">
             <button type="submit" className="btn-primary">
@@ -228,11 +224,11 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                 🔥 {urgentSubtaskCount}
               </span>
             )}
-            {subtaskDueTallyText && (
-              <span className="subtask-due-tally-badge" title="Subtask due dates">
-                📅 {subtaskDueTallyText}
+            {subtaskDueTally.map(([d, count]) => (
+              <span key={d} className="subtask-due-tally-badge" title="Subtask due dates">
+                📅 {count} {subtaskDueTallyLabel(d)}
               </span>
-            )}
+            ))}
             {!notesOpen && task.notes && (
               <span className="notes-indicator" title="Has notes">
                 📝
@@ -333,25 +329,14 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                       📅
                     </button>
                     {dueDatePickerSubtaskId === s.id && (
-                      <input
-                        type="date"
+                      <DateInput
                         className="due-date-quick-input"
                         value={s.due_date ?? ''}
                         autoFocus
-                        // Saves as soon as the browser reports a complete date,
-                        // but the picker itself only closes on blur/Enter/Escape
-                        // - closing it mid-onChange (the previous behavior) made
-                        // the field disappear out from under a still-typing year,
-                        // since the date input can report intermediate states.
-                        onChange={(e) => {
-                          setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: e.target.value || null })
-                        }}
-                        onBlur={() => setDueDatePickerSubtaskId(null)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === 'Escape') {
-                            e.preventDefault()
-                            e.currentTarget.blur()
-                          }
+                        onCommit={(next) => {
+                          setDueDatePickerSubtaskId(null)
+                          if (next === (s.due_date ?? '')) return
+                          setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: next || null })
                         }}
                       />
                     )}

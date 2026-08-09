@@ -4,6 +4,7 @@ import type { Task } from '../types'
 import { PRIORITIES } from '../constants'
 import { useDeleteTask, useEditTask, useSetTaskUrgent, useToggleDone } from '../hooks/useTasks'
 import { daysUntil } from '../utils/dueDatePresets'
+import { DateInput } from './DateInput'
 
 interface Props {
   task: Task
@@ -85,7 +86,7 @@ export function AssessmentCard({ task, focused, todayIso }: Props) {
                 </option>
               ))}
             </select>
-            <input type="date" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} />
+            <DateInput value={editDueDate} onCommit={setEditDueDate} />
           </div>
           <div className="edit-form-actions">
             <button type="submit" className="btn-primary">
