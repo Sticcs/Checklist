@@ -9,6 +9,7 @@ import { ProgressBar } from '../components/ProgressBar'
 import { QuoteHeader } from '../components/QuoteHeader'
 import { Scratchpad } from '../components/Scratchpad'
 import { AssessmentsPanel } from '../components/AssessmentsPanel'
+import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
 import { toISODate } from '../utils/dueDatePresets'
@@ -274,6 +275,8 @@ export function TaskListPage() {
           {filtered.length === 0 && <p className="status-message">No tasks match your filters yet.</p>}
         </div>
       </div>
+
+      <KeyboardShortcutsHelp />
     </div>
   )
 }
