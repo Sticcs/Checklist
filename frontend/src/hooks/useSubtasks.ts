@@ -2,11 +2,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { subtasksApi } from '../api/subtasks'
 import { TASKS_KEY } from './useTasks'
+import { pushUndoSnapshot } from './undoRedoStack'
 import type { TasksResponse } from '../types'
 
 async function beginOptimisticUpdate(queryClient: ReturnType<typeof useQueryClient>) {
   await queryClient.cancelQueries({ queryKey: TASKS_KEY })
-  return queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+  const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+  if (previous) pushUndoSnapshot(previous)
+  return previous
 }
 
 function rollback(queryClient: ReturnType<typeof useQueryClient>, previous: TasksResponse | undefined) {

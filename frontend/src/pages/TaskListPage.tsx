@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, Reorder } from 'framer-motion'
+import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useSubtaskFocusHotkey } from '../hooks/useHotkeys'
 import { AddTaskForm } from '../components/AddTaskForm'
@@ -121,19 +121,29 @@ export function TaskListPage() {
   })
 
   return (
-    <div className={`app-layout${sidebarOpen ? '' : ' sidebar-closed'}`}>
-      {!sidebarOpen && (
-        <button
-          type="button"
-          className="sidebar-toggle-btn"
-          onClick={() => setSidebarOpen(true)}
-          title="Open sidebar"
-        >
-          ☰
-        </button>
-      )}
+    <div className="app-layout">
+      <AnimatePresence>
+        {!sidebarOpen && (
+          <motion.button
+            type="button"
+            className="sidebar-toggle-btn"
+            onClick={() => setSidebarOpen(true)}
+            title="Open sidebar"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.2 }}
+          >
+            ☰
+          </motion.button>
+        )}
+      </AnimatePresence>
 
-      {sidebarOpen && (
+      <motion.div
+        className="sidebar-wrapper"
+        animate={{ width: sidebarOpen ? 300 : 0 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
+      >
         <Sidebar
           search={search}
           onSearchChange={setSearch}
@@ -148,15 +158,16 @@ export function TaskListPage() {
           onSortByChange={setSortBy}
           canUndo={data?.can_undo ?? false}
           canRedo={data?.can_redo ?? false}
+          hasCompletedTasks={doneCount > 0}
           onClose={() => setSidebarOpen(false)}
         />
-      )}
+      </motion.div>
 
       <div className="content-area">
         <div className="entry-column">
           <div className="task-entry-panel">
             <QuoteHeader />
-            <AddTaskForm onAdded={(id) => setLatestTaskId(id)} />
+            <AddTaskForm onAdded={(id) => setLatestTaskId(id)} hasTasks={tasks.length > 0} />
           </div>
           <Scratchpad />
         </div>

@@ -16,9 +16,10 @@ const DUE_KEYS: Record<DuePreset, string> = {
 
 interface Props {
   onAdded?: (taskId: number) => void
+  hasTasks?: boolean
 }
 
-export function AddTaskForm({ onAdded }: Props) {
+export function AddTaskForm({ onAdded, hasTasks }: Props) {
   const [text, setText] = useState('')
   const [textLocked, setTextLocked] = useState(false)
   const [category, setCategory] = useState<string | null>(null)
@@ -161,6 +162,10 @@ export function AddTaskForm({ onAdded }: Props) {
   // do next.
   const hint = (() => {
     if (text.trim() === '' && !textLocked) {
+      // Only makes sense before there's anything in the list yet - once a
+      // task exists it isn't the user's "first" task anymore, and an empty
+      // box doesn't need a prompt at all.
+      if (hasTasks) return null
       return { text: 'Start typing to enter your first task.', tone: 'onboarding' }
     }
     if (!textLocked) return { text: 'Press Enter to lock in your text.', tone: 'step' }
@@ -186,7 +191,7 @@ export function AddTaskForm({ onAdded }: Props) {
         onChange={(e) => handleTextChange(e.target.value)}
         onKeyDown={handleTextKeyDown}
       />
-      <p className={`entry-hint entry-hint-${hint.tone}`}>{hint.text}</p>
+      {hint && <p className={`entry-hint entry-hint-${hint.tone}`}>{hint.text}</p>}
 
       <AnimatePresence>
         {categoryVisible && (

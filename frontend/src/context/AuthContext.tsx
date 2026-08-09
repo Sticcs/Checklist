@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
+import { resetUndoRedoStacks } from '../hooks/undoRedoStack'
 import type { User } from '../types'
 
 type AuthStatus = 'loading' | 'authed' | 'anonymous'
@@ -46,8 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     setStatus('anonymous')
     // A fast re-login as a different user must never see the previous
-    // user's cached tasks flash before the first refetch completes.
+    // user's cached tasks flash before the first refetch completes, or be
+    // able to Undo/Redo into the previous user's history.
     queryClient.clear()
+    resetUndoRedoStacks()
   }
 
   return (

@@ -2,16 +2,22 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { toast } from 'sonner'
 import { tasksApi } from '../api/tasks'
 import type { Task, TasksResponse } from '../types'
+import { pushUndoSnapshot } from './undoRedoStack'
 
 export const TASKS_KEY = ['tasks']
 
 // Shared by every mutation below: cancel any in-flight refetch (so it can't
 // clobber our optimistic write when it resolves), snapshot the current cache
 // for rollback, then hand the caller the previous data to build the
-// optimistic update from.
+// optimistic update from. Also mirrors that same snapshot onto the client-
+// side undo/redo stack (see undoRedoStack.ts) - every mutation here calls
+// the backend's save_snapshot() first too, so this stays in lockstep with
+// the server's own history.
 async function beginOptimisticUpdate(queryClient: QueryClient) {
   await queryClient.cancelQueries({ queryKey: TASKS_KEY })
-  return queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+  const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+  if (previous) pushUndoSnapshot(previous)
+  return previous
 }
 
 function setTasksData(queryClient: QueryClient, updater: (old: TasksResponse) => TasksResponse) {

@@ -85,7 +85,7 @@ body[data-theme='dark'] {
 /* ----------------------------- App layout ----------------------------- */
 .app-layout {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: auto 1fr;
   height: 100vh;
   background-image: var(--bg-image);
   background-size: cover;
@@ -93,8 +93,8 @@ body[data-theme='dark'] {
   background-attachment: fixed;
 }
 
-.app-layout.sidebar-closed {
-  grid-template-columns: 1fr;
+.sidebar-wrapper {
+  overflow: hidden;
 }
 
 .sidebar-toggle-btn {
@@ -130,6 +130,7 @@ body[data-theme='dark'] {
   flex-direction: column;
   gap: 1.5rem;
   align-items: flex-start;
+  min-height: calc(100vh - 3rem);
 }
 
 .task-entry-panel {
@@ -145,6 +146,7 @@ body[data-theme='dark'] {
 }
 
 .scratchpad {
+  margin-top: auto;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
@@ -205,6 +207,12 @@ body[data-theme='dark'] {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  /* Fixed width regardless of the animated wrapper's width, so the content
+     never reflows during the open/close transition - it just gets
+     progressively clipped by the wrapper's overflow:hidden instead. */
+  width: 300px;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .sidebar hr {
@@ -252,6 +260,17 @@ body[data-theme='dark'] {
 
 .theme-toggle {
   font-size: 1rem;
+}
+
+.wallpaper-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
 
 .sidebar-heading {
@@ -317,6 +336,22 @@ body[data-theme='dark'] {
 
 .btn-block {
   width: 100%;
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 75, 75, 0.35);
+    border-color: rgba(255, 75, 75, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 10px 2px rgba(255, 75, 75, 0.35);
+    border-color: rgba(255, 75, 75, 0.8);
+  }
+}
+
+.glow-eligible {
+  animation: glow-pulse 2s ease-in-out infinite;
 }
 
 .activity-log summary {
@@ -520,12 +555,17 @@ button:disabled {
 }
 
 .option-row-label {
-  margin: 0 0 0.35rem;
-  font-weight: 700;
-  font-size: 0.78rem;
+  margin: 0 0 0.4rem;
+  font-weight: 800;
+  font-size: 0.85rem;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
-  opacity: 0.8;
+  letter-spacing: 0.6px;
+  opacity: 1;
+  color: #ff4b4b;
+}
+
+body[data-theme='dark'] .option-row-label {
+  color: #ff7373;
 }
 
 .option-row-buttons {

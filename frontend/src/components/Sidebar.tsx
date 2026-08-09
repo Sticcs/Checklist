@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useActivity } from '../hooks/useActivity'
 import { useClearAll, useClearCompleted, useMarkAllCompleted } from '../hooks/useTasks'
 import { useUndo, useRedo } from '../hooks/useUndoRedo'
+import { useWallpaper } from '../hooks/useWallpaper'
+import { resizeImageToDataUrl } from '../utils/resizeImage'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -22,6 +24,7 @@ interface Props {
   onSortByChange: (v: SortBy) => void
   canUndo: boolean
   canRedo: boolean
+  hasCompletedTasks: boolean
   onClose: () => void
 }
 
@@ -52,11 +55,14 @@ export function Sidebar({
   onSortByChange,
   canUndo,
   canRedo,
+  hasCompletedTasks,
   onClose,
 }: Props) {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const [activityOpen, setActivityOpen] = useState(false)
+  const [wallpaper, setWallpaper] = useWallpaper(user?.username)
+  const wallpaperInputRef = useRef<HTMLInputElement>(null)
 
   const undo = useUndo()
   const redo = useRedo()
@@ -64,6 +70,12 @@ export function Sidebar({
   const clearCompleted = useClearCompleted()
   const clearAll = useClearAll()
   const activity = useActivity(activityOpen)
+
+  const handleWallpaperFile = async (file: File | undefined) => {
+    if (!file) return
+    const dataUrl = await resizeImageToDataUrl(file)
+    setWallpaper(dataUrl)
+  }
 
   const toggleCategory = (cat: string) => {
     onCategoryFilterChange(
@@ -87,6 +99,29 @@ export function Sidebar({
             <button type="button" className="icon-btn theme-toggle" onClick={toggleTheme} title="Toggle theme">
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => wallpaperInputRef.current?.click()}
+              title="Set a custom wallpaper (saved on this device only)"
+            >
+              🖼️
+            </button>
+            {wallpaper && (
+              <button type="button" className="icon-btn" onClick={() => setWallpaper(null)} title="Reset wallpaper">
+                ↺
+              </button>
+            )}
+            <input
+              ref={wallpaperInputRef}
+              type="file"
+              accept="image/*"
+              className="wallpaper-file-input"
+              onChange={(e) => {
+                void handleWallpaperFile(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
           </div>
         </div>
         <button type="button" className="icon-btn" onClick={onClose} title="Close sidebar">
@@ -164,7 +199,11 @@ export function Sidebar({
         <button type="button" className="btn-secondary btn-block" onClick={() => markAllCompleted.mutate()}>
           Mark all completed
         </button>
-        <button type="button" className="btn-secondary btn-block" onClick={() => clearCompleted.mutate()}>
+        <button
+          type="button"
+          className={hasCompletedTasks ? 'btn-secondary btn-block glow-eligible' : 'btn-secondary btn-block'}
+          onClick={() => clearCompleted.mutate()}
+        >
           Clear completed
         </button>
         <button type="button" className="btn-secondary btn-block" onClick={() => clearAll.mutate()}>
