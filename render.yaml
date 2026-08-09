@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: checklist
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      # Set to a Postgres connection string from Neon or Supabase's free tier
+      # (Render's own free-tier Postgres expires after 90 days; those don't).
+      # Filled in from the Render dashboard, not stored in this file.
+      - key: DATABASE_URL
+        sync: false

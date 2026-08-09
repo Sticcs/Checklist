@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from app.db import init_db
 from app.routers import activity, auth, subtasks, tasks, undo_redo
@@ -19,3 +21,21 @@ app.include_router(tasks.router)
 app.include_router(subtasks.router)
 app.include_router(activity.router)
 app.include_router(undo_redo.router)
+
+# Serves the built React app (frontend/dist, produced by `npm run build`) so
+# the whole thing is one deployment on one origin - no CORS, no cross-site
+# cookie config, the auth cookie logic stays exactly what local dev already
+# uses. Registered last: Starlette matches routes in registration order, so
+# the /api/* routers above always win before this catch-all is even tried.
+# In local dev this directory won't exist (Vite serves the frontend itself
+# with its own dev server), so it's skipped entirely rather than erroring.
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.is_dir():
+
+    @app.get("/{full_path:path}")
+    def serve_frontend(full_path: str):
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        if candidate.is_relative_to(FRONTEND_DIST) and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")

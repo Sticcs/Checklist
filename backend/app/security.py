@@ -37,6 +37,7 @@ def set_session_cookie(response: Response, username: str, is_guest: bool) -> Non
         max_age=settings.cookie_max_age,
         httponly=True,
         samesite="lax",
+        secure=settings.cookie_secure,
     )
 
 

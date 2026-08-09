@@ -5,3 +5,5 @@ bcrypt
 pydantic-settings
 pytest
 httpx
+sqlalchemy
+psycopg[binary]
