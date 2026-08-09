@@ -806,7 +806,19 @@ body[data-theme='dark'] .task-card.focused {
   top: 0.9rem;
   right: 1rem;
   display: flex;
-  gap: 0.3rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.task-done-checkbox {
+  /* Sized well past the default checkbox for a comfortable mobile tap
+     target - ctrl/cmd+click on the card works fine with a mouse, but has
+     no touchscreen equivalent, so this is the tap-friendly alternative. */
+  width: 1.3rem;
+  height: 1.3rem;
+  margin: 0;
+  accent-color: #ff4b4b;
+  cursor: pointer;
 }
 
 .task-card {
@@ -891,6 +903,12 @@ body[data-theme='dark'] .subtask-panel {
 
 .subtask-add-form input {
   flex: 1;
+}
+
+.complete-hint {
+  opacity: 0.55;
+  font-size: 0.78rem;
+  margin: 0 0 0.7rem;
 }
 
 /* ----------------------------- Misc ----------------------------- */

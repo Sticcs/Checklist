@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
-import { useDeleteTask, useEditTask, useSetPinned } from '../hooks/useTasks'
+import { useDeleteTask, useEditTask, useSetPinned, useToggleDone } from '../hooks/useTasks'
 import { useAddSubtask, useDeleteSubtask, useSetSubtaskUrgent, useToggleSubtask } from '../hooks/useSubtasks'
 
 interface Props {
@@ -25,6 +25,7 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const [newSubtaskText, setNewSubtaskText] = useState('')
 
   const setPinned = useSetPinned()
+  const toggleDone = useToggleDone()
   const editTask = useEditTask()
   const deleteTask = useDeleteTask()
   const addSubtask = useAddSubtask()
@@ -158,6 +159,15 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
       )}
 
       <div className="task-actions">
+        {!editing && (
+          <input
+            type="checkbox"
+            className="task-done-checkbox"
+            checked={task.done}
+            title="Mark complete"
+            onChange={() => toggleDone.mutate({ id: task.id, done: !task.done })}
+          />
+        )}
         <button
           type="button"
           className={task.pinned ? 'icon-btn btn-primary' : 'icon-btn'}

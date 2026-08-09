@@ -193,6 +193,10 @@ export function TaskListPage() {
 
           <ProgressBar done={doneCount} total={tasks.length} />
 
+          {tasks.length > 0 && (
+            <p className="complete-hint">💡 Ctrl/Cmd+click a task to mark it complete</p>
+          )}
+
           {/* The list container (and its AnimatePresence) stays mounted even
               when `filtered` is empty, so a just-deleted last item still gets
               to play its exit animation - swapping it out for the "no
