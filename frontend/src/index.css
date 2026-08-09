@@ -675,55 +675,42 @@ button:disabled {
 
 /* ----------------------------- Auth page ----------------------------- */
 .auth-page {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100vh;
-  overflow: hidden;
   background-image: var(--bg-image);
   background-size: cover;
   background-position: center;
 }
 
-.auth-quote {
-  position: absolute;
-  max-width: 220px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  opacity: 0.5;
-  letter-spacing: 0.2px;
-  pointer-events: none;
-  z-index: 0;
+.auth-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 380px;
 }
 
-.auth-quote-tl {
-  top: 2.5rem;
-  left: 2.5rem;
-  text-align: left;
+.auth-quote-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  margin-bottom: 1rem;
+  padding: 0 0.5rem;
+  text-align: center;
 }
 
-.auth-quote-tr {
-  top: 2.5rem;
-  right: 2.5rem;
-  text-align: right;
-}
-
-.auth-quote-br {
-  bottom: 2.5rem;
-  right: 2.5rem;
-  text-align: right;
-}
-
-@media (max-width: 640px) {
-  .auth-quote {
-    display: none;
-  }
+.auth-quote-main p {
+  margin: 0;
+  font-size: clamp(1.3rem, 3.2vw, 1.75rem);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .auth-card {
-  position: relative;
-  z-index: 1;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 16px;

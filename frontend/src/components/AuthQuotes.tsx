@@ -12,21 +12,33 @@ const QUOTES = [
   'Every list starts with one line.',
 ]
 
-const POSITIONS = ['auth-quote-tl', 'auth-quote-br', 'auth-quote-tr']
+// All web-safe and all still comfortably readable at this size - no script
+// or decorative faces, since the point is variety, not a readability tax.
+const FONTS = [
+  "Georgia, 'Times New Roman', serif",
+  "'Trebuchet MS', 'Segoe UI', sans-serif",
+  "'Courier New', Courier, monospace",
+  "Palatino, 'Palatino Linotype', serif",
+  "Verdana, Geneva, sans-serif",
+  "'Century Gothic', 'Futura', sans-serif",
+  "Garamond, Baskerville, serif",
+]
 
-function randomQuote(exclude: string): string {
+function pickNext<T>(list: T[], exclude: T): T {
   let next = exclude
   while (next === exclude) {
-    next = QUOTES[Math.floor(Math.random() * QUOTES.length)]
+    next = list[Math.floor(Math.random() * list.length)]
   }
   return next
 }
 
-// One independently-cycling quote per screen corner - each on its own
-// randomized 3-5s interval (rather than a shared timer) so they drift out of
-// sync instead of changing in unison, which read as more "alive."
-function FloatingQuote({ position }: { position: string }) {
+// One large quote above the auth card, cycling on its own randomized 3-5s
+// interval - each change swaps both the phrase and its font together so it
+// reads as a single deliberate change instead of two things flickering
+// independently.
+export function AuthQuotes() {
   const [quote, setQuote] = useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)])
+  const [font, setFont] = useState(() => FONTS[Math.floor(Math.random() * FONTS.length)])
 
   useEffect(() => {
     let cancelled = false
@@ -36,7 +48,8 @@ function FloatingQuote({ position }: { position: string }) {
       const delay = 3000 + Math.random() * 2000
       handle = setTimeout(() => {
         if (cancelled) return
-        setQuote((prev) => randomQuote(prev))
+        setQuote((prev) => pickNext(QUOTES, prev))
+        setFont((prev) => pickNext(FONTS, prev))
         tick()
       }, delay)
     }
@@ -49,28 +62,19 @@ function FloatingQuote({ position }: { position: string }) {
   }, [])
 
   return (
-    <div className={`auth-quote ${position}`}>
+    <div className="auth-quote-main">
       <AnimatePresence mode="wait">
-        <motion.span
+        <motion.p
           key={quote}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.6 }}
+          style={{ fontFamily: font }}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.5 }}
         >
           {quote}
-        </motion.span>
+        </motion.p>
       </AnimatePresence>
     </div>
-  )
-}
-
-export function AuthQuotes() {
-  return (
-    <>
-      {POSITIONS.map((position) => (
-        <FloatingQuote key={position} position={position} />
-      ))}
-    </>
   )
 }

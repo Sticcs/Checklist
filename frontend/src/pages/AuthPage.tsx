@@ -50,70 +50,72 @@ export function AuthPage() {
 
   return (
     <div className="auth-page">
-      <AuthQuotes />
-      <div className="auth-card">
-        <h1 className="auth-title">✅ My Checklist</h1>
+      <div className="auth-stack">
+        <AuthQuotes />
+        <div className="auth-card">
+          <h1 className="auth-title">✅ My Checklist</h1>
 
-        <div className="auth-tabs">
+          <div className="auth-tabs">
+            <button
+              type="button"
+              className={mode === 'login' ? 'auth-tab active' : 'auth-tab'}
+              onClick={() => setMode('login')}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              className={mode === 'signup' ? 'auth-tab active' : 'auth-tab'}
+              onClick={() => setMode('signup')}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          {signupDone && <p className="auth-success">Account created! You can now log in.</p>}
+
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <input
+              placeholder={mode === 'login' ? 'Enter your username' : 'Pick a username'}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={submitting !== null}
+            />
+            <input
+              placeholder={mode === 'login' ? 'Enter your password' : 'Pick a password'}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={submitting !== null}
+            />
+            <button type="submit" className="btn-primary btn-block" disabled={submitting !== null}>
+              {mode === 'login'
+                ? submitting === 'login'
+                  ? 'Logging in...'
+                  : 'Login'
+                : submitting === 'signup'
+                  ? 'Creating account...'
+                  : 'Create Account'}
+            </button>
+          </form>
+
+          {error && (
+            <p className="auth-error" role="alert">
+              {error}
+            </p>
+          )}
+
+          <hr />
+
           <button
             type="button"
-            className={mode === 'login' ? 'auth-tab active' : 'auth-tab'}
-            onClick={() => setMode('login')}
+            className="btn-secondary btn-block"
+            onClick={handleGuest}
+            disabled={submitting !== null}
           >
-            Login
-          </button>
-          <button
-            type="button"
-            className={mode === 'signup' ? 'auth-tab active' : 'auth-tab'}
-            onClick={() => setMode('signup')}
-          >
-            Sign Up
+            {submitting === 'guest' ? 'Continuing...' : 'Continue as Guest'}
           </button>
         </div>
-
-        {signupDone && <p className="auth-success">Account created! You can now log in.</p>}
-
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <input
-            placeholder={mode === 'login' ? 'Enter your username' : 'Pick a username'}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={submitting !== null}
-          />
-          <input
-            placeholder={mode === 'login' ? 'Enter your password' : 'Pick a password'}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={submitting !== null}
-          />
-          <button type="submit" className="btn-primary btn-block" disabled={submitting !== null}>
-            {mode === 'login'
-              ? submitting === 'login'
-                ? 'Logging in...'
-                : 'Login'
-              : submitting === 'signup'
-                ? 'Creating account...'
-                : 'Create Account'}
-          </button>
-        </form>
-
-        {error && (
-          <p className="auth-error" role="alert">
-            {error}
-          </p>
-        )}
-
-        <hr />
-
-        <button
-          type="button"
-          className="btn-secondary btn-block"
-          onClick={handleGuest}
-          disabled={submitting !== null}
-        >
-          {submitting === 'guest' ? 'Continuing...' : 'Continue as Guest'}
-        </button>
       </div>
     </div>
   )
