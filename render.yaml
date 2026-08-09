@@ -3,6 +3,7 @@ services:
     name: checklist
     runtime: docker
     plan: free
+    region: singapore
     dockerfilePath: ./Dockerfile
     envVars:
       - key: SECRET_KEY
