@@ -80,13 +80,15 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     if (!addVisible || !category || !priority || !duePreset) return
     const finalCategory = category === 'Custom' ? customCategory.trim() || 'General' : category
     const dueDate = computeDueDate(duePreset, customDueDate || null)
+    // Collapse the option rows immediately - the mutation is optimistic, so
+    // the task itself already appears in the list right away too. Waiting
+    // for the server round trip here just left the buttons sitting on
+    // screen for however long the request took, with nothing left to do.
+    resetAll()
     addTask.mutate(
       { text: text.trim(), priority, category: finalCategory, dueDate },
       {
-        onSuccess: (task) => {
-          onAdded?.(task.id)
-          resetAll()
-        },
+        onSuccess: (task) => onAdded?.(task.id),
       }
     )
   }

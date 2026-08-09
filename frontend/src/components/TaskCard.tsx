@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion, Reorder, useDragControls } from 'framer-motion'
+import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
 import { useDeleteTask, useEditTask, useSetPinned } from '../hooks/useTasks'
@@ -171,21 +171,31 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
         {subtasksOpen && (
           <div className="subtask-panel">
             <ul className="subtask-list">
-              {task.subtasks.map((s) => (
-                <li key={s.clientKey ?? s.id} className={s.done ? 'subtask-row done' : 'subtask-row'}>
-                  <span>{s.text}</span>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    onClick={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+              <AnimatePresence>
+                {task.subtasks.map((s) => (
+                  <motion.li
+                    key={s.clientKey ?? s.id}
+                    layout
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className={s.done ? 'subtask-row done' : 'subtask-row'}
                   >
-                    {s.done ? '↩️' : '✔️'}
-                  </button>
-                  <button type="button" className="icon-btn" onClick={() => deleteSubtask.mutate(s.id)}>
-                    🗑️
-                  </button>
-                </li>
-              ))}
+                    <span>{s.text}</span>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                    >
+                      {s.done ? '↩️' : '✔️'}
+                    </button>
+                    <button type="button" className="icon-btn" onClick={() => deleteSubtask.mutate(s.id)}>
+                      🗑️
+                    </button>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
             </ul>
             <form className="subtask-add-form" onSubmit={submitSubtask}>
               <input

@@ -182,9 +182,14 @@ export function TaskListPage() {
 
           <ProgressBar done={doneCount} total={tasks.length} />
 
-          {filtered.length === 0 ? (
-            <p className="status-message">No tasks match your filters yet.</p>
-          ) : sortBy === 'Manual' ? (
+          {/* The list container (and its AnimatePresence) stays mounted even
+              when `filtered` is empty, so a just-deleted last item still gets
+              to play its exit animation - swapping it out for the "no
+              tasks" message the instant the array emptied (the previous
+              approach) unmounted AnimatePresence along with it, skipping
+              the animation entirely. The empty-state message is additive,
+              not a replacement. */}
+          {sortBy === 'Manual' ? (
             <Reorder.Group
               as="ul"
               axis="y"
@@ -221,6 +226,8 @@ export function TaskListPage() {
               </AnimatePresence>
             </ul>
           )}
+
+          {filtered.length === 0 && <p className="status-message">No tasks match your filters yet.</p>}
         </div>
       </div>
     </div>

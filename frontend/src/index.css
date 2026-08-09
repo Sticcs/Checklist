@@ -542,7 +542,8 @@ button:disabled {
 
 .entry-hint {
   margin: 0.35rem 0 0;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 
 .entry-hint-onboarding {
@@ -551,21 +552,20 @@ button:disabled {
 }
 
 .entry-hint-step {
-  opacity: 0.65;
-}
-
-.option-row-label {
-  margin: 0 0 0.4rem;
-  font-weight: 800;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  opacity: 1;
   color: #ff4b4b;
 }
 
-body[data-theme='dark'] .option-row-label {
+body[data-theme='dark'] .entry-hint-step {
   color: #ff7373;
+}
+
+.option-row-label {
+  margin: 0 0 0.35rem;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.8;
 }
 
 .option-row-buttons {
