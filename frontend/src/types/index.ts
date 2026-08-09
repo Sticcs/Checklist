@@ -32,6 +32,7 @@ export interface Task {
   pinned: boolean
   position: number
   notes: string | null
+  urgent: boolean
   subtasks: Subtask[]
   clientKey?: string
 }

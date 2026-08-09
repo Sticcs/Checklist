@@ -30,6 +30,7 @@ tasks_table = Table(
     Column("pinned", Integer, nullable=False, server_default=text("0")),
     Column("position", Float, nullable=False, server_default=text("0")),
     Column("notes", Text, nullable=True),
+    Column("urgent", Integer, nullable=False, server_default=text("0")),
 )
 
 subtasks_table = Table(
@@ -51,6 +52,7 @@ activity_log_table = Table(
     Column("action", String, nullable=False),
     Column("detail", Text, nullable=False),
     Column("created_at", String, nullable=False),
+    Column("task_id", Integer, nullable=True),
 )
 
 _engine = None
@@ -135,7 +137,16 @@ def init_db() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN notes TEXT"))
 
+    if "urgent" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0"))
+
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE subtasks ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0"))
+
+    existing_activity_columns = {c["name"] for c in inspector.get_columns("activity_log")}
+    if "task_id" not in existing_activity_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE activity_log ADD COLUMN task_id INTEGER"))

@@ -39,13 +39,18 @@ def undo(username: str) -> bool:
     stack = _stack_for(username)
     if not stack["undo"]:
         return False
+    before_tasks = crud.get_tasks(username)
     stack["redo"].append({
-        "tasks": crud.get_tasks(username),
+        "tasks": before_tasks,
         "subtasks": crud.get_all_subtasks(username),
     })
     last_state = stack["undo"].pop()
     crud.restore_state(last_state["tasks"], username)
     crud.restore_subtasks(last_state["subtasks"], username)
+    # Keep the streak/heatmap stats consistent with whatever this restore
+    # just did to each task's done state (e.g. undoing a completion should
+    # stop counting it) - see adjust_completion_log for the full reasoning.
+    crud.adjust_completion_log(username, before_tasks, last_state["tasks"])
     return True
 
 
@@ -53,11 +58,13 @@ def redo(username: str) -> bool:
     stack = _stack_for(username)
     if not stack["redo"]:
         return False
+    before_tasks = crud.get_tasks(username)
     stack["undo"].append({
-        "tasks": crud.get_tasks(username),
+        "tasks": before_tasks,
         "subtasks": crud.get_all_subtasks(username),
     })
     next_state = stack["redo"].pop()
     crud.restore_state(next_state["tasks"], username)
     crud.restore_subtasks(next_state["subtasks"], username)
+    crud.adjust_completion_log(username, before_tasks, next_state["tasks"])
     return True

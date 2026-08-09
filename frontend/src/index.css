@@ -145,8 +145,16 @@ body[data-theme='dark'] {
   width: 100%;
 }
 
-.scratchpad {
+.bottom-panels-row {
   margin-top: auto;
+  display: flex;
+  align-items: stretch;
+  gap: 1rem;
+  width: 100%;
+}
+
+.scratchpad {
+  flex-shrink: 0;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
@@ -185,6 +193,122 @@ body[data-theme='dark'] {
 .scratchpad-input:focus {
   outline: none;
   opacity: 1;
+}
+
+/* ----------------------------- Assessments ----------------------------- */
+.assessments-panel {
+  flex: 1;
+  min-width: 0;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.9rem;
+  height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+
+.assessments-heading {
+  margin: 0 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.6;
+}
+
+.assessments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.assessments-list .status-message {
+  font-size: 0.78rem;
+  opacity: 0.6;
+}
+
+.assessment-card {
+  background: var(--card-bg);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-left-width: 3px;
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+  padding: 0.45rem 0.6rem;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.25s ease;
+}
+
+.assessment-card[data-priority='High'] {
+  border-left-color: #e74c3c;
+}
+
+.assessment-card[data-priority='Medium'] {
+  border-left-color: #f39c12;
+}
+
+.assessment-card[data-priority='Low'] {
+  border-left-color: #3498db;
+}
+
+.assessment-card.done {
+  background: rgba(46, 204, 113, 1) !important;
+  border-color: rgba(39, 174, 96, 1) !important;
+  color: white;
+}
+
+body[data-theme='dark'] .assessment-card.done {
+  background: rgba(29, 131, 72, 1) !important;
+  border-color: rgba(20, 90, 50, 1) !important;
+}
+
+.assessment-card.focused {
+  border-color: rgba(46, 204, 113, 0.6) !important;
+  box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.25) !important;
+  animation: focus-flash 0.6s ease-out 1;
+}
+
+.assessment-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.assessment-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+
+.assessment-main .task-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assessment-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.assessment-actions .icon-btn {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.8rem;
 }
 
 .task-list-column {
@@ -865,7 +989,15 @@ body[data-theme='dark'] .task-card.focused {
   right: 1rem;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.5rem;
+  max-width: 160px;
+}
+
+.due-date-quick-input {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.4rem;
 }
 
 .task-done-checkbox {

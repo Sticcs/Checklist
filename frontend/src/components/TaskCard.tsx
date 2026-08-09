@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
-import { useDeleteTask, useEditTask, useSetPinned, useSetTaskNotes, useToggleDone } from '../hooks/useTasks'
+import {
+  useDeleteTask,
+  useEditTask,
+  useSetDueDate,
+  useSetPinned,
+  useSetTaskNotes,
+  useToggleDone,
+} from '../hooks/useTasks'
 import { useAddSubtask, useDeleteSubtask, useSetSubtaskUrgent, useToggleSubtask } from '../hooks/useSubtasks'
 import { daysUntil } from '../utils/dueDatePresets'
 
@@ -29,6 +36,8 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const [notesDraft, setNotesDraft] = useState(task.notes ?? '')
   const notesDirty = useRef(false)
 
+  const [dueDatePickerOpen, setDueDatePickerOpen] = useState(false)
+
   const setPinned = useSetPinned()
   const toggleDone = useToggleDone()
   const editTask = useEditTask()
@@ -38,6 +47,7 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const setSubtaskUrgent = useSetSubtaskUrgent()
   const deleteSubtask = useDeleteSubtask()
   const setTaskNotes = useSetTaskNotes()
+  const setDueDate = useSetDueDate()
   const dragControls = useDragControls()
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
@@ -216,6 +226,17 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
           📌
         </button>
         {!editing && (
+          <button
+            type="button"
+            className={task.due_date ? 'icon-btn btn-primary' : 'icon-btn'}
+            aria-pressed={dueDatePickerOpen}
+            title="Set due date"
+            onClick={() => setDueDatePickerOpen((prev) => !prev)}
+          >
+            📅
+          </button>
+        )}
+        {!editing && (
           <button type="button" className="icon-btn" onClick={startEditing}>
             ✏️
           </button>
@@ -223,6 +244,18 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
         <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
           🗑️
         </button>
+        {dueDatePickerOpen && (
+          <input
+            type="date"
+            className="due-date-quick-input"
+            value={task.due_date ?? ''}
+            autoFocus
+            onChange={(e) => {
+              setDueDate.mutate({ id: task.id, dueDate: e.target.value || null })
+              setDueDatePickerOpen(false)
+            }}
+          />
+        )}
       </div>
 
       <div className="subtask-section">

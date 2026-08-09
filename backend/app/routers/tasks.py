@@ -9,11 +9,13 @@ from app.models import (
     Task,
     TaskCreate,
     TaskDoneUpdate,
+    TaskDueDateUpdate,
     TaskNotesUpdate,
     TaskPinnedUpdate,
     TaskPositionUpdate,
     TasksResponse,
     TaskUpdate,
+    TaskUrgentUpdate,
 )
 from app.security import CurrentUser, get_current_user
 
@@ -92,6 +94,26 @@ def update_task_notes(
 ) -> Task:
     _require_task(task_id, current_user.username)
     task = crud.set_task_notes(task_id, body.notes, current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/urgent", response_model=Task)
+def toggle_task_urgent(
+    task_id: int, body: TaskUrgentUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    _require_task(task_id, current_user.username)
+    task = crud.set_task_urgent(task_id, body.urgent, current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/due-date", response_model=Task)
+def update_task_due_date(
+    task_id: int, body: TaskDueDateUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    _require_task(task_id, current_user.username)
+    task = crud.set_due_date(task_id, body.due_date, current_user.username)
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 

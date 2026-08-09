@@ -40,6 +40,7 @@ def _task_dict(row) -> dict:
     d = dict(row)
     d["done"] = bool(d["done"])
     d["pinned"] = bool(d["pinned"])
+    d["urgent"] = bool(d["urgent"])
     return d
 
 
@@ -126,16 +127,63 @@ def get_subtask_owning_task_id(subtask_id: int) -> int | None:
 
 # ----------------------------- Activity log -----------------------------
 
-def log_activity(username: str, action: str, detail: str) -> None:
+def log_activity(username: str, action: str, detail: str, task_id: int | None = None) -> None:
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO activity_log (username, action, detail, created_at) "
-                "VALUES (:username, :action, :detail, :created_at)"
+                "INSERT INTO activity_log (username, action, detail, created_at, task_id) "
+                "VALUES (:username, :action, :detail, :created_at, :task_id)"
             ),
-            {"username": username, "action": action, "detail": detail, "created_at": datetime.now().isoformat()},
+            {
+                "username": username,
+                "action": action,
+                "detail": detail,
+                "created_at": datetime.now().isoformat(),
+                "task_id": task_id,
+            },
         )
+
+
+def remove_latest_completed_log(username: str, task_id: int) -> None:
+    """Deletes the most recent 'completed' activity log entry for a specific
+    task - used when undo/redo restores a task's `done` field back to False,
+    so the streak/heatmap stats (derived from this log) stop counting a
+    completion that's being reversed. See adjust_completion_log."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT id FROM activity_log WHERE username = :username AND action = 'completed' "
+                "AND task_id = :task_id ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"username": username, "task_id": task_id},
+        ).mappings().fetchone()
+        if row:
+            conn.execute(text("DELETE FROM activity_log WHERE id = :id"), {"id": row["id"]})
+
+
+def adjust_completion_log(username: str, before_tasks: list[dict], after_tasks: list[dict]) -> None:
+    """Called by undo/redo right after restoring `after_tasks` over
+    `before_tasks`: for any task whose `done` field flips as a result, keeps
+    the 'completed' activity log (and therefore the streak/heatmap stats
+    derived from it) consistent with the state actually being restored -
+    removing the log entry if a completion is being undone, adding one if a
+    completion is being restored (e.g. redoing it, or undoing an
+    "uncomplete"). Without this, undoing a completion would still count
+    toward the streak forever, since undo/redo works by restoring a full
+    prior snapshot rather than literally reversing the one action taken."""
+    before_by_id = {t["id"]: t for t in before_tasks}
+    for after in after_tasks:
+        before = before_by_id.get(after["id"])
+        if before is None:
+            continue
+        was_done = bool(before["done"])
+        now_done = bool(after["done"])
+        if was_done and not now_done:
+            remove_latest_completed_log(username, after["id"])
+        elif not was_done and now_done:
+            log_activity(username, "completed", after["text"], task_id=after["id"])
 
 
 def get_activity_log(username: str, limit: int = 15) -> list[dict]:
@@ -228,8 +276,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent)"
                 ),
                 {
                     "id": t["id"],
@@ -248,6 +296,7 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     # omitting it here would silently wipe notes on every
                     # task any time an unrelated action got undone.
                     "notes": t.get("notes"),
+                    "urgent": int(t.get("urgent", False)),
                 },
             )
 
@@ -311,7 +360,7 @@ def add_task(task_text: str, priority: str, category: str, due_date: str | None,
                 "position": new_position,
             },
         ).scalar_one()
-    log_activity(username, "added", task_text)
+    log_activity(username, "added", task_text, task_id=new_id)
     return get_task(new_id, username)
 
 
@@ -328,7 +377,7 @@ def set_done(task_id: int, done: bool, username: str) -> dict | None:
             text("UPDATE subtasks SET done = :done WHERE task_id = :task_id"),
             {"done": int(done), "task_id": task_id},
         )
-    log_activity(username, "completed" if done else "uncompleted", task_text)
+    log_activity(username, "completed" if done else "uncompleted", task_text, task_id=task_id)
     return get_task(task_id, username)
 
 
@@ -341,7 +390,7 @@ def set_pinned(task_id: int, pinned: bool, username: str) -> dict | None:
             text("UPDATE tasks SET pinned = :pinned WHERE id = :id AND username = :username"),
             {"pinned": int(pinned), "id": task_id, "username": username},
         )
-    log_activity(username, "pinned" if pinned else "unpinned", task_text)
+    log_activity(username, "pinned" if pinned else "unpinned", task_text, task_id=task_id)
     return get_task(task_id, username)
 
 
@@ -353,6 +402,30 @@ def set_position(task_id: int, position: float, username: str) -> dict | None:
             text("UPDATE tasks SET position = :position WHERE id = :id AND username = :username"),
             {"position": position, "id": task_id, "username": username},
         )
+    return get_task(task_id, username)
+
+
+def set_task_urgent(task_id: int, urgent: bool, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET urgent = :urgent WHERE id = :id AND username = :username"),
+            {"urgent": int(urgent), "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
+def set_due_date(task_id: int, due_date: str | None, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        task_text = _get_task_text(conn, task_id)
+        conn.execute(
+            text("UPDATE tasks SET due_date = :due_date WHERE id = :id AND username = :username"),
+            {"due_date": due_date, "id": task_id, "username": username},
+        )
+    log_activity(username, "edited", task_text, task_id=task_id)
     return get_task(task_id, username)
 
 
@@ -394,7 +467,7 @@ def update_task(task_id: int, task_text: str, priority: str, category: str, due_
             },
         )
     detail = task_text if task_text == old_text else f"{old_text} → {task_text}"
-    log_activity(username, "edited", detail)
+    log_activity(username, "edited", detail, task_id=task_id)
     return get_task(task_id, username)
 
 
@@ -408,7 +481,7 @@ def delete_task(task_id: int, username: str) -> None:
             text("DELETE FROM tasks WHERE id = :id AND username = :username"),
             {"id": task_id, "username": username},
         )
-    log_activity(username, "deleted", task_text)
+    log_activity(username, "deleted", task_text, task_id=task_id)
 
 
 def clear_completed(username: str) -> int:

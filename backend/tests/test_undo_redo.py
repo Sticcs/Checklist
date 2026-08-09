@@ -97,6 +97,61 @@ def test_full_mutate_mutate_undo_undo_redo_round_trip(guest_client):
     assert tasks[0]["subtasks"][0]["text"] == "Subtask A1"
 
 
+def test_undo_completing_a_task_removes_it_from_the_streak(guest_client):
+    client, _ = guest_client
+    task = client.post(
+        "/api/tasks", json={"text": "Task A", "priority": "Medium", "category": "General"}
+    ).json()
+
+    client.patch(f"/api/tasks/{task['id']}/done", json={"done": True})
+    stats = client.get("/api/stats").json()
+    assert stats["total_completed"] == 1
+    assert stats["current_streak"] == 1
+
+    r = client.post("/api/undo")
+    assert r.status_code == 200
+    assert r.json()["tasks"][0]["done"] is False
+
+    stats = client.get("/api/stats").json()
+    assert stats["total_completed"] == 0
+    assert stats["current_streak"] == 0
+
+
+def test_redo_recompleting_a_task_restores_the_streak(guest_client):
+    client, _ = guest_client
+    task = client.post(
+        "/api/tasks", json={"text": "Task A", "priority": "Medium", "category": "General"}
+    ).json()
+    client.patch(f"/api/tasks/{task['id']}/done", json={"done": True})
+    client.post("/api/undo")
+    assert client.get("/api/stats").json()["total_completed"] == 0
+
+    r = client.post("/api/redo")
+    assert r.status_code == 200
+    assert r.json()["tasks"][0]["done"] is True
+
+    stats = client.get("/api/stats").json()
+    assert stats["total_completed"] == 1
+    assert stats["current_streak"] == 1
+
+
+def test_undo_unrelated_action_does_not_touch_a_separate_completion(guest_client):
+    """Undoing the *second* action (adding Task B) shouldn't remove Task A's
+    completion from the streak - only a done-state flip should."""
+    client, _ = guest_client
+    task_a = client.post(
+        "/api/tasks", json={"text": "Task A", "priority": "Medium", "category": "General"}
+    ).json()
+    client.patch(f"/api/tasks/{task_a['id']}/done", json={"done": True})
+    client.post("/api/tasks", json={"text": "Task B", "priority": "Medium", "category": "General"})
+
+    assert client.get("/api/stats").json()["total_completed"] == 1
+
+    client.post("/api/undo")  # undoes "add Task B"
+    stats = client.get("/api/stats").json()
+    assert stats["total_completed"] == 1  # Task A's completion is untouched
+
+
 def test_undo_redo_isolated_per_user(client):
     from fastapi.testclient import TestClient
 

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { isTypingElement } from '../utils/isTypingElement'
+import { useUndo, useRedo } from './useUndoRedo'
 
 interface Params {
   focusedTaskId: number | null
@@ -54,4 +55,37 @@ export function useSubtaskFocusHotkey({ focusedTaskId, latestTaskId, lastExpande
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [focusedTaskId, latestTaskId, lastExpandedTaskId, onConsumeLatest])
+}
+
+// Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes - the standard
+// desktop-app convention. Gated on isTypingElement so it doesn't hijack a
+// text input's own native undo (e.g. reverting your last keystroke in the
+// task-text or notes field) - the app-level hotkey only fires when focus
+// isn't in a text field to begin with.
+export function useUndoRedoHotkeys() {
+  const undo = useUndo()
+  const redo = useRedo()
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      if (isTypingElement(document.activeElement)) return
+
+      const key = e.key.toLowerCase()
+      if (key === 'z' && e.shiftKey) {
+        e.preventDefault()
+        redo.mutate()
+      } else if (key === 'z') {
+        e.preventDefault()
+        undo.mutate()
+      } else if (key === 'y') {
+        e.preventDefault()
+        redo.mutate()
+      }
+    }
+
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 }

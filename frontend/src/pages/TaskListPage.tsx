@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
-import { useSubtaskFocusHotkey } from '../hooks/useHotkeys'
+import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
 import { AddTaskForm } from '../components/AddTaskForm'
 import { TaskCard } from '../components/TaskCard'
 import { ProgressBar } from '../components/ProgressBar'
 import { QuoteHeader } from '../components/QuoteHeader'
 import { Scratchpad } from '../components/Scratchpad'
+import { AssessmentsPanel } from '../components/AssessmentsPanel'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
 import { toISODate } from '../utils/dueDatePresets'
+import { ASSESSMENT_CATEGORY } from '../constants'
 import type { Task } from '../types'
 
 export function TaskListPage() {
@@ -31,9 +33,16 @@ export function TaskListPage() {
   const tasks = useMemo(() => data?.tasks ?? [], [data])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
 
+  // Assessments (category === 'Assessment') live in their own panel, not the
+  // main list - everything else about them (mutations, undo/redo, clear
+  // completed) is shared, via the same `tasks` entity and the same
+  // click-delegation handler below, just filtered into a different view.
+  const mainTasks = useMemo(() => tasks.filter((t) => t.category !== ASSESSMENT_CATEGORY), [tasks])
+  const assessments = useMemo(() => tasks.filter((t) => t.category === ASSESSMENT_CATEGORY), [tasks])
+
   const availableCategories = useMemo(
-    () => Array.from(new Set(tasks.map((t) => t.category))).sort(),
-    [tasks]
+    () => Array.from(new Set(mainTasks.map((t) => t.category))).sort(),
+    [mainTasks]
   )
 
   // A category that disappears (e.g. after Clear all) shouldn't leave a
@@ -48,7 +57,7 @@ export function TaskListPage() {
   }, [availableCategories.join(',')])
 
   const filtered = useMemo(() => {
-    let result: Task[] = tasks
+    let result: Task[] = mainTasks
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       result = result.filter((t) => t.text.toLowerCase().includes(q))
@@ -58,7 +67,7 @@ export function TaskListPage() {
     if (categoryFilter.length > 0) result = result.filter((t) => categoryFilter.includes(t.category))
     if (pinnedOnly) result = result.filter((t) => t.pinned)
     return sortTasks(result, sortBy)
-  }, [tasks, search, statusFilter, categoryFilter, pinnedOnly, sortBy])
+  }, [mainTasks, search, statusFilter, categoryFilter, pinnedOnly, sortBy])
 
   // Local copy driving the drag visuals in Manual mode: framer-motion's
   // Reorder.Group needs a values array it can update continuously as items
@@ -82,7 +91,8 @@ export function TaskListPage() {
   }
 
   const todayIso = toISODate(new Date())
-  const doneCount = tasks.filter((t) => t.done).length
+  const doneCount = mainTasks.filter((t) => t.done).length
+  const hasAnyCompletedTasks = tasks.some((t) => t.done)
 
   // Click-to-complete via event delegation: Ctrl/Cmd+click anywhere inside a
   // card's "content area" (data-task-content-id) toggles it done immediately
@@ -130,6 +140,7 @@ export function TaskListPage() {
     lastExpandedTaskId,
     onConsumeLatest: () => setLatestTaskId(null),
   })
+  useUndoRedoHotkeys()
 
   return (
     <div className="app-layout">
@@ -169,7 +180,7 @@ export function TaskListPage() {
           onSortByChange={setSortBy}
           canUndo={data?.can_undo ?? false}
           canRedo={data?.can_redo ?? false}
-          hasCompletedTasks={doneCount > 0}
+          hasCompletedTasks={hasAnyCompletedTasks}
           onClose={() => setSidebarOpen(false)}
         />
       </motion.div>
@@ -178,9 +189,12 @@ export function TaskListPage() {
         <div className="entry-column">
           <div className="task-entry-panel">
             <QuoteHeader />
-            <AddTaskForm onAdded={(id) => setLatestTaskId(id)} hasTasks={tasks.length > 0} />
+            <AddTaskForm onAdded={(id) => setLatestTaskId(id)} hasTasks={mainTasks.length > 0} />
           </div>
-          <Scratchpad />
+          <div className="bottom-panels-row">
+            <Scratchpad />
+            <AssessmentsPanel assessments={assessments} focusedTaskId={focusedTaskId} todayIso={todayIso} />
+          </div>
         </div>
 
         <div className="task-list-column">
@@ -191,9 +205,9 @@ export function TaskListPage() {
             </p>
           )}
 
-          <ProgressBar done={doneCount} total={tasks.length} />
+          <ProgressBar done={doneCount} total={mainTasks.length} />
 
-          {tasks.length > 0 && (
+          {mainTasks.length > 0 && (
             <p className="complete-hint">💡 Ctrl/Cmd+click a task to mark it complete</p>
           )}
 

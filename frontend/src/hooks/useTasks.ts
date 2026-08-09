@@ -74,6 +74,7 @@ export function useAddTask() {
         pinned: false,
         position: (positions.length > 0 ? Math.min(...positions) : 0) - 1,
         notes: null,
+        urgent: false,
         subtasks: [],
         clientKey,
       }
@@ -211,6 +212,47 @@ export function useSetPosition() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to reorder task')
+    },
+  })
+}
+
+export function useSetTaskUrgent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, urgent }: { id: number; urgent: boolean }) => tasksApi.setUrgent(id, urgent),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      setTasksData(queryClient, (old) => ({
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, urgent: vars.urgent } : t)),
+        can_undo: true,
+        can_redo: false,
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to update urgent flag')
+    },
+  })
+}
+
+export function useSetDueDate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, dueDate }: { id: number; dueDate: string | null }) => tasksApi.setDueDate(id, dueDate),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      setTasksData(queryClient, (old) => ({
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, due_date: vars.dueDate } : t)),
+        can_undo: true,
+        can_redo: false,
+      }))
+      toast.success('Due date updated')
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to update due date')
     },
   })
 }

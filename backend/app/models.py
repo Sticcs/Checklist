@@ -78,6 +78,14 @@ class TaskNotesUpdate(BaseModel):
     notes: str
 
 
+class TaskUrgentUpdate(BaseModel):
+    urgent: bool
+
+
+class TaskDueDateUpdate(BaseModel):
+    due_date: str | None = None
+
+
 class Task(BaseModel):
     id: int
     text: str
@@ -90,6 +98,7 @@ class Task(BaseModel):
     pinned: bool
     position: float
     notes: str | None
+    urgent: bool
     subtasks: list[Subtask] = []
 
 

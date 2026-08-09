@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { undoApi } from '../api/undo'
 import { TASKS_KEY } from './useTasks'
+import { STATS_KEY } from './useStats'
 import { popRedo, popUndo, redoStackHasMore, undoStackHasMore } from './undoRedoStack'
 import type { TasksResponse } from '../types'
 
@@ -39,6 +40,12 @@ export function useUndo() {
       return { applied: true, current }
     },
     onSuccess: (data, _vars, ctx) => {
+      // The server may have just adjusted the completion log (undoing a
+      // completion drops it from the streak, redoing one re-adds it - see
+      // crud.adjust_completion_log) - the stats panel has no way to guess
+      // that optimistically, so it refetches here regardless of whether the
+      // tasks array itself was applied optimistically or not.
+      queryClient.invalidateQueries({ queryKey: STATS_KEY })
       if (ctx?.applied) {
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old ? { ...old, can_undo: data.can_undo, can_redo: data.can_redo } : old
@@ -74,6 +81,7 @@ export function useRedo() {
       return { applied: true, current }
     },
     onSuccess: (data, _vars, ctx) => {
+      queryClient.invalidateQueries({ queryKey: STATS_KEY })
       if (ctx?.applied) {
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old ? { ...old, can_undo: data.can_undo, can_redo: data.can_redo } : old
