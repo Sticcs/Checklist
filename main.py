@@ -507,6 +507,7 @@ st.markdown(
         flex-direction: column;
         justify-content: center;
         transition: opacity 0.05s ease;
+        cursor: pointer;
     }
     .task-row.is-done { opacity: 0.4; }
     .task-title {
@@ -545,6 +546,30 @@ st.markdown(
     body.custom-dark div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .task-card-marker[data-done="true"]) {
         background-color: rgba(29, 131, 72, 1) !important;
         border-color: rgba(20, 90, 50, 1) !important;
+    }
+
+    /* Real toggle button for a task card - kept functional (clicked by JS to
+       actually commit the completion) but never shown; clicking the card
+       itself is the whole interaction now. */
+    div[data-testid="stElementContainer"]:has(.hidden-toggle-marker) + div[data-testid="stElementContainer"] {
+        display: none !important;
+    }
+
+    /* First click on a task card's empty space "arms" it - a light, obviously
+       different fill that reads as "click again to confirm" - before the
+       second click actually commits the completion (or reverts it, for an
+       already-completed card). Smooth transition so it visibly "lights up"
+       rather than snapping. */
+    div[data-testid="stVerticalBlock"].armed-complete {
+        background-color: rgba(255, 255, 255, 0.97) !important;
+        border-color: rgba(46, 204, 113, 0.6) !important;
+        box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.25) !important;
+        transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease !important;
+    }
+    body.custom-dark div[data-testid="stVerticalBlock"].armed-complete {
+        background-color: rgba(255, 255, 255, 0.18) !important;
+        border-color: rgba(46, 204, 113, 0.7) !important;
+        box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.3) !important;
     }
 
     .meta-tags {
@@ -879,12 +904,13 @@ else:
            at the natural top of the list. --- */
         div[data-testid="stElementContainer"]:has(#overall-progress-marker) + div[data-testid="stElementContainer"] {
             padding: 0.6rem 1rem !important;
-            /* The right column's #right-col-anchor marker and this bar's own
-               #overall-progress-marker are each a separate zero-height
-               placeholder div, and Streamlit puts a 16px gap after each one -
-               pulling the bar up by that stacked 32px lines its top edge up
-               with the task entry panel's top edge on the left. */
-            margin: -32px 2px 0.4rem 2px !important;
+            /* Vertical alignment with the left panel is corrected dynamically in
+               JS (see alignProgressBarWithLeftPanel below) instead of a fixed
+               margin here - the exact gap above this bar varies (e.g. the
+               one-rerun-only toast/tracker markers that appear right after
+               adding a task each add their own spacing), so a hardcoded value
+               only stayed correct in whichever specific case it was measured in. */
+            margin: 0 2px 0.4rem 2px !important;
             border-radius: 12px !important;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
@@ -1291,7 +1317,17 @@ else:
                         html_string = f"""<div class="task-row border-{t['priority']} {done_class} {anim_class}"><div class="task-title {done_class}">{pin_html}<span>{t['text']}</span>{urgent_html}</div><div class="meta-tags">{tags_html}</div></div>"""
                         
                         st.markdown(html_string, unsafe_allow_html=True)
-                        
+
+                        # Real toggle button, kept in the DOM but visually hidden
+                        # (see CSS) - clicking anywhere on the card's own empty
+                        # space now drives completion via a JS arm/confirm dance
+                        # (see setupMagic's card-click handler) that ends by
+                        # clicking this button, so the actual state change still
+                        # goes through the normal Streamlit callback.
+                        st.markdown(f"<div class='hidden-toggle-marker' data-task-id='{t['id']}' style='display:none;'></div>", unsafe_allow_html=True)
+                        st.button("toggle-done", key=f"tog_{t['id']}",
+                                  on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username))
+
                         # ---------------- Subtasks ----------------
                         subtasks = get_subtasks(t["id"])
                         sub_total = len(subtasks)
@@ -1385,13 +1421,6 @@ else:
                         st.button("📌", key=f"pin_{t['id']}",
                                   on_click=handle_task_pin, args=(t["id"], bool(t["pinned"]), st.session_state.username),
                                   use_container_width=True, type="primary" if t["pinned"] else "secondary")
-                        if t["done"]:
-                            st.button("↩️", key=f"tog_{t['id']}",
-                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
-                        else:
-                            st.button("✔️", key=f"tog_{t['id']}",
-                                      on_click=handle_task_toggle, args=(t["id"], bool(t["done"]), st.session_state.username), use_container_width=True)
-
                         if st.button("✏️", key=f"edit_{t['id']}", use_container_width=True):
                             st.session_state[f"editing_{t['id']}"] = True
                         st.button("🗑️", key=f"del_{t['id']}",
@@ -1456,6 +1485,30 @@ components.html(
         // color getting stuck on the wrong card if a resort reuses its DOM
         // position for a different task.
     }, 100);
+
+    // Keeps the progress bar's top edge lined up with the task entry panel's
+    // top edge, measured and re-applied every tick rather than assuming a
+    // fixed gap - the space above the bar isn't constant (e.g. the toast/
+    // tracker markers that render for exactly one rerun right after adding a
+    // task add their own extra spacing), so any hardcoded correction only
+    // stays right in whichever specific case it was measured against.
+    setInterval(() => {
+        const leftPanel = doc.getElementById('left-panel-marker');
+        const marker = doc.getElementById('overall-progress-marker');
+        if (!leftPanel || !marker) return;
+        const leftCol = leftPanel.closest('div[data-testid="stColumn"]');
+        const container = marker.closest('div[data-testid="stElementContainer"]');
+        const bar = container ? container.nextElementSibling : null;
+        if (!leftCol || !bar) return;
+
+        // Measure from the *natural* position (no prior correction applied),
+        // so repeated ticks don't compound an existing offset.
+        bar.style.removeProperty('margin-top');
+        const delta = bar.getBoundingClientRect().top - leftCol.getBoundingClientRect().top;
+        if (Math.abs(delta) > 1) {
+            bar.style.setProperty('margin-top', `${-delta}px`, 'important');
+        }
+    }, 150);
 
     // Persist Scroll memory - remembers the right column's scroll position across
     // reruns (native mouse-wheel/scrollbar scrolling handles the actual scrolling;
@@ -1871,6 +1924,60 @@ components.html(
                 if (isPri) window.prioritySelected = true;
                 if (isDue) window.dueSelected = true;
             }
+        }
+    }, true);
+
+    // --- Click-to-complete: task cards have no checkmark button anymore.
+    // Clicking any empty space on the card "arms" it (a light, obviously-
+    // different fill, smoothly transitioned in) as a confirmation step; a
+    // second click while armed actually commits the toggle by clicking the
+    // real (hidden) Streamlit button for that task. Clicking anything
+    // interactive within the card (pin/edit/delete, the subtask expander and
+    // everything inside it) never arms/confirms, and disarms whatever else
+    // was armed so a card can't get stuck lit up. ---
+    let armedTaskId = null;
+    function disarmCard(taskId) {
+        const m = doc.querySelector(`.task-card-marker[data-task-id="${taskId}"]`);
+        const c = m ? m.closest('div[data-testid="stVerticalBlock"]') : null;
+        if (c) c.classList.remove('armed-complete');
+        if (armedTaskId === taskId) armedTaskId = null;
+    }
+    doc.addEventListener('click', (e) => {
+        const isInteractive = !!e.target.closest('button, a, input, textarea, [data-testid="stExpander"]');
+
+        let clickedCard = null, clickedTaskId = null;
+        const markers = doc.querySelectorAll('.task-card-marker');
+        for (const m of markers) {
+            const c = m.closest('div[data-testid="stVerticalBlock"]');
+            if (c && c.contains(e.target)) {
+                clickedCard = c;
+                clickedTaskId = m.getAttribute('data-task-id');
+                break;
+            }
+        }
+
+        if (isInteractive) {
+            if (armedTaskId && armedTaskId !== clickedTaskId) disarmCard(armedTaskId);
+            return;
+        }
+
+        if (!clickedCard) {
+            if (armedTaskId) disarmCard(armedTaskId);
+            return;
+        }
+
+        if (armedTaskId && armedTaskId !== clickedTaskId) disarmCard(armedTaskId);
+
+        if (clickedCard.classList.contains('armed-complete')) {
+            disarmCard(clickedTaskId);
+            const toggleMarker = clickedCard.querySelector('.hidden-toggle-marker');
+            const container = toggleMarker ? toggleMarker.closest('div[data-testid="stElementContainer"]') : null;
+            const hiddenBtn = container && container.nextElementSibling
+                ? container.nextElementSibling.querySelector('button') : null;
+            if (hiddenBtn) hiddenBtn.click();
+        } else {
+            clickedCard.classList.add('armed-complete');
+            armedTaskId = clickedTaskId;
         }
     }, true);
 
