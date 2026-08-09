@@ -59,7 +59,7 @@ hr {
 
 /* ----------------------------- Theme tokens ----------------------------- */
 body[data-theme='light'] {
-  --bg-image: url('https://img.magnific.com/free-vector/green-monstera-leaves-with-copy-space-vector_53876-111532.jpg?semt=ais_hybrid&w=740&q=80');
+  --bg-image: url('https://images.unsplash.com/photo-1538438253612-287c9fc9217e?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTB8fHBsYW50cyUyMHdoaXRlJTIwYmFja2dyb3VuZHxlbnwwfHwwfHx8MA%3D%3D');
   --glass-bg: rgba(255, 255, 255, 0.65);
   --glass-border: rgba(255, 255, 255, 0.4);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
