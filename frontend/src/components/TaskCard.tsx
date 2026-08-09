@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
 import { useDeleteTask, useEditTask, useSetPinned } from '../hooks/useTasks'
-import { useAddSubtask, useDeleteSubtask, useToggleSubtask } from '../hooks/useSubtasks'
+import { useAddSubtask, useDeleteSubtask, useSetSubtaskUrgent, useToggleSubtask } from '../hooks/useSubtasks'
 
 interface Props {
   task: Task
@@ -29,12 +29,21 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const deleteTask = useDeleteTask()
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
+  const setSubtaskUrgent = useSetSubtaskUrgent()
   const deleteSubtask = useDeleteSubtask()
   const dragControls = useDragControls()
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
-  const urgent = task.due_date === todayIso && !task.done
+  const dueUrgent = task.due_date === todayIso && !task.done
   const subDone = task.subtasks.filter((s) => s.done).length
+  const urgentSubtaskCount = task.subtasks.filter((s) => s.urgent).length
+
+  // Clicking to focus a task is also how you get at its subtasks now - open
+  // the panel the moment focus lands, close it the moment focus leaves,
+  // without needing a separate click on the toggle button first.
+  useEffect(() => {
+    setSubtasksOpen(focused)
+  }, [focused])
 
   const toggleSubtasksOpen = () => {
     const next = !subtasksOpen
@@ -121,7 +130,12 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
               </span>
             )}
             <span className={task.done ? 'task-text done' : 'task-text'}>{task.text}</span>
-            {urgent && <span className="urgent-badge">🚨 Urgent!</span>}
+            {dueUrgent && <span className="urgent-badge">🚨 Urgent!</span>}
+            {urgentSubtaskCount > 0 && (
+              <span className="urgent-subtask-badge" title={`${urgentSubtaskCount} urgent subtask(s)`}>
+                🔥 {urgentSubtaskCount}
+              </span>
+            )}
           </div>
           <div className="meta-tags">
             <span className="badge">{task.category}</span>
@@ -183,6 +197,15 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                     className={s.done ? 'subtask-row done' : 'subtask-row'}
                   >
                     <span>{s.text}</span>
+                    <button
+                      type="button"
+                      className={s.urgent ? 'icon-btn btn-primary' : 'icon-btn'}
+                      aria-pressed={s.urgent}
+                      title={s.urgent ? 'Unmark urgent' : 'Mark urgent'}
+                      onClick={() => setSubtaskUrgent.mutate({ subtaskId: s.id, urgent: !s.urgent })}
+                    >
+                      🔥
+                    </button>
                     <button
                       type="button"
                       className="icon-btn"

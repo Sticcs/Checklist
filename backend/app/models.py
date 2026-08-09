@@ -28,12 +28,17 @@ class SubtaskDoneUpdate(BaseModel):
     done: bool
 
 
+class SubtaskUrgentUpdate(BaseModel):
+    urgent: bool
+
+
 class Subtask(BaseModel):
     id: int
     task_id: int
     text: str
     done: bool
     created_at: str
+    urgent: bool
 
 
 class SubtaskMutationResponse(BaseModel):

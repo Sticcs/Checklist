@@ -46,6 +46,7 @@ def _task_dict(row) -> dict:
 def _subtask_dict(row) -> dict:
     d = dict(row)
     d["done"] = bool(d["done"])
+    d["urgent"] = bool(d["urgent"])
     return d
 
 
@@ -194,8 +195,8 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
         for s in state_subtasks:
             conn.execute(
                 text(
-                    "INSERT INTO subtasks (id, task_id, text, done, created_at) "
-                    "VALUES (:id, :task_id, :text, :done, :created_at)"
+                    "INSERT INTO subtasks (id, task_id, text, done, created_at, urgent) "
+                    "VALUES (:id, :task_id, :text, :done, :created_at, :urgent)"
                 ),
                 {
                     "id": s["id"],
@@ -203,6 +204,7 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
                     "text": s["text"],
                     "done": int(s["done"]),
                     "created_at": s["created_at"],
+                    "urgent": int(s.get("urgent", False)),
                 },
             )
 
@@ -436,6 +438,20 @@ def set_subtask_done(subtask_id: int, task_id: int, done: bool, username: str) -
             parent_done = bool(task_row["done"]) if task_row else False
 
     return (_subtask_dict(row) if row else None), parent_done
+
+
+def set_subtask_urgent(subtask_id: int, urgent: bool, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE subtasks SET urgent = :urgent WHERE id = :id"),
+            {"urgent": int(urgent), "id": subtask_id},
+        )
+        row = conn.execute(
+            text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
+        ).mappings().fetchone()
+    return _subtask_dict(row) if row else None
 
 
 def delete_subtask(subtask_id: int, task_id: int, username: str) -> bool:

@@ -39,6 +39,7 @@ subtasks_table = Table(
     Column("text", Text, nullable=False),
     Column("done", Integer, nullable=False, server_default=text("0")),
     Column("created_at", String, nullable=False),
+    Column("urgent", Integer, nullable=False, server_default=text("0")),
 )
 
 activity_log_table = Table(
@@ -121,10 +122,15 @@ def init_db() -> None:
     # existed (e.g. the real checklist.db) needs an explicit migration here,
     # same defensive pattern the original main.py used for schema changes.
     inspector = inspect(engine)
-    existing_columns = {c["name"] for c in inspector.get_columns("tasks")}
-    if "position" not in existing_columns:
+    existing_task_columns = {c["name"] for c in inspector.get_columns("tasks")}
+    if "position" not in existing_task_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN position FLOAT NOT NULL DEFAULT 0"))
             # Backfill so the initial "Manual" order matches what users
             # already see today (newest first, i.e. highest id first).
             conn.execute(text("UPDATE tasks SET position = -id"))
+
+    existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
+    if "urgent" not in existing_subtask_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE subtasks ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0"))

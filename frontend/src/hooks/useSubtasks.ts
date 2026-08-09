@@ -40,6 +40,7 @@ export function useAddSubtask() {
                           text: vars.text,
                           done: false,
                           created_at: new Date().toISOString(),
+                          urgent: false,
                           clientKey,
                         },
                       ],
@@ -105,6 +106,40 @@ export function useToggleSubtask() {
                 else if (subtasks.every((s) => s.done)) done = true
                 return { ...t, subtasks, done }
               }),
+              can_undo: true,
+              can_redo: false,
+            }
+          : old
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to update subtask')
+    },
+  })
+}
+
+export function useSetSubtaskUrgent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ subtaskId, urgent }: { subtaskId: number; urgent: boolean }) =>
+      subtasksApi.setUrgent(subtaskId, urgent),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+        old
+          ? {
+              tasks: old.tasks.map((t) =>
+                t.subtasks.some((s) => s.id === vars.subtaskId)
+                  ? {
+                      ...t,
+                      subtasks: t.subtasks.map((s) =>
+                        s.id === vars.subtaskId ? { ...s, urgent: vars.urgent } : s
+                      ),
+                    }
+                  : t
+              ),
               can_undo: true,
               can_redo: false,
             }

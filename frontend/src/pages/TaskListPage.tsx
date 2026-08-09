@@ -87,27 +87,38 @@ export function TaskListPage() {
   // Click-to-complete via event delegation: Ctrl/Cmd+click anywhere inside a
   // card's "content area" (data-task-content-id) toggles it done immediately
   // - no confirmation step. A plain click there instead focuses that task
-  // (so '/' routes to its subtask input, see useSubtaskFocusHotkey); clicking
-  // the already-focused task's content again clears focus, as does clicking
-  // anywhere else (buttons, expander, blank space).
+  // (so '/' routes to its subtask input, see useSubtaskFocusHotkey, and its
+  // subtasks auto-expand, see TaskCard); clicking the already-focused task's
+  // content again clears focus. Focus only clears on a click genuinely
+  // outside any task card (data-task-id) - a click elsewhere *within* the
+  // focused task's own card (its subtask panel, action buttons) leaves focus
+  // alone, since the auto-expanded subtask panel needs to stay open while
+  // you're actually interacting with it.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement
+      const taskCard = target.closest('[data-task-id]')
       const contentArea = target.closest('[data-task-content-id]')
-      const clickedId = contentArea ? Number(contentArea.getAttribute('data-task-content-id')) : null
+      const contentId = contentArea ? Number(contentArea.getAttribute('data-task-content-id')) : null
 
-      if (clickedId === null) {
+      if (!taskCard) {
         setFocusedTaskId((prev) => (prev !== null ? null : prev))
         return
       }
 
-      if (e.ctrlKey || e.metaKey) {
-        const task = tasksById.get(clickedId)
-        if (task) toggleDone.mutate({ id: clickedId, done: !task.done })
+      if (contentId === null) {
+        // Inside a task card, but not its content area (buttons, subtask
+        // panel, drag handle) - nothing to do with focus here.
         return
       }
 
-      setFocusedTaskId((prev) => (prev === clickedId ? null : clickedId))
+      if (e.ctrlKey || e.metaKey) {
+        const task = tasksById.get(contentId)
+        if (task) toggleDone.mutate({ id: contentId, done: !task.done })
+        return
+      }
+
+      setFocusedTaskId((prev) => (prev === contentId ? null : contentId))
     }
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
