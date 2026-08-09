@@ -65,6 +65,30 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const subDone = task.subtasks.filter((s) => s.done).length
   const urgentSubtaskCount = task.subtasks.filter((s) => s.urgent).length
 
+  // Tally not-done subtasks by days-until-due, so "3 subtasks due in 2 days"
+  // and "1 subtask due in 5 days" show as separate counts instead of being
+  // flattened into one combined number.
+  const subtaskDueTally = (() => {
+    const counts = new Map<number, number>()
+    for (const s of task.subtasks) {
+      if (s.done || !s.due_date) continue
+      const d = daysUntil(s.due_date, todayIso)
+      counts.set(d, (counts.get(d) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => a[0] - b[0])
+  })()
+  const subtaskDueTallyText = subtaskDueTally
+    .map(([d, count]) => {
+      const label =
+        d < 0
+          ? `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue`
+          : d === 0
+            ? 'due today'
+            : `due in ${d} day${d === 1 ? '' : 's'}`
+      return `${count} ${label}`
+    })
+    .join(', ')
+
   // A one-shot glow that plays exactly once on the false->true transition
   // (not on every render while done, and not on initial mount if the task
   // was already done when it loaded).
@@ -204,6 +228,11 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                 🔥 {urgentSubtaskCount}
               </span>
             )}
+            {subtaskDueTallyText && (
+              <span className="subtask-due-tally-badge" title="Subtask due dates">
+                📅 {subtaskDueTallyText}
+              </span>
+            )}
             {!notesOpen && task.notes && (
               <span className="notes-indicator" title="Has notes">
                 📝
@@ -217,9 +246,11 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
           {task.subtasks.length > 0 && (
             <div className="subtask-progress-wrap">
               <div className="progress-bar-track small">
-                <div
+                <motion.div
                   className="progress-bar-fill"
-                  style={{ width: `${(subDone / task.subtasks.length) * 100}%` }}
+                  initial={false}
+                  animate={{ width: `${(subDone / task.subtasks.length) * 100}%` }}
+                  transition={{ duration: 0.3, ease: 'easeOut' }}
                 />
               </div>
               <span className="subtask-progress-label">
@@ -307,9 +338,20 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                         className="due-date-quick-input"
                         value={s.due_date ?? ''}
                         autoFocus
+                        // Saves as soon as the browser reports a complete date,
+                        // but the picker itself only closes on blur/Enter/Escape
+                        // - closing it mid-onChange (the previous behavior) made
+                        // the field disappear out from under a still-typing year,
+                        // since the date input can report intermediate states.
                         onChange={(e) => {
                           setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: e.target.value || null })
-                          setDueDatePickerSubtaskId(null)
+                        }}
+                        onBlur={() => setDueDatePickerSubtaskId(null)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === 'Escape') {
+                            e.preventDefault()
+                            e.currentTarget.blur()
+                          }
                         }}
                       />
                     )}

@@ -943,15 +943,9 @@ body[data-theme='dark'] .task-card.done {
 }
 
 .task-card.focused {
-  background: rgba(255, 255, 255, 0.97) !important;
   border-color: rgba(46, 204, 113, 0.6) !important;
   box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.25) !important;
-  color: var(--text-primary);
   animation: focus-flash 0.6s ease-out 1;
-}
-
-body[data-theme='dark'] .task-card.focused {
-  background: rgba(255, 255, 255, 0.14) !important;
 }
 
 @keyframes complete-glow {
@@ -1033,6 +1027,16 @@ body[data-theme='dark'] .task-card.focused {
   padding: 2px 6px;
   border-radius: 4px;
   white-space: nowrap;
+}
+
+.subtask-due-tally-badge {
+  color: #3498db;
+  font-weight: 600;
+  font-size: 0.72rem;
+  border: 1px solid #3498db;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: normal;
 }
 
 .meta-tags {
