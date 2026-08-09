@@ -22,6 +22,16 @@ function rollback(queryClient: QueryClient, previous: TasksResponse | undefined)
   if (previous) queryClient.setQueryData(TASKS_KEY, previous)
 }
 
+// None of these mutations refetch on settle. Each onMutate already applies
+// the exact change the server will make (mirroring the backend's cascade
+// logic precisely), and onSuccess (where used) reconciles any server-
+// generated values a temp optimistic entry couldn't know (real id,
+// created_at, etc). A trailing invalidate-refetch was tried here first, but
+// its background response landing a beat after the optimistic write caused
+// a visible flicker - the item briefly vanishing and reappearing, or an exit
+// animation replaying - for no benefit, since there was nothing left for it
+// to correct. If the cache ever needs a hard resync, a page reload does it.
+
 export function useTasks() {
   return useQuery({ queryKey: TASKS_KEY, queryFn: tasksApi.list })
 }
@@ -43,6 +53,7 @@ export function useAddTask() {
     onMutate: async (vars) => {
       const previous = await beginOptimisticUpdate(queryClient)
       const tempId = -Date.now()
+      const clientKey = `temp-task-${tempId}`
       const positions = previous?.tasks.map((t) => t.position) ?? []
       const optimisticTask: Task = {
         id: tempId,
@@ -56,27 +67,33 @@ export function useAddTask() {
         pinned: false,
         position: (positions.length > 0 ? Math.min(...positions) : 0) - 1,
         subtasks: [],
+        clientKey,
       }
       setTasksData(queryClient, (old) => ({
         tasks: [optimisticTask, ...old.tasks],
         can_undo: true,
         can_redo: false,
       }))
-      return { previous, tempId }
+      toast.success('Task added')
+      return { previous, tempId, clientKey }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to add task')
     },
     onSuccess: (task, _vars, ctx) => {
+      // Swap the temp negative-id placeholder for the server's real record
+      // (real id, created_at, position) - keeping the same clientKey so the
+      // rendered list item's React key doesn't change. If it did, React
+      // would treat this as the old item unmounting and a new one mounting,
+      // replaying the exit/enter animations as a visible flicker instead of
+      // updating the existing element in place.
       setTasksData(queryClient, (old) => ({
         ...old,
-        tasks: old.tasks.map((t) => (t.id === ctx?.tempId ? { ...task, subtasks: [] } : t)),
+        tasks: old.tasks.map((t) =>
+          t.id === ctx?.tempId ? { ...task, subtasks: [], clientKey: ctx.clientKey } : t
+        ),
       }))
-      toast.success('Task added')
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: TASKS_KEY })
     },
   })
 }
@@ -108,14 +125,13 @@ export function useEditTask() {
         can_undo: true,
         can_redo: false,
       }))
+      toast.success('Task updated')
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update task')
     },
-    onSuccess: () => toast.success('Task updated'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -134,14 +150,13 @@ export function useToggleDone() {
         can_undo: true,
         can_redo: false,
       }))
+      toast.success(vars.done ? 'Task completed' : 'Task unmarked')
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update task')
     },
-    onSuccess: (task) => toast.success(task.done ? 'Task completed' : 'Task unmarked'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -156,14 +171,13 @@ export function useSetPinned() {
         can_undo: true,
         can_redo: false,
       }))
+      toast(vars.pinned ? '📌 Task pinned' : '📌 Task unpinned')
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update pin')
     },
-    onSuccess: (task) => toast(task.pinned ? '📌 Task pinned' : '📌 Task unpinned'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -184,7 +198,6 @@ export function useSetPosition() {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to reorder task')
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -199,14 +212,13 @@ export function useDeleteTask() {
         can_undo: true,
         can_redo: false,
       }))
+      toast('🗑️ Task deleted')
       return { previous }
     },
     onError: (_err, _id, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to delete task')
     },
-    onSuccess: () => toast('🗑️ Task deleted'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -221,14 +233,13 @@ export function useMarkAllCompleted() {
         can_undo: true,
         can_redo: false,
       }))
+      toast.success('Marked all as completed')
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to mark all completed')
     },
-    onSuccess: () => toast.success('Marked all as completed'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -243,14 +254,13 @@ export function useClearCompleted() {
         can_undo: true,
         can_redo: false,
       }))
+      toast('🧹 Cleared completed tasks')
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to clear completed tasks')
     },
-    onSuccess: () => toast('🧹 Cleared completed tasks'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -261,13 +271,12 @@ export function useClearAll() {
     onMutate: async () => {
       const previous = await beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, () => ({ tasks: [], can_undo: true, can_redo: false }))
+      toast('🗑️ Cleared all tasks')
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to clear all tasks')
     },
-    onSuccess: () => toast('🗑️ Cleared all tasks'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }

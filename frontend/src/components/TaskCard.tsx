@@ -172,7 +172,7 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
           <div className="subtask-panel">
             <ul className="subtask-list">
               {task.subtasks.map((s) => (
-                <li key={s.id} className={s.done ? 'subtask-row done' : 'subtask-row'}>
+                <li key={s.clientKey ?? s.id} className={s.done ? 'subtask-row done' : 'subtask-row'}>
                   <span>{s.text}</span>
                   <button
                     type="button"

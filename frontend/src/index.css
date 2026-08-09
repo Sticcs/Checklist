@@ -125,6 +125,13 @@ body[data-theme='dark'] {
   min-height: 0;
 }
 
+.entry-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
 .task-entry-panel {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -133,27 +140,44 @@ body[data-theme='dark'] {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 1.5rem;
-  min-height: calc(100vh - 3rem);
+  height: fit-content;
+  width: 100%;
+}
+
+.scratchpad {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.9rem;
+  width: 180px;
+  height: 180px;
   display: flex;
   flex-direction: column;
 }
 
-.scratchpad {
-  margin-top: auto;
-  padding-top: 1.5rem;
+.scratchpad-label {
+  margin: 0 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.6;
 }
 
 .scratchpad-input {
+  flex: 1;
   width: 100%;
-  min-height: 4.5rem;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
   border: none;
-  border-top: 1px dashed rgba(128, 128, 128, 0.3);
-  border-radius: 0;
+  border-radius: 8px;
   background: transparent;
-  padding: 0.6rem 0 0;
+  padding: 0;
   font-size: 0.82rem;
-  opacity: 0.75;
+  opacity: 0.85;
 }
 
 .scratchpad-input:focus {
@@ -481,6 +505,20 @@ button:disabled {
   width: 100%;
 }
 
+.entry-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+}
+
+.entry-hint-onboarding {
+  color: #2ecc71;
+  font-style: italic;
+}
+
+.entry-hint-step {
+  opacity: 0.65;
+}
+
 .option-row-label {
   margin: 0 0 0.35rem;
   font-weight: 700;
@@ -493,7 +531,7 @@ button:disabled {
 .option-row-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.65rem;
 }
 
 .btn-option {

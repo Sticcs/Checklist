@@ -20,6 +20,7 @@ export function useAddSubtask() {
     onMutate: async (vars) => {
       const previous = await beginOptimisticUpdate(queryClient)
       const tempId = -Date.now()
+      const clientKey = `temp-subtask-${tempId}`
       queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
         old
           ? {
@@ -36,6 +37,7 @@ export function useAddSubtask() {
                           text: vars.text,
                           done: false,
                           created_at: new Date().toISOString(),
+                          clientKey,
                         },
                       ],
                     }
@@ -46,28 +48,35 @@ export function useAddSubtask() {
             }
           : old
       )
-      return { previous, tempId }
+      toast('➕ Subtask added')
+      return { previous, tempId, clientKey }
     },
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to add subtask')
     },
     onSuccess: (res, vars, ctx) => {
+      // Swap the temp placeholder for the server's real subtask record,
+      // keeping the same clientKey so the React key stays stable (see the
+      // matching comment in useAddTask for why that matters).
       queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
         old
           ? {
               ...old,
               tasks: old.tasks.map((t) =>
                 t.id === vars.taskId
-                  ? { ...t, subtasks: t.subtasks.map((s) => (s.id === ctx?.tempId && res.subtask ? res.subtask : s)) }
+                  ? {
+                      ...t,
+                      subtasks: t.subtasks.map((s) =>
+                        s.id === ctx?.tempId && res.subtask ? { ...res.subtask, clientKey: ctx.clientKey } : s
+                      ),
+                    }
                   : t
               ),
             }
           : old
       )
-      toast('➕ Subtask added')
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -104,7 +113,6 @@ export function useToggleSubtask() {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update subtask')
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }
 
@@ -130,13 +138,12 @@ export function useDeleteSubtask() {
             }
           : old
       )
+      toast('🗑️ Subtask deleted')
       return { previous }
     },
     onError: (_err, _id, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to delete subtask')
     },
-    onSuccess: () => toast('🗑️ Subtask deleted'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: TASKS_KEY }),
   })
 }

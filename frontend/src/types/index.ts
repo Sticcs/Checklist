@@ -11,6 +11,12 @@ export interface Subtask {
   text: string
   done: boolean
   created_at: string
+  // Client-only, never sent by the server: set on an optimistically-inserted
+  // subtask and carried forward when its temp id is swapped for the real
+  // one, so the React key stays stable across that swap instead of
+  // triggering an unmount/remount (which replayed the enter/exit animation
+  // as a visible flicker).
+  clientKey?: string
 }
 
 export interface Task {
@@ -25,6 +31,7 @@ export interface Task {
   pinned: boolean
   position: number
   subtasks: Subtask[]
+  clientKey?: string
 }
 
 export interface TasksResponse {

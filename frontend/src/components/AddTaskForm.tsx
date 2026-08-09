@@ -155,6 +155,21 @@ export function AddTaskForm({ onAdded }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textLocked, addVisible, category, priority, duePreset, customDueDate, text])
 
+  // A single running hint under the input: onboarding copy while it's empty,
+  // then one instruction per progressive-disclosure step as the flow
+  // advances - so there's always exactly one thing telling the user what to
+  // do next.
+  const hint = (() => {
+    if (text.trim() === '' && !textLocked) {
+      return { text: 'Start typing to enter your first task.', tone: 'onboarding' }
+    }
+    if (!textLocked) return { text: 'Press Enter to lock in your text.', tone: 'step' }
+    if (category === null) return { text: 'Select a category.', tone: 'step' }
+    if (priority === null) return { text: 'Select a priority.', tone: 'step' }
+    if (!dueReady) return { text: 'Select a due date.', tone: 'step' }
+    return { text: 'Click "Add task" to finish.', tone: 'step' }
+  })()
+
   const sectionMotion = {
     initial: { opacity: 0, height: 0 },
     animate: { opacity: 1, height: 'auto' },
@@ -171,6 +186,7 @@ export function AddTaskForm({ onAdded }: Props) {
         onChange={(e) => handleTextChange(e.target.value)}
         onKeyDown={handleTextKeyDown}
       />
+      <p className={`entry-hint entry-hint-${hint.tone}`}>{hint.text}</p>
 
       <AnimatePresence>
         {categoryVisible && (
@@ -196,6 +212,13 @@ export function AddTaskForm({ onAdded }: Props) {
                 placeholder="E.g., Groceries"
                 value={customCategory}
                 onChange={(e) => setCustomCategory(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  // Hands off to the priority row's click/hotkey flow, same
+                  // as the main text input blurring itself once locked.
+                  e.currentTarget.blur()
+                }}
               />
             )}
           </motion.div>

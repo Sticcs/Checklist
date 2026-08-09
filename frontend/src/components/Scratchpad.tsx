@@ -21,10 +21,11 @@ export function Scratchpad() {
 
   return (
     <div className="scratchpad">
+      <p className="scratchpad-label">Scratchpad</p>
       <textarea
         ref={ref}
         className="scratchpad-input"
-        placeholder="Scratchpad... (press ` to focus)"
+        placeholder="Press ` to focus..."
         value={text}
         onChange={(e) => setText(e.target.value)}
       />

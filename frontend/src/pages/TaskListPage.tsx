@@ -153,9 +153,11 @@ export function TaskListPage() {
       )}
 
       <div className="content-area">
-        <div className="task-entry-panel">
-          <QuoteHeader />
-          <AddTaskForm onAdded={(id) => setLatestTaskId(id)} />
+        <div className="entry-column">
+          <div className="task-entry-panel">
+            <QuoteHeader />
+            <AddTaskForm onAdded={(id) => setLatestTaskId(id)} />
+          </div>
           <Scratchpad />
         </div>
 
@@ -182,7 +184,7 @@ export function TaskListPage() {
               <AnimatePresence>
                 {manualOrder.map((task) => (
                   <TaskCard
-                    key={task.id}
+                    key={task.clientKey ?? task.id}
                     task={task}
                     focused={focusedTaskId === task.id}
                     todayIso={todayIso}
@@ -198,7 +200,7 @@ export function TaskListPage() {
               <AnimatePresence>
                 {filtered.map((task) => (
                   <TaskCard
-                    key={task.id}
+                    key={task.clientKey ?? task.id}
                     task={task}
                     focused={focusedTaskId === task.id}
                     todayIso={todayIso}
