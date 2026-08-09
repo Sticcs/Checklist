@@ -275,12 +275,14 @@ export function Sidebar({
       </CollapsibleSection>
 
       <p className="sidebar-credits">
-        Vibecoded with Claude. Made by Debayan Mukherjee, 2nd year Medical Science & Data Science major. Found a
-        bug? DM{' '}
+        Vibecoded with Claude. Made by Debayan Mukherjee. Found a bug? DM{' '}
         <a href="https://www.instagram.com/debayanm_/" target="_blank" rel="noopener noreferrer">
           @debayanm_
         </a>
-        .
+        .{' '}
+        <a href="https://github.com/Sticcs/Checklist" target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
       </p>
     </aside>
   )
