@@ -696,15 +696,20 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 3rem;
+  /* Fixed (not min-) height, sized for two lines at the largest font size in
+     the rotation - a longer quote wraps within this box instead of growing
+     it, which would otherwise push the card below down for its duration. */
+  height: 4.75rem;
   margin-bottom: 1rem;
   padding: 0 0.5rem;
   text-align: center;
+  overflow: hidden;
 }
 
 .auth-quote-main p {
   margin: 0;
   font-size: clamp(1.3rem, 3.2vw, 1.75rem);
+  line-height: 1.2;
   font-weight: 600;
   color: var(--text-primary);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
