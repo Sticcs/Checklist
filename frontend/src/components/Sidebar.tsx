@@ -273,6 +273,15 @@ export function Sidebar({
           </label>
         </div>
       </CollapsibleSection>
+
+      <p className="sidebar-credits">
+        Vibecoded with Claude. Made by Debayan Mukherjee, 2nd year Medical Science & Data Science major. Found a
+        bug? DM{' '}
+        <a href="https://www.instagram.com/debayanm_/" target="_blank" rel="noopener noreferrer">
+          @debayanm_
+        </a>
+        .
+      </p>
     </aside>
   )
 }

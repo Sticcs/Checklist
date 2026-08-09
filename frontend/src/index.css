@@ -330,6 +330,21 @@ body[data-theme='dark'] .assessment-card.done {
 }
 
 /* ----------------------------- Sidebar ----------------------------- */
+.sidebar-credits {
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  opacity: 0.5;
+  text-align: center;
+}
+
+.sidebar-credits a {
+  color: inherit;
+  opacity: 0.85;
+}
+
 .sidebar {
   background: var(--glass-bg);
   border-right: 1px solid var(--glass-border);
