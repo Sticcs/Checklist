@@ -32,6 +32,10 @@ class SubtaskUrgentUpdate(BaseModel):
     urgent: bool
 
 
+class SubtaskDueDateUpdate(BaseModel):
+    due_date: str | None = None
+
+
 class Subtask(BaseModel):
     id: int
     task_id: int
@@ -39,6 +43,7 @@ class Subtask(BaseModel):
     done: bool
     created_at: str
     urgent: bool
+    due_date: str | None = None
 
 
 class SubtaskMutationResponse(BaseModel):

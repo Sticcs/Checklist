@@ -271,7 +271,13 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
                 type="date"
                 className="custom-input"
                 value={customDueDate}
+                autoFocus
                 onChange={(e) => setCustomDueDate(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || customDueDate === '') return
+                  e.preventDefault()
+                  submit()
+                }}
               />
             )}
           </motion.div>

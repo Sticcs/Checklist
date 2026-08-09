@@ -318,8 +318,8 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
         for s in state_subtasks:
             conn.execute(
                 text(
-                    "INSERT INTO subtasks (id, task_id, text, done, created_at, urgent) "
-                    "VALUES (:id, :task_id, :text, :done, :created_at, :urgent)"
+                    "INSERT INTO subtasks (id, task_id, text, done, created_at, urgent, due_date) "
+                    "VALUES (:id, :task_id, :text, :done, :created_at, :urgent, :due_date)"
                 ),
                 {
                     "id": s["id"],
@@ -328,6 +328,7 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
                     "done": int(s["done"]),
                     "created_at": s["created_at"],
                     "urgent": int(s.get("urgent", False)),
+                    "due_date": s.get("due_date"),
                 },
             )
 
@@ -612,6 +613,20 @@ def set_subtask_urgent(subtask_id: int, urgent: bool, username: str) -> dict | N
         conn.execute(
             text("UPDATE subtasks SET urgent = :urgent WHERE id = :id"),
             {"urgent": int(urgent), "id": subtask_id},
+        )
+        row = conn.execute(
+            text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
+        ).mappings().fetchone()
+    return _subtask_dict(row) if row else None
+
+
+def set_subtask_due_date(subtask_id: int, due_date: str | None, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE subtasks SET due_date = :due_date WHERE id = :id"),
+            {"due_date": due_date, "id": subtask_id},
         )
         row = conn.execute(
             text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}

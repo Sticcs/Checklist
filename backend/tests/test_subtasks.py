@@ -103,3 +103,20 @@ def test_cannot_touch_another_users_subtask(client):
     client_b.post("/api/auth/guest")
     r = client_b.patch(f"/api/subtasks/{subtask['id']}", json={"done": True})
     assert r.status_code == 404
+
+
+def test_set_subtask_due_date(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    subtask = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Step one"}).json()["subtask"]
+    assert subtask["due_date"] is None
+
+    r = client.patch(f"/api/subtasks/{subtask['id']}/due-date", json={"due_date": "2026-12-25"})
+    assert r.status_code == 200
+    assert r.json()["subtask"]["due_date"] == "2026-12-25"
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    assert tasks[0]["subtasks"][0]["due_date"] == "2026-12-25"
+
+    r = client.patch(f"/api/subtasks/{subtask['id']}/due-date", json={"due_date": None})
+    assert r.json()["subtask"]["due_date"] is None

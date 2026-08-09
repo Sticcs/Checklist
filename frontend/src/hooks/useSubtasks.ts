@@ -41,6 +41,7 @@ export function useAddSubtask() {
                           done: false,
                           created_at: new Date().toISOString(),
                           urgent: false,
+                          due_date: null,
                           clientKey,
                         },
                       ],
@@ -150,6 +151,40 @@ export function useSetSubtaskUrgent() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update subtask')
+    },
+  })
+}
+
+export function useSetSubtaskDueDate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ subtaskId, dueDate }: { subtaskId: number; dueDate: string | null }) =>
+      subtasksApi.setDueDate(subtaskId, dueDate),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+        old
+          ? {
+              tasks: old.tasks.map((t) =>
+                t.subtasks.some((s) => s.id === vars.subtaskId)
+                  ? {
+                      ...t,
+                      subtasks: t.subtasks.map((s) =>
+                        s.id === vars.subtaskId ? { ...s, due_date: vars.dueDate } : s
+                      ),
+                    }
+                  : t
+              ),
+              can_undo: true,
+              can_redo: false,
+            }
+          : old
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to update due date')
     },
   })
 }

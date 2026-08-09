@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import type { Task } from '../types'
 import { PRIORITIES } from '../constants'
 import { useDeleteTask, useEditTask, useSetTaskUrgent, useToggleDone } from '../hooks/useTasks'
+import { daysUntil } from '../utils/dueDatePresets'
 
 interface Props {
   task: Task
@@ -27,6 +28,19 @@ export function AssessmentCard({ task, focused, todayIso }: Props) {
   const setTaskUrgent = useSetTaskUrgent()
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
+  const daysToDue = task.due_date ? daysUntil(task.due_date, todayIso) : null
+
+  const [justCompleted, setJustCompleted] = useState(false)
+  const wasDone = useRef(task.done)
+  useEffect(() => {
+    const previouslyDone = wasDone.current
+    wasDone.current = task.done
+    if (!previouslyDone && task.done) {
+      setJustCompleted(true)
+      const handle = setTimeout(() => setJustCompleted(false), 1000)
+      return () => clearTimeout(handle)
+    }
+  }, [task.done])
 
   const startEditing = () => {
     setEditText(task.text)
@@ -47,7 +61,7 @@ export function AssessmentCard({ task, focused, todayIso }: Props) {
     })
   }
 
-  const className = `assessment-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}`
+  const className = `assessment-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}`
 
   return (
     <motion.li
@@ -93,7 +107,23 @@ export function AssessmentCard({ task, focused, todayIso }: Props) {
           />
           <div className="assessment-main">
             <span className={task.done ? 'task-text done' : 'task-text'}>{task.text}</span>
-            {task.due_date && <span className={overdue ? 'badge overdue' : 'badge'}>{task.due_date}</span>}
+            {task.due_date && (
+              <span className={overdue ? 'badge overdue' : 'badge'}>
+                {task.due_date}
+                {daysToDue !== null && !task.done && (
+                  <>
+                    {' '}
+                    (
+                    {daysToDue < 0
+                      ? `${Math.abs(daysToDue)} day${Math.abs(daysToDue) === 1 ? '' : 's'} overdue`
+                      : daysToDue === 0
+                        ? 'due today'
+                        : `due in ${daysToDue} day${daysToDue === 1 ? '' : 's'}`}
+                    )
+                  </>
+                )}
+              </span>
+            )}
             {task.urgent && <span className="urgent-badge">🚨 Urgent</span>}
           </div>
           <div className="assessment-actions">

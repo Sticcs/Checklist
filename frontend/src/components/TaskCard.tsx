@@ -2,15 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
+import { useSettings } from '../context/SettingsContext'
 import {
   useDeleteTask,
   useEditTask,
-  useSetDueDate,
   useSetPinned,
   useSetTaskNotes,
   useToggleDone,
 } from '../hooks/useTasks'
-import { useAddSubtask, useDeleteSubtask, useSetSubtaskUrgent, useToggleSubtask } from '../hooks/useSubtasks'
+import {
+  useAddSubtask,
+  useDeleteSubtask,
+  useSetSubtaskDueDate,
+  useSetSubtaskUrgent,
+  useToggleSubtask,
+} from '../hooks/useSubtasks'
 import { daysUntil } from '../utils/dueDatePresets'
 
 interface Props {
@@ -36,7 +42,9 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const [notesDraft, setNotesDraft] = useState(task.notes ?? '')
   const notesDirty = useRef(false)
 
-  const [dueDatePickerOpen, setDueDatePickerOpen] = useState(false)
+  const [dueDatePickerSubtaskId, setDueDatePickerSubtaskId] = useState<number | null>(null)
+
+  const { urgentWindowDays } = useSettings()
 
   const setPinned = useSetPinned()
   const toggleDone = useToggleDone()
@@ -45,17 +53,32 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
   const setSubtaskUrgent = useSetSubtaskUrgent()
+  const setSubtaskDueDate = useSetSubtaskDueDate()
   const deleteSubtask = useDeleteSubtask()
   const setTaskNotes = useSetTaskNotes()
-  const setDueDate = useSetDueDate()
   const dragControls = useDragControls()
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
-  const dueUrgent = task.due_date === todayIso && !task.done
   const daysToDue = task.due_date ? daysUntil(task.due_date, todayIso) : null
-  const dueSoon = !task.done && daysToDue !== null && daysToDue > 0 && daysToDue <= 3
+  const dueUrgent = !task.done && daysToDue !== null && daysToDue >= 0 && daysToDue <= urgentWindowDays
+  const dueSoon = !dueUrgent && !task.done && daysToDue !== null && daysToDue > 0 && daysToDue <= 3
   const subDone = task.subtasks.filter((s) => s.done).length
   const urgentSubtaskCount = task.subtasks.filter((s) => s.urgent).length
+
+  // A one-shot glow that plays exactly once on the false->true transition
+  // (not on every render while done, and not on initial mount if the task
+  // was already done when it loaded).
+  const [justCompleted, setJustCompleted] = useState(false)
+  const wasDone = useRef(task.done)
+  useEffect(() => {
+    const previouslyDone = wasDone.current
+    wasDone.current = task.done
+    if (!previouslyDone && task.done) {
+      setJustCompleted(true)
+      const handle = setTimeout(() => setJustCompleted(false), 1000)
+      return () => clearTimeout(handle)
+    }
+  }, [task.done])
 
   // Only overwrite the draft from server state when we're not the source of
   // the change (i.e. no unsaved local edit in flight) - otherwise the
@@ -226,17 +249,6 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
           📌
         </button>
         {!editing && (
-          <button
-            type="button"
-            className={task.due_date ? 'icon-btn btn-primary' : 'icon-btn'}
-            aria-pressed={dueDatePickerOpen}
-            title="Set due date"
-            onClick={() => setDueDatePickerOpen((prev) => !prev)}
-          >
-            📅
-          </button>
-        )}
-        {!editing && (
           <button type="button" className="icon-btn" onClick={startEditing}>
             ✏️
           </button>
@@ -244,18 +256,6 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
         <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
           🗑️
         </button>
-        {dueDatePickerOpen && (
-          <input
-            type="date"
-            className="due-date-quick-input"
-            value={task.due_date ?? ''}
-            autoFocus
-            onChange={(e) => {
-              setDueDate.mutate({ id: task.id, dueDate: e.target.value || null })
-              setDueDatePickerOpen(false)
-            }}
-          />
-        )}
       </div>
 
       <div className="subtask-section">
@@ -278,7 +278,41 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                     transition={{ duration: 0.2, ease: 'easeOut' }}
                     className={s.done ? 'subtask-row done' : 'subtask-row'}
                   >
-                    <span>{s.text}</span>
+                    <span className="subtask-row-text">
+                      {s.text}
+                      {s.due_date && (
+                        <span
+                          className={
+                            !s.done && s.due_date < todayIso ? 'badge overdue subtask-due-badge' : 'badge subtask-due-badge'
+                          }
+                        >
+                          {s.due_date}
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className={s.due_date ? 'icon-btn btn-primary' : 'icon-btn'}
+                      aria-pressed={dueDatePickerSubtaskId === s.id}
+                      title="Set due date"
+                      onClick={() =>
+                        setDueDatePickerSubtaskId((prev) => (prev === s.id ? null : s.id))
+                      }
+                    >
+                      📅
+                    </button>
+                    {dueDatePickerSubtaskId === s.id && (
+                      <input
+                        type="date"
+                        className="due-date-quick-input"
+                        value={s.due_date ?? ''}
+                        autoFocus
+                        onChange={(e) => {
+                          setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: e.target.value || null })
+                          setDueDatePickerSubtaskId(null)
+                        }}
+                      />
+                    )}
                     <button
                       type="button"
                       className={s.urgent ? 'icon-btn btn-primary' : 'icon-btn'}
@@ -337,7 +371,7 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
     </>
   )
 
-  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}`
+  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}`
 
   if (draggable) {
     return (

@@ -1,4 +1,5 @@
 import { useStats } from '../hooks/useStats'
+import { CollapsibleSection } from './CollapsibleSection'
 
 interface Props {
   open: boolean
@@ -16,8 +17,7 @@ export function StatsPanel({ open, onToggle }: Props) {
   const stats = useStats(open)
 
   return (
-    <details className="stats-panel" open={open} onToggle={(e) => onToggle(e.currentTarget.open)}>
-      <summary>📊 Stats</summary>
+    <CollapsibleSection title="📊 Stats" open={open} onToggle={onToggle}>
       {stats.data && (
         <div className="stats-body">
           <div className="stats-row">
@@ -45,6 +45,6 @@ export function StatsPanel({ open, onToggle }: Props) {
           </div>
         </div>
       )}
-    </details>
+    </CollapsibleSection>
   )
 }

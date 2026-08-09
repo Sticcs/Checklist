@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { ApiError } from '../api/client'
+import { AuthQuotes } from '../components/AuthQuotes'
 
 export function AuthPage() {
   const { loginAsGuest, login, signup } = useAuth()
@@ -49,6 +50,7 @@ export function AuthPage() {
 
   return (
     <div className="auth-page">
+      <AuthQuotes />
       <div className="auth-card">
         <h1 className="auth-title">✅ My Checklist</h1>
 

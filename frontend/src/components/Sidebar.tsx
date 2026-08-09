@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useSettings } from '../context/SettingsContext'
 import { useActivity } from '../hooks/useActivity'
 import { useClearAll, useClearCompleted, useMarkAllCompleted } from '../hooks/useTasks'
 import { useUndo, useRedo } from '../hooks/useUndoRedo'
 import { useWallpaper } from '../hooks/useWallpaper'
 import { resizeImageToDataUrl } from '../utils/resizeImage'
 import { StatsPanel } from './StatsPanel'
+import { CollapsibleSection } from './CollapsibleSection'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -61,10 +63,20 @@ export function Sidebar({
 }: Props) {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
+  const { urgentWindowDays, setUrgentWindowDays, notifyDayBefore, setNotifyDayBefore } = useSettings()
   const [activityOpen, setActivityOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [wallpaper, setWallpaper] = useWallpaper(user?.username)
   const wallpaperInputRef = useRef<HTMLInputElement>(null)
+
+  const handleNotifyToggle = async (checked: boolean) => {
+    if (checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') return
+    }
+    setNotifyDayBefore(checked)
+  }
 
   const undo = useUndo()
   const redo = useRedo()
@@ -217,28 +229,50 @@ export function Sidebar({
 
       <StatsPanel open={statsOpen} onToggle={setStatsOpen} />
 
-      <details
-        className="activity-log"
-        open={activityOpen}
-        onToggle={(e) => setActivityOpen(e.currentTarget.open)}
-      >
-        <summary>Activity Logs</summary>
-        {activity.data && activity.data.length === 0 && <p>No recent activity.</p>}
-        <ul>
-          {activity.data?.map((entry) => {
-            const meta = ACTIVITY_META[entry.action] ?? { icon: '•', label: entry.action }
-            const when = new Date(entry.created_at)
-            return (
-              <li key={entry.id} className="activity-log-entry">
-                <span>
-                  {meta.icon} <b>{meta.label}:</b> {entry.detail}
-                </span>
-                <span className="activity-log-time">{when.toLocaleString()}</span>
-              </li>
-            )
-          })}
-        </ul>
-      </details>
+      <CollapsibleSection title="Activity Logs" open={activityOpen} onToggle={setActivityOpen}>
+        <div className="activity-log">
+          {activity.data && activity.data.length === 0 && <p>No recent activity.</p>}
+          <ul>
+            {activity.data?.map((entry) => {
+              const meta = ACTIVITY_META[entry.action] ?? { icon: '•', label: entry.action }
+              const when = new Date(entry.created_at)
+              return (
+                <li key={entry.id} className="activity-log-entry">
+                  <span>
+                    {meta.icon} <b>{meta.label}:</b> {entry.detail}
+                  </span>
+                  <span className="activity-log-time">{when.toLocaleString()}</span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="⚙️ Settings" open={settingsOpen} onToggle={setSettingsOpen}>
+        <div className="settings-body">
+          <label className="settings-field">
+            Mark tasks 🚨 urgent within
+            <input
+              type="number"
+              min={0}
+              max={30}
+              value={urgentWindowDays}
+              onChange={(e) => setUrgentWindowDays(Math.max(0, Number(e.target.value) || 0))}
+              className="settings-number-input"
+            />
+            day(s) of their due date
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={notifyDayBefore}
+              onChange={(e) => void handleNotifyToggle(e.target.checked)}
+            />
+            🔔 Notify me the day before something's due
+          </label>
+        </div>
+      </CollapsibleSection>
     </aside>
   )
 }

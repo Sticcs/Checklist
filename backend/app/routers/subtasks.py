@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app import crud
-from app.models import SubtaskDoneUpdate, SubtaskMutationResponse, SubtaskUrgentUpdate
+from app.models import SubtaskDoneUpdate, SubtaskDueDateUpdate, SubtaskMutationResponse, SubtaskUrgentUpdate
 from app.security import CurrentUser, get_current_user
 
 router = APIRouter(prefix="/api/subtasks", tags=["subtasks"])
@@ -34,6 +34,17 @@ def toggle_subtask_urgent(
 ) -> SubtaskMutationResponse:
     task_id = _require_owning_task(subtask_id, current_user.username)
     subtask = crud.set_subtask_urgent(subtask_id, body.urgent, current_user.username)
+    task = crud.get_task(task_id, current_user.username)
+    parent_done = bool(task["done"]) if task else False
+    return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
+
+
+@router.patch("/{subtask_id}/due-date", response_model=SubtaskMutationResponse)
+def update_subtask_due_date(
+    subtask_id: int, body: SubtaskDueDateUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> SubtaskMutationResponse:
+    task_id = _require_owning_task(subtask_id, current_user.username)
+    subtask = crud.set_subtask_due_date(subtask_id, body.due_date, current_user.username)
     task = crud.get_task(task_id, current_user.username)
     parent_done = bool(task["done"]) if task else False
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)

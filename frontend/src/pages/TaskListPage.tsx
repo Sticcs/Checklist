@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
+import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
 import { AddTaskForm } from '../components/AddTaskForm'
 import { TaskCard } from '../components/TaskCard'
 import { ProgressBar } from '../components/ProgressBar'
@@ -38,7 +39,20 @@ export function TaskListPage() {
   // completed) is shared, via the same `tasks` entity and the same
   // click-delegation handler below, just filtered into a different view.
   const mainTasks = useMemo(() => tasks.filter((t) => t.category !== ASSESSMENT_CATEGORY), [tasks])
-  const assessments = useMemo(() => tasks.filter((t) => t.category === ASSESSMENT_CATEGORY), [tasks])
+  // Closest due date first; assessments with no due date sort to the end.
+  const assessments = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.category === ASSESSMENT_CATEGORY)
+        .slice()
+        .sort((a, b) => {
+          if (a.due_date === b.due_date) return 0
+          if (a.due_date === null) return 1
+          if (b.due_date === null) return -1
+          return a.due_date < b.due_date ? -1 : 1
+        }),
+    [tasks]
+  )
 
   const availableCategories = useMemo(
     () => Array.from(new Set(mainTasks.map((t) => t.category))).sort(),
@@ -141,6 +155,7 @@ export function TaskListPage() {
     onConsumeLatest: () => setLatestTaskId(null),
   })
   useUndoRedoHotkeys()
+  useDueDateNotifications(tasks)
 
   return (
     <div className="app-layout">
