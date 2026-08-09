@@ -97,7 +97,11 @@ export function useToggleSubtask() {
           ? {
               tasks: old.tasks.map((t) => {
                 if (!t.subtasks.some((s) => s.id === vars.subtaskId)) return t
-                const subtasks = t.subtasks.map((s) => (s.id === vars.subtaskId ? { ...s, done: vars.done } : s))
+                const subtasks = t.subtasks.map((s) =>
+                  s.id === vars.subtaskId
+                    ? { ...s, done: vars.done, urgent: vars.done ? false : s.urgent }
+                    : s
+                )
                 // Mirrors the backend's set_subtask_done cascade exactly: an
                 // uncheck always uncompletes the parent; a check only
                 // completes it once every subtask is done; otherwise the

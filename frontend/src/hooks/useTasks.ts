@@ -153,7 +153,15 @@ export function useToggleDone() {
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) =>
           t.id === vars.id
-            ? { ...t, done: vars.done, subtasks: t.subtasks.map((s) => ({ ...s, done: vars.done })) }
+            ? {
+                ...t,
+                done: vars.done,
+                subtasks: t.subtasks.map((s) => ({
+                  ...s,
+                  done: vars.done,
+                  urgent: vars.done ? false : s.urgent,
+                })),
+              }
             : t
         ),
         can_undo: true,
@@ -312,7 +320,11 @@ export function useMarkAllCompleted() {
     onMutate: async () => {
       const previous = await beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
-        tasks: old.tasks.map((t) => ({ ...t, done: true, subtasks: t.subtasks.map((s) => ({ ...s, done: true })) })),
+        tasks: old.tasks.map((t) => ({
+          ...t,
+          done: true,
+          subtasks: t.subtasks.map((s) => ({ ...s, done: true, urgent: false })),
+        })),
         can_undo: true,
         can_redo: false,
       }))

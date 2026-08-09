@@ -374,10 +374,19 @@ def set_done(task_id: int, done: bool, username: str) -> dict | None:
             text("UPDATE tasks SET done = :done WHERE id = :id AND username = :username"),
             {"done": int(done), "id": task_id, "username": username},
         )
-        conn.execute(
-            text("UPDATE subtasks SET done = :done WHERE task_id = :task_id"),
-            {"done": int(done), "task_id": task_id},
-        )
+        # Finishing a subtask (whether individually or via its parent task
+        # completing here) clears any urgent flag it had - there's no more
+        # reason to keep flagging something that's already done.
+        if done:
+            conn.execute(
+                text("UPDATE subtasks SET done = 1, urgent = 0 WHERE task_id = :task_id"),
+                {"task_id": task_id},
+            )
+        else:
+            conn.execute(
+                text("UPDATE subtasks SET done = 0 WHERE task_id = :task_id"),
+                {"task_id": task_id},
+            )
     log_activity(username, "completed" if done else "uncompleted", task_text, task_id=task_id)
     return get_task(task_id, username)
 
@@ -536,7 +545,10 @@ def mark_all_completed(username: str) -> int:
         ).scalar_one()
         conn.execute(text("UPDATE tasks SET done = 1 WHERE username = :username"), {"username": username})
         conn.execute(
-            text("UPDATE subtasks SET done = 1 WHERE task_id IN (SELECT id FROM tasks WHERE username = :username)"),
+            text(
+                "UPDATE subtasks SET done = 1, urgent = 0 "
+                "WHERE task_id IN (SELECT id FROM tasks WHERE username = :username)"
+            ),
             {"username": username},
         )
     if count:
@@ -571,9 +583,12 @@ def set_subtask_done(subtask_id: int, task_id: int, done: bool, username: str) -
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
-        conn.execute(
-            text("UPDATE subtasks SET done = :done WHERE id = :id"), {"done": int(done), "id": subtask_id}
-        )
+        # Finishing a subtask clears any urgent flag it had - no more reason
+        # to keep flagging something that's already done.
+        if done:
+            conn.execute(text("UPDATE subtasks SET done = 1, urgent = 0 WHERE id = :id"), {"id": subtask_id})
+        else:
+            conn.execute(text("UPDATE subtasks SET done = 0 WHERE id = :id"), {"id": subtask_id})
 
         subtasks = conn.execute(
             text("SELECT done FROM subtasks WHERE task_id = :task_id"), {"task_id": task_id}

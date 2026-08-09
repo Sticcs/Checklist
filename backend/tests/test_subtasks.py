@@ -120,3 +120,51 @@ def test_set_subtask_due_date(guest_client):
 
     r = client.patch(f"/api/subtasks/{subtask['id']}/due-date", json={"due_date": None})
     assert r.json()["subtask"]["due_date"] is None
+
+
+def test_completing_a_subtask_clears_its_urgent_flag(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    subtask = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Step one"}).json()["subtask"]
+    client.patch(f"/api/subtasks/{subtask['id']}/urgent", json={"urgent": True})
+
+    r = client.patch(f"/api/subtasks/{subtask['id']}", json={"done": True})
+    assert r.json()["subtask"]["urgent"] is False
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    assert tasks[0]["subtasks"][0]["urgent"] is False
+
+
+def test_uncompleting_a_subtask_does_not_restore_urgent(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    subtask = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Step one"}).json()["subtask"]
+    client.patch(f"/api/subtasks/{subtask['id']}/urgent", json={"urgent": True})
+    client.patch(f"/api/subtasks/{subtask['id']}", json={"done": True})
+
+    r = client.patch(f"/api/subtasks/{subtask['id']}", json={"done": False})
+    assert r.json()["subtask"]["urgent"] is False
+
+
+def test_completing_parent_task_clears_urgent_on_its_subtasks(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    subtask = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Step one"}).json()["subtask"]
+    client.patch(f"/api/subtasks/{subtask['id']}/urgent", json={"urgent": True})
+
+    client.patch(f"/api/tasks/{task['id']}/done", json={"done": True})
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    assert tasks[0]["subtasks"][0]["urgent"] is False
+
+
+def test_mark_all_completed_clears_urgent_on_subtasks(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    subtask = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Step one"}).json()["subtask"]
+    client.patch(f"/api/subtasks/{subtask['id']}/urgent", json={"urgent": True})
+
+    client.post("/api/tasks/mark-all-completed")
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    assert tasks[0]["subtasks"][0]["urgent"] is False
