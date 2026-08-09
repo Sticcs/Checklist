@@ -13,6 +13,17 @@ body {
   margin: 0;
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
   color: var(--text-primary);
+  /* The auth<->app AnimatePresence transition (mode="wait") fully unmounts
+     the outgoing page before mounting the next one, so neither .auth-page
+     nor .app-layout - which each set this same background on themselves -
+     exists in the DOM for that gap. Without it here too, the bare body
+     (no background of its own) showed through as a white flash mid-sign-in.
+     Setting it on body keeps the background present the whole time. */
+  background-color: #111;
+  background-image: var(--bg-image);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }
 
 /* Scoped to the app's own theme instead of `light dark` - with that generic
