@@ -55,10 +55,19 @@ _engine = None
 
 def _build_engine():
     if settings.database_url:
+        # Neon/Supabase hand out plain postgres:// or postgresql:// URLs.
+        # SQLAlchemy's default driver for that scheme is psycopg2, which
+        # isn't installed (requirements.txt only has psycopg v3) - force the
+        # +psycopg suffix so it actually uses the driver we ship.
+        url = settings.database_url
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg://" + url[len("postgresql://"):]
         # pool_pre_ping guards against Neon/Supabase closing idle connections
         # while the free-tier database is paused/asleep - a dead connection
         # gets discarded and replaced instead of raising on first use.
-        return create_engine(settings.database_url, pool_pre_ping=True)
+        return create_engine(url, pool_pre_ping=True)
 
     engine = create_engine(
         f"sqlite:///{settings.db_path}",
