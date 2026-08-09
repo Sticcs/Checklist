@@ -354,10 +354,68 @@ body[data-theme='dark'] {
   animation: glow-pulse 2s ease-in-out infinite;
 }
 
+.stats-panel summary,
 .activity-log summary {
   cursor: pointer;
   font-weight: 600;
   padding: 0.3rem 0;
+}
+
+.stats-body {
+  margin-top: 0.6rem;
+}
+
+.stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.stat-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 3.5rem;
+}
+
+.stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 0.68rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.stats-heatmap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.stats-heat-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.heat-0 {
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.heat-1 {
+  background: rgba(46, 204, 113, 0.4);
+}
+
+.heat-2 {
+  background: rgba(46, 204, 113, 0.7);
+}
+
+.heat-3 {
+  background: rgba(46, 204, 113, 1);
 }
 
 .activity-log ul {
@@ -841,6 +899,45 @@ body[data-theme='dark'] .task-card.focused {
 .edit-form-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* ----------------------------- Notes ----------------------------- */
+.notes-section {
+  margin-top: 0.6rem;
+}
+
+.notes-textarea {
+  width: 100%;
+  min-height: 4.5rem;
+  margin-top: 0.5rem;
+  resize: vertical;
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  background: rgba(255, 255, 255, 0.92);
+  color: #2c3e50;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  font-size: 0.88rem;
+}
+
+body[data-theme='dark'] .notes-textarea {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+.notes-indicator {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.due-soon-badge {
+  color: #d68910;
+  font-weight: bold;
+  font-size: 0.72rem;
+  border: 1px solid #d68910;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 /* ----------------------------- Subtasks ----------------------------- */

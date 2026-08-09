@@ -31,6 +31,7 @@ export interface Task {
   username: string
   pinned: boolean
   position: number
+  notes: string | null
   subtasks: Subtask[]
   clientKey?: string
 }
@@ -39,6 +40,20 @@ export interface TasksResponse {
   tasks: Task[]
   can_undo: boolean
   can_redo: boolean
+}
+
+export interface DailyCount {
+  date: string
+  count: number
+}
+
+export interface StatsResponse {
+  current_streak: number
+  longest_streak: number
+  completed_today: number
+  completed_this_week: number
+  total_completed: number
+  daily_counts: DailyCount[]
 }
 
 export interface MarkAllCompletedResponse {

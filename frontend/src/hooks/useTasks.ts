@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { tasksApi } from '../api/tasks'
 import type { Task, TasksResponse } from '../types'
 import { pushUndoSnapshot } from './undoRedoStack'
+import { STATS_KEY } from './useStats'
 
 export const TASKS_KEY = ['tasks']
 
@@ -72,6 +73,7 @@ export function useAddTask() {
         username: '',
         pinned: false,
         position: (positions.length > 0 ? Math.min(...positions) : 0) - 1,
+        notes: null,
         subtasks: [],
         clientKey,
       }
@@ -163,6 +165,12 @@ export function useToggleDone() {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update task')
     },
+    onSuccess: (_task, vars) => {
+      // The streak/heatmap panel is derived from the server's activity log
+      // (a 'completed' entry only exists once the request actually lands),
+      // so it refetches on settle rather than being guessed optimistically.
+      if (vars.done) queryClient.invalidateQueries({ queryKey: STATS_KEY })
+    },
   })
 }
 
@@ -203,6 +211,33 @@ export function useSetPosition() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to reorder task')
+    },
+  })
+}
+
+// Deliberately doesn't go through beginOptimisticUpdate: notes autosave on a
+// debounce while typing, and pushing an undo-stack snapshot on every save
+// (see undoRedoStack.ts) would flood the 20-entry stack with near-identical
+// in-progress drafts, pushing out the structural edits a user would
+// actually want to undo. Matches the backend's set_task_notes, which skips
+// save_snapshot() for the same reason. can_undo/can_redo are left untouched
+// (no snapshot was pushed, so nothing about undo availability changed).
+export function useSetTaskNotes() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, notes }: { id: number; notes: string }) => tasksApi.setNotes(id, notes),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: TASKS_KEY })
+      const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+      setTasksData(queryClient, (old) => ({
+        ...old,
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, notes: vars.notes } : t)),
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to save notes')
     },
   })
 }

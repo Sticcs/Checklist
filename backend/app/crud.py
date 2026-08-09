@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
@@ -151,6 +151,74 @@ def get_activity_log(username: str, limit: int = 15) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_stats(username: str) -> dict:
+    engine = get_engine()
+    with engine.connect() as conn:
+        # SUBSTR(created_at, 1, 10) takes the YYYY-MM-DD prefix off the
+        # isoformat() timestamp - works identically on SQLite and Postgres,
+        # so this needs no dialect branching.
+        rows = conn.execute(
+            text(
+                """
+                SELECT SUBSTR(created_at, 1, 10) AS day, COUNT(*) AS count
+                FROM activity_log
+                WHERE username = :username AND action = 'completed'
+                GROUP BY day
+                """
+            ),
+            {"username": username},
+        ).mappings().all()
+
+    counts_by_day: dict[str, int] = {r["day"]: r["count"] for r in rows}
+    total_completed = sum(counts_by_day.values())
+
+    today = date.today()
+    today_iso = today.isoformat()
+    completed_today = counts_by_day.get(today_iso, 0)
+
+    week_start_iso = (today - timedelta(days=6)).isoformat()
+    completed_this_week = sum(
+        count for day, count in counts_by_day.items() if week_start_iso <= day <= today_iso
+    )
+
+    days_with_activity = set(counts_by_day.keys())
+
+    # Current streak counts consecutive days ending today, or - if today
+    # hasn't had a completion yet - ending yesterday, so an empty "so far
+    # today" doesn't read as a broken streak while the day is still open.
+    current_streak = 0
+    cursor = today if today_iso in days_with_activity else today - timedelta(days=1)
+    while cursor.isoformat() in days_with_activity:
+        current_streak += 1
+        cursor -= timedelta(days=1)
+
+    longest_streak = 0
+    if days_with_activity:
+        sorted_days = sorted(date.fromisoformat(d) for d in days_with_activity)
+        run = 1
+        longest_streak = 1
+        for prev_day, curr_day in zip(sorted_days, sorted_days[1:]):
+            run = run + 1 if (curr_day - prev_day).days == 1 else 1
+            longest_streak = max(longest_streak, run)
+
+    daily_counts = [
+        {
+            "date": (today - timedelta(days=offset)).isoformat(),
+            "count": counts_by_day.get((today - timedelta(days=offset)).isoformat(), 0),
+        }
+        for offset in range(29, -1, -1)
+    ]
+
+    return {
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "completed_today": completed_today,
+        "completed_this_week": completed_this_week,
+        "total_completed": total_completed,
+        "daily_counts": daily_counts,
+    }
+
+
 # ----------------------------- Undo/redo restore -----------------------------
 
 def restore_state(state_tasks: list[dict], username: str) -> None:
@@ -160,8 +228,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes)"
                 ),
                 {
                     "id": t["id"],
@@ -174,6 +242,12 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     "username": username,
                     "pinned": int(t.get("pinned", False)),
                     "position": t.get("position", 0),
+                    # notes deliberately has no dedicated undo history (see
+                    # set_task_notes), but it must still round-trip through
+                    # restores triggered by *other* undo/redo actions -
+                    # omitting it here would silently wipe notes on every
+                    # task any time an unrelated action got undone.
+                    "notes": t.get("notes"),
                 },
             )
 
@@ -278,6 +352,24 @@ def set_position(task_id: int, position: float, username: str) -> dict | None:
         conn.execute(
             text("UPDATE tasks SET position = :position WHERE id = :id AND username = :username"),
             {"position": position, "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
+def set_task_notes(task_id: int, notes: str, username: str) -> dict | None:
+    # Deliberately does NOT call undo.save_snapshot(). Every other mutation
+    # does, but notes autosave on a debounce while typing - snapshotting on
+    # every save would flood the 20-entry undo stack with near-identical
+    # in-progress drafts and push out the structural edits (add/delete/
+    # complete) a user would actually want to undo. restore_state still
+    # carries whatever notes value was captured in an *existing* snapshot,
+    # so undoing an unrelated action doesn't wipe notes - it just means
+    # notes edits themselves aren't a distinct undo step.
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET notes = :notes WHERE id = :id AND username = :username"),
+            {"notes": notes or None, "id": task_id, "username": username},
         )
     return get_task(task_id, username)
 

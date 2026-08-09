@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app.db import init_db
-from app.routers import activity, auth, subtasks, tasks, undo_redo
+from app.routers import activity, auth, stats, subtasks, tasks, undo_redo
 
 
 @asynccontextmanager
@@ -20,6 +20,7 @@ app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(subtasks.router)
 app.include_router(activity.router)
+app.include_router(stats.router)
 app.include_router(undo_redo.router)
 
 # Serves the built React app (frontend/dist, produced by `npm run build`) so

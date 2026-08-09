@@ -74,6 +74,10 @@ class TaskPositionUpdate(BaseModel):
     position: float
 
 
+class TaskNotesUpdate(BaseModel):
+    notes: str
+
+
 class Task(BaseModel):
     id: int
     text: str
@@ -85,6 +89,7 @@ class Task(BaseModel):
     username: str
     pinned: bool
     position: float
+    notes: str | None
     subtasks: list[Subtask] = []
 
 
@@ -109,3 +114,19 @@ class ActivityEntry(BaseModel):
     action: str
     detail: str
     created_at: str
+
+
+# ----------------------------- Stats -----------------------------
+
+class DailyCount(BaseModel):
+    date: str
+    count: int
+
+
+class StatsResponse(BaseModel):
+    current_streak: int
+    longest_streak: int
+    completed_today: int
+    completed_this_week: int
+    total_completed: int
+    daily_counts: list[DailyCount]

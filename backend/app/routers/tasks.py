@@ -9,6 +9,7 @@ from app.models import (
     Task,
     TaskCreate,
     TaskDoneUpdate,
+    TaskNotesUpdate,
     TaskPinnedUpdate,
     TaskPositionUpdate,
     TasksResponse,
@@ -81,6 +82,16 @@ def reposition_task(
 ) -> Task:
     _require_task(task_id, current_user.username)
     task = crud.set_position(task_id, body.position, current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/notes", response_model=Task)
+def update_task_notes(
+    task_id: int, body: TaskNotesUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    _require_task(task_id, current_user.username)
+    task = crud.set_task_notes(task_id, body.notes, current_user.username)
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
-import { useDeleteTask, useEditTask, useSetPinned, useToggleDone } from '../hooks/useTasks'
+import { useDeleteTask, useEditTask, useSetPinned, useSetTaskNotes, useToggleDone } from '../hooks/useTasks'
 import { useAddSubtask, useDeleteSubtask, useSetSubtaskUrgent, useToggleSubtask } from '../hooks/useSubtasks'
+import { daysUntil } from '../utils/dueDatePresets'
 
 interface Props {
   task: Task
@@ -24,6 +25,10 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const [subtasksOpen, setSubtasksOpen] = useState(false)
   const [newSubtaskText, setNewSubtaskText] = useState('')
 
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [notesDraft, setNotesDraft] = useState(task.notes ?? '')
+  const notesDirty = useRef(false)
+
   const setPinned = useSetPinned()
   const toggleDone = useToggleDone()
   const editTask = useEditTask()
@@ -32,12 +37,33 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
   const toggleSubtask = useToggleSubtask()
   const setSubtaskUrgent = useSetSubtaskUrgent()
   const deleteSubtask = useDeleteSubtask()
+  const setTaskNotes = useSetTaskNotes()
   const dragControls = useDragControls()
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
   const dueUrgent = task.due_date === todayIso && !task.done
+  const daysToDue = task.due_date ? daysUntil(task.due_date, todayIso) : null
+  const dueSoon = !task.done && daysToDue !== null && daysToDue > 0 && daysToDue <= 3
   const subDone = task.subtasks.filter((s) => s.done).length
   const urgentSubtaskCount = task.subtasks.filter((s) => s.urgent).length
+
+  // Only overwrite the draft from server state when we're not the source of
+  // the change (i.e. no unsaved local edit in flight) - otherwise the
+  // debounced save landing mid-typing would fight the user's own keystrokes.
+  useEffect(() => {
+    if (!notesDirty.current) setNotesDraft(task.notes ?? '')
+  }, [task.notes])
+
+  useEffect(() => {
+    if (!notesDirty.current) return
+    const handle = setTimeout(() => {
+      notesDirty.current = false
+      setTaskNotes.mutate({ id: task.id, notes: notesDraft })
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, 600)
+    return () => clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesDraft])
 
   // Clicking to focus a task is also how you get at its subtasks now - open
   // the panel the moment focus lands, close it the moment focus leaves,
@@ -50,6 +76,11 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
     const next = !subtasksOpen
     setSubtasksOpen(next)
     if (next) onExpandSubtasks?.(task.id)
+  }
+
+  const handleNotesChange = (value: string) => {
+    notesDirty.current = true
+    setNotesDraft(value)
   }
 
   const startEditing = () => {
@@ -132,9 +163,17 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
             )}
             <span className={task.done ? 'task-text done' : 'task-text'}>{task.text}</span>
             {dueUrgent && <span className="urgent-badge">🚨 Urgent!</span>}
+            {dueSoon && (
+              <span className="due-soon-badge">⏳ Due in {daysToDue} day{daysToDue === 1 ? '' : 's'}</span>
+            )}
             {urgentSubtaskCount > 0 && (
               <span className="urgent-subtask-badge" title={`${urgentSubtaskCount} urgent subtask(s)`}>
                 🔥 {urgentSubtaskCount}
+              </span>
+            )}
+            {!notesOpen && task.notes && (
+              <span className="notes-indicator" title="Has notes">
+                📝
               </span>
             )}
           </div>
@@ -242,6 +281,24 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
               </button>
             </form>
           </div>
+        )}
+      </div>
+
+      <div className="notes-section">
+        <button
+          type="button"
+          className="subtask-toggle-btn"
+          onClick={() => setNotesOpen((prev) => !prev)}
+        >
+          {task.notes ? '📝 Notes' : '📝 Add notes'}
+        </button>
+        {notesOpen && (
+          <textarea
+            className="notes-textarea"
+            placeholder="Notes..."
+            value={notesDraft}
+            onChange={(e) => handleNotesChange(e.target.value)}
+          />
         )}
       </div>
     </>

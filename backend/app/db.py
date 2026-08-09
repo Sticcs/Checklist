@@ -29,6 +29,7 @@ tasks_table = Table(
     Column("username", String, nullable=True),
     Column("pinned", Integer, nullable=False, server_default=text("0")),
     Column("position", Float, nullable=False, server_default=text("0")),
+    Column("notes", Text, nullable=True),
 )
 
 subtasks_table = Table(
@@ -129,6 +130,10 @@ def init_db() -> None:
             # Backfill so the initial "Manual" order matches what users
             # already see today (newest first, i.e. highest id first).
             conn.execute(text("UPDATE tasks SET position = -id"))
+
+    if "notes" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN notes TEXT"))
 
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:

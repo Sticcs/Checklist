@@ -24,6 +24,15 @@ export function toISODate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+export function daysUntil(dateIso: string, todayIso: string): number {
+  // Parsed as local midnight (not UTC) on both sides, same reasoning as
+  // toISODate above, so this stays consistent with how due dates are
+  // displayed and compared everywhere else.
+  const a = new Date(`${todayIso}T00:00:00`)
+  const b = new Date(`${dateIso}T00:00:00`)
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000)
+}
+
 function addDays(d: Date, days: number): Date {
   const copy = new Date(d)
   copy.setDate(copy.getDate() + days)

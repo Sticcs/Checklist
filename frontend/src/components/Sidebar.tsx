@@ -6,6 +6,7 @@ import { useClearAll, useClearCompleted, useMarkAllCompleted } from '../hooks/us
 import { useUndo, useRedo } from '../hooks/useUndoRedo'
 import { useWallpaper } from '../hooks/useWallpaper'
 import { resizeImageToDataUrl } from '../utils/resizeImage'
+import { StatsPanel } from './StatsPanel'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -61,6 +62,7 @@ export function Sidebar({
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const [activityOpen, setActivityOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
   const [wallpaper, setWallpaper] = useWallpaper(user?.username)
   const wallpaperInputRef = useRef<HTMLInputElement>(null)
 
@@ -212,6 +214,8 @@ export function Sidebar({
       </div>
 
       <hr />
+
+      <StatsPanel open={statsOpen} onToggle={setStatsOpen} />
 
       <details
         className="activity-log"
