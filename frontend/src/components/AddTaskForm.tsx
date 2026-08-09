@@ -40,6 +40,31 @@ export function AddTaskForm({ onAdded }: Props) {
     if (category === 'Custom') customCategoryRef.current?.focus()
   }, [category])
 
+  // Typing anywhere on the page (when nothing is already being typed into,
+  // and the progressive-disclosure flow hasn't started yet) redirects focus
+  // to the main task input so the keystroke lands there - no explicit click
+  // needed. '/' and '`' are reserved for the subtask-focus and scratchpad
+  // hotkeys respectively, so they're excluded here.
+  useEffect(() => {
+    if (textLocked) return
+
+    const handler = (e: KeyboardEvent) => {
+      if (isTypingElement(document.activeElement)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key.length !== 1) return
+      if (e.key === '/' || e.key === '`') return
+
+      const input = document.querySelector('.task-text-input') as HTMLInputElement | null
+      input?.focus()
+      // No preventDefault: focus lands before this same keydown's default
+      // character-insertion behavior runs, so the keystroke types into the
+      // input we just focused instead of being lost.
+    }
+
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [textLocked])
+
   const resetAll = () => {
     setText('')
     setTextLocked(false)

@@ -23,6 +23,7 @@ export interface Task {
   created_at: string
   username: string
   pinned: boolean
+  position: number
   subtasks: Subtask[]
 }
 

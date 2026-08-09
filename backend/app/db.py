@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, MetaData, String, Table, Text, create_engine, event, text
+from sqlalchemy import Column, Float, Integer, MetaData, String, Table, Text, create_engine, event, inspect, text
 
 from app.config import settings
 
@@ -28,6 +28,7 @@ tasks_table = Table(
     Column("created_at", String, nullable=False),
     Column("username", String, nullable=True),
     Column("pinned", Integer, nullable=False, server_default=text("0")),
+    Column("position", Float, nullable=False, server_default=text("0")),
 )
 
 subtasks_table = Table(
@@ -114,3 +115,16 @@ def init_db() -> None:
         with engine.begin() as conn:
             conn.execute(text("PRAGMA journal_mode = WAL"))
     metadata.create_all(engine)
+
+    # create_all() only creates *missing* tables - it never alters an
+    # existing one, so a `tasks` table created before the "position" column
+    # existed (e.g. the real checklist.db) needs an explicit migration here,
+    # same defensive pattern the original main.py used for schema changes.
+    inspector = inspect(engine)
+    existing_columns = {c["name"] for c in inspector.get_columns("tasks")}
+    if "position" not in existing_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN position FLOAT NOT NULL DEFAULT 0"))
+            # Backfill so the initial "Manual" order matches what users
+            # already see today (newest first, i.e. highest id first).
+            conn.execute(text("UPDATE tasks SET position = -id"))

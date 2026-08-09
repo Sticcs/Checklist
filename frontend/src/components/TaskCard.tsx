@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, Reorder, useDragControls } from 'framer-motion'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
 import { useDeleteTask, useEditTask, useSetPinned } from '../hooks/useTasks'
@@ -10,9 +10,11 @@ interface Props {
   focused: boolean
   todayIso: string
   onExpandSubtasks?: (taskId: number) => void
+  draggable?: boolean
+  onDragEnd?: (taskId: number) => void
 }
 
-export function TaskCard({ task, focused, todayIso, onExpandSubtasks }: Props) {
+export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable, onDragEnd }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [editPriority, setEditPriority] = useState(task.priority)
@@ -28,6 +30,7 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks }: Props) {
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
   const deleteSubtask = useDeleteSubtask()
+  const dragControls = useDragControls()
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
   const urgent = task.due_date === todayIso && !task.done
@@ -49,36 +52,28 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks }: Props) {
 
   const saveEdit = (e: React.FormEvent) => {
     e.preventDefault()
-    editTask.mutate(
-      {
-        id: task.id,
-        text: editText.trim(),
-        priority: editPriority,
-        category: editCategory,
-        dueDate: editDueDate || null,
-      },
-      { onSuccess: () => setEditing(false) }
-    )
+    // Close immediately - the mutation is optimistic, so there's no need to
+    // wait on the round trip before showing the edited task.
+    setEditing(false)
+    editTask.mutate({
+      id: task.id,
+      text: editText.trim(),
+      priority: editPriority,
+      category: editCategory,
+      dueDate: editDueDate || null,
+    })
   }
 
   const submitSubtask = (e: React.FormEvent) => {
     e.preventDefault()
     const text = newSubtaskText.trim()
     if (!text) return
-    addSubtask.mutate({ taskId: task.id, text }, { onSuccess: () => setNewSubtaskText('') })
+    setNewSubtaskText('')
+    addSubtask.mutate({ taskId: task.id, text })
   }
 
-  return (
-    <motion.li
-      layout
-      initial={{ opacity: 0, y: -12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, overflow: 'hidden' }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-      data-task-id={task.id}
-      data-priority={task.priority}
-      className={`task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}`}
-    >
+  const content = (
+    <>
       {editing ? (
         <form className="edit-form" onSubmit={saveEdit}>
           <input value={editText} onChange={(e) => setEditText(e.target.value)} />
@@ -111,6 +106,15 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks }: Props) {
       ) : (
         <div data-task-content-id={task.id} className="task-content">
           <div className="task-title">
+            {draggable && (
+              <span
+                className="drag-handle"
+                title="Drag to reorder"
+                onPointerDown={(e) => dragControls.start(e)}
+              >
+                ⠿
+              </span>
+            )}
             {task.pinned && (
               <span className="pin-badge" title="Pinned">
                 📌
@@ -197,6 +201,44 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks }: Props) {
           </div>
         )}
       </div>
+    </>
+  )
+
+  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}`
+
+  if (draggable) {
+    return (
+      <Reorder.Item
+        value={task}
+        dragListener={false}
+        dragControls={dragControls}
+        layout
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, overflow: 'hidden' }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        data-task-id={task.id}
+        data-priority={task.priority}
+        className={className}
+        onDragEnd={() => onDragEnd?.(task.id)}
+      >
+        {content}
+      </Reorder.Item>
+    )
+  }
+
+  return (
+    <motion.li
+      layout
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, overflow: 'hidden' }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      data-task-id={task.id}
+      data-priority={task.priority}
+      className={className}
+    >
+      {content}
     </motion.li>
   )
 }

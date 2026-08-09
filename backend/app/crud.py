@@ -159,8 +159,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position)"
                 ),
                 {
                     "id": t["id"],
@@ -172,6 +172,7 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     "created_at": t["created_at"],
                     "username": username,
                     "pinned": int(t.get("pinned", False)),
+                    "position": t.get("position", 0),
                 },
             )
 
@@ -212,10 +213,16 @@ def add_task(task_text: str, priority: str, category: str, due_date: str | None,
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
+        # New tasks join at the top of manual order, same place they already
+        # appear in the default (newest-first) view.
+        min_position = conn.execute(
+            text("SELECT MIN(position) FROM tasks WHERE username = :username"), {"username": username}
+        ).scalar_one()
+        new_position = (min_position - 1) if min_position is not None else 0
         new_id = conn.execute(
             text(
-                "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username) "
-                "VALUES (:text, 0, :priority, :category, :due_date, :created_at, :username) "
+                "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, position) "
+                "VALUES (:text, 0, :priority, :category, :due_date, :created_at, :username, :position) "
                 "RETURNING id"
             ),
             {
@@ -225,6 +232,7 @@ def add_task(task_text: str, priority: str, category: str, due_date: str | None,
                 "due_date": due_date,
                 "created_at": datetime.now().isoformat(),
                 "username": username,
+                "position": new_position,
             },
         ).scalar_one()
     log_activity(username, "added", task_text)
@@ -258,6 +266,17 @@ def set_pinned(task_id: int, pinned: bool, username: str) -> dict | None:
             {"pinned": int(pinned), "id": task_id, "username": username},
         )
     log_activity(username, "pinned" if pinned else "unpinned", task_text)
+    return get_task(task_id, username)
+
+
+def set_position(task_id: int, position: float, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET position = :position WHERE id = :id AND username = :username"),
+            {"position": position, "id": task_id, "username": username},
+        )
     return get_task(task_id, username)
 
 

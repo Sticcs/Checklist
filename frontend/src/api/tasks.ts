@@ -9,6 +9,7 @@ export const tasksApi = {
     api.patch<Task>(`/tasks/${id}`, { text, priority, category, due_date }),
   setDone: (id: number, done: boolean) => api.patch<Task>(`/tasks/${id}/done`, { done }),
   setPinned: (id: number, pinned: boolean) => api.patch<Task>(`/tasks/${id}/pin`, { pinned }),
+  setPosition: (id: number, position: number) => api.patch<Task>(`/tasks/${id}/position`, { position }),
   remove: (id: number) => api.delete<void>(`/tasks/${id}`),
   markAllCompleted: () => api.post<MarkAllCompletedResponse>('/tasks/mark-all-completed'),
   clearCompleted: () => api.post<ClearResponse>('/tasks/clear-completed'),

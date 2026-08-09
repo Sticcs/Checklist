@@ -65,6 +65,10 @@ class TaskPinnedUpdate(BaseModel):
     pinned: bool
 
 
+class TaskPositionUpdate(BaseModel):
+    position: float
+
+
 class Task(BaseModel):
     id: int
     text: str
@@ -75,6 +79,7 @@ class Task(BaseModel):
     created_at: str
     username: str
     pinned: bool
+    position: float
     subtasks: list[Subtask] = []
 
 

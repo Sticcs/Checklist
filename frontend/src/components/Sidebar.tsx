@@ -144,6 +144,7 @@ export function Sidebar({
             <option>Priority</option>
             <option>Due date</option>
             <option>Newest first</option>
+            <option>Manual</option>
           </select>
         </label>
       </div>

@@ -12,8 +12,20 @@ body,
 body {
   margin: 0;
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: light dark;
   color: var(--text-primary);
+}
+
+/* Scoped to the app's own theme instead of `light dark` - with that generic
+   value, the browser is free to render native form-control chrome (text
+   color, caret, autofill) using the OS's dark/light preference regardless of
+   which theme the app itself is showing, which is what caused text typed in
+   light mode to render in dark-mode (near-white) color on some systems. */
+body[data-theme='light'] {
+  color-scheme: light;
+}
+
+body[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 button {
@@ -29,6 +41,7 @@ select {
   border-radius: 8px;
   border: 1px solid rgba(128, 128, 128, 0.3);
   background: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
 }
 
 body[data-theme='dark'] input,
@@ -120,7 +133,32 @@ body[data-theme='dark'] {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 1.5rem;
-  height: fit-content;
+  min-height: calc(100vh - 3rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.scratchpad {
+  margin-top: auto;
+  padding-top: 1.5rem;
+}
+
+.scratchpad-input {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+  border: none;
+  border-top: 1px dashed rgba(128, 128, 128, 0.3);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.6rem 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.scratchpad-input:focus {
+  outline: none;
+  opacity: 1;
 }
 
 .task-list-column {
@@ -586,6 +624,18 @@ body[data-theme='dark'] .task-card.focused {
 
 .pin-badge {
   font-size: 0.85rem;
+}
+
+.drag-handle {
+  cursor: grab;
+  opacity: 0.5;
+  font-size: 1rem;
+  touch-action: none;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 @keyframes pulse-urgent {

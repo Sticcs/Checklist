@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence } from 'framer-motion'
-import { useTasks, useToggleDone } from '../hooks/useTasks'
+import { AnimatePresence, Reorder } from 'framer-motion'
+import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useSubtaskFocusHotkey } from '../hooks/useHotkeys'
 import { AddTaskForm } from '../components/AddTaskForm'
 import { TaskCard } from '../components/TaskCard'
 import { ProgressBar } from '../components/ProgressBar'
 import { QuoteHeader } from '../components/QuoteHeader'
+import { Scratchpad } from '../components/Scratchpad'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
 import { toISODate } from '../utils/dueDatePresets'
@@ -14,6 +15,7 @@ import type { Task } from '../types'
 export function TaskListPage() {
   const { data, isLoading, error } = useTasks()
   const toggleDone = useToggleDone()
+  const setPosition = useSetPosition()
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
@@ -57,6 +59,27 @@ export function TaskListPage() {
     if (pinnedOnly) result = result.filter((t) => t.pinned)
     return sortTasks(result, sortBy)
   }, [tasks, search, statusFilter, categoryFilter, pinnedOnly, sortBy])
+
+  // Local copy driving the drag visuals in Manual mode: framer-motion's
+  // Reorder.Group needs a values array it can update continuously as items
+  // swap past each other mid-drag, ahead of the position mutation landing.
+  const [manualOrder, setManualOrder] = useState<Task[]>(filtered)
+  useEffect(() => {
+    setManualOrder(filtered)
+  }, [filtered])
+
+  const persistPosition = (taskId: number) => {
+    const idx = manualOrder.findIndex((t) => t.id === taskId)
+    if (idx === -1) return
+    const prev = manualOrder[idx - 1]
+    const next = manualOrder[idx + 1]
+    let position: number
+    if (prev && next) position = (prev.position + next.position) / 2
+    else if (next) position = next.position - 1
+    else if (prev) position = prev.position + 1
+    else position = 0
+    setPosition.mutate({ id: taskId, position })
+  }
 
   const todayIso = toISODate(new Date())
   const doneCount = tasks.filter((t) => t.done).length
@@ -133,6 +156,7 @@ export function TaskListPage() {
         <div className="task-entry-panel">
           <QuoteHeader />
           <AddTaskForm onAdded={(id) => setLatestTaskId(id)} />
+          <Scratchpad />
         </div>
 
         <div className="task-list-column">
@@ -147,6 +171,28 @@ export function TaskListPage() {
 
           {filtered.length === 0 ? (
             <p className="status-message">No tasks match your filters yet.</p>
+          ) : sortBy === 'Manual' ? (
+            <Reorder.Group
+              as="ul"
+              axis="y"
+              className="task-list"
+              values={manualOrder}
+              onReorder={setManualOrder}
+            >
+              <AnimatePresence>
+                {manualOrder.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    focused={focusedTaskId === task.id}
+                    todayIso={todayIso}
+                    onExpandSubtasks={setLastExpandedTaskId}
+                    draggable
+                    onDragEnd={persistPosition}
+                  />
+                ))}
+              </AnimatePresence>
+            </Reorder.Group>
           ) : (
             <ul className="task-list">
               <AnimatePresence>
