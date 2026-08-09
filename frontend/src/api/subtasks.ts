@@ -1,0 +1,10 @@
+import { api } from './client'
+import type { SubtaskMutationResponse } from '../types'
+
+export const subtasksApi = {
+  create: (taskId: number, text: string) =>
+    api.post<SubtaskMutationResponse>(`/tasks/${taskId}/subtasks`, { text }),
+  setDone: (subtaskId: number, done: boolean) =>
+    api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}`, { done }),
+  remove: (subtaskId: number) => api.delete<SubtaskMutationResponse>(`/subtasks/${subtaskId}`),
+}
