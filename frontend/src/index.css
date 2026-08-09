@@ -986,6 +986,16 @@ body[data-theme='dark'] .task-card.done {
   gap: 8px;
   font-size: 1.05rem;
   margin-bottom: 6px;
+  flex-wrap: nowrap;
+  /* Reserves room for the checkbox/pin/edit/delete row, which floats over
+     the top-right corner via .task-actions' own absolute positioning rather
+     than sharing this flex row - without this, title content could render
+     underneath it. */
+  padding-right: 11rem;
+}
+
+.task-title > * {
+  flex-shrink: 0;
 }
 
 .task-text.done {
@@ -1040,6 +1050,24 @@ body[data-theme='dark'] .task-card.done {
   white-space: nowrap;
 }
 
+.task-title > .subtask-due-tally-row {
+  /* The one title element allowed to shrink/clip - everything else (pin,
+     text, urgent/due-soon badges) keeps its natural size via the
+     `.task-title > *` flex-shrink:0 rule above; this is the sole exception,
+     so when things get crowded it's the due-date tally that gives way, not
+     the rest of the header. */
+  flex-shrink: 1;
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 22px), transparent 100%);
+}
+
 .subtask-due-tally-badge {
   color: #3498db;
   font-weight: 600;
@@ -1047,7 +1075,8 @@ body[data-theme='dark'] .task-card.done {
   border: 1px solid #3498db;
   padding: 2px 6px;
   border-radius: 4px;
-  white-space: normal;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .meta-tags {

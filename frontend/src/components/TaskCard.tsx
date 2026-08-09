@@ -224,11 +224,15 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                 🔥 {urgentSubtaskCount}
               </span>
             )}
-            {subtaskDueTally.map(([d, count]) => (
-              <span key={d} className="subtask-due-tally-badge" title="Subtask due dates">
-                📅 {count} {subtaskDueTallyLabel(d)}
-              </span>
-            ))}
+            {subtaskDueTally.length > 0 && (
+              <div className="subtask-due-tally-row">
+                {subtaskDueTally.map(([d, count]) => (
+                  <span key={d} className="subtask-due-tally-badge" title="Subtask due dates">
+                    📅 {count} {subtaskDueTallyLabel(d)}
+                  </span>
+                ))}
+              </div>
+            )}
             {!notesOpen && task.notes && (
               <span className="notes-indicator" title="Has notes">
                 📝
