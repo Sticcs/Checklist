@@ -17,7 +17,7 @@ export function DownloadAppButton({ variant = 'sidebar' }: Props) {
   return (
     <a
       className={className}
-      href="/downloads/Checklist-Windows.exe"
+      href="/downloads/ChecklistApp.exe"
       download
       title="Downloads a standalone .exe - same app, runs as a native window"
     >

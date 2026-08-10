@@ -1,6 +1,6 @@
 # Build with: pyinstaller checklist.spec (from backend/, desktop venv active)
-# Produces dist/Checklist.exe - a single portable file (onefile mode), so it's
-# easy to serve as a direct download from the website - see README.md.
+# Produces dist/ChecklistApp.exe - a single portable file (onefile mode), so
+# it's easy to serve as a direct download from the website - see README.md.
 from pathlib import Path
 
 block_cipher = None
@@ -47,7 +47,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="Checklist",
+    name="ChecklistApp",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

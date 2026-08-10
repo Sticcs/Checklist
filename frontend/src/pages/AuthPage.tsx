@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { ApiError } from '../api/client'
 import { AuthQuotes } from '../components/AuthQuotes'
 import { DownloadAppButton } from '../components/DownloadAppButton'
 
 export function AuthPage() {
   const { loginAsGuest, login, signup } = useAuth()
+  const isDesktopApp = useIsDesktopApp()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -55,6 +57,13 @@ export function AuthPage() {
         <AuthQuotes />
         <div className="auth-card">
           <h1 className="auth-title">✅ My Checklist</h1>
+
+          {isDesktopApp && (
+            <p className="desktop-app-note">
+              🖥️ App version - separate account and data from the website. Data can be imported (see the sidebar
+              once signed in).
+            </p>
+          )}
 
           <div className="auth-tabs">
             <button

@@ -573,6 +573,14 @@ body[data-theme='dark'] .assessment-card.done {
   margin: 0.35rem 0 0 30px;
 }
 
+.desktop-app-note {
+  font-size: 0.72rem;
+  font-style: italic;
+  opacity: 0.6;
+  text-align: center;
+  margin: -0.75rem 0 1rem;
+}
+
 .sidebar-profile-actions {
   display: flex;
   gap: 0.6rem;

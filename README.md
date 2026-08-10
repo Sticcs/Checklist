@@ -88,7 +88,7 @@ cd frontend && npm run build && cd ../backend
 pyinstaller checklist.spec
 ```
 
-The app lands in `backend/dist/Checklist.exe` - a single portable file (onefile
+The app lands in `backend/dist/ChecklistApp.exe` - a single portable file (onefile
 mode), using the same artwork as the website's favicon as its icon (regenerate
 `backend/icon.ico` via the command in `checklist.spec` if `frontend/public/favicon.png`
 ever changes). Its database lives at `%LOCALAPPDATA%\Checklist\checklist.db`,
@@ -123,13 +123,14 @@ unchanged (stacked panels, not hidden). See the `.desktop-app` class in `index.c
 
 The sidebar's "Download app (Windows)" button (`frontend/src/components/Sidebar.tsx`,
 hidden automatically when the site is already running inside the desktop app itself -
-see `isDesktopApp`) just links to a static file, `frontend/public/downloads/Checklist-Windows.exe`.
+see `isDesktopApp`) just links to a static file, `frontend/public/downloads/ChecklistApp.exe`.
 Render's build is Linux-only and can't produce a Windows `.exe`, so there's no way to
 build this as part of a normal deploy - after building above, copy the result into place
-by hand and redeploy:
+by hand and redeploy (the build already names it `ChecklistApp.exe`, so this is a
+straight copy, no renaming):
 
 ```bash
-cp backend/dist/Checklist.exe frontend/public/downloads/Checklist-Windows.exe
+cp backend/dist/ChecklistApp.exe frontend/public/downloads/ChecklistApp.exe
 ```
 
 That file is committed to the repo (~55 MB) so Render's Docker build can serve it
