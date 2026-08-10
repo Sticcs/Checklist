@@ -16,13 +16,20 @@ function rollback(queryClient: ReturnType<typeof useQueryClient>, previous: Task
   if (previous) queryClient.setQueryData(TASKS_KEY, previous)
 }
 
+// A plain counter rather than -Date.now(): pasting a multi-line list adds
+// several subtasks in the same synchronous loop (see TaskCard's paste
+// handler), and Date.now()'s millisecond resolution isn't fine-grained
+// enough to stay unique across those - colliding temp ids became colliding
+// React keys, which silently dropped/duplicated rows.
+let tempSubtaskSeq = 0
+
 export function useAddSubtask() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ taskId, text }: { taskId: number; text: string }) => subtasksApi.create(taskId, text),
     onMutate: async (vars) => {
       const previous = await beginOptimisticUpdate(queryClient)
-      const tempId = -Date.now()
+      const tempId = -(++tempSubtaskSeq)
       const clientKey = `temp-subtask-${tempId}`
       queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
         old

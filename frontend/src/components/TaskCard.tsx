@@ -202,6 +202,24 @@ export function TaskCard({
     addSubtask.mutate({ taskId: task.id, text })
   }
 
+  // Pasting a multi-line list (bullet points, a numbered list, or just one
+  // item per line) adds each line as its own subtask instead of dumping the
+  // whole block into the input as one line. A single-line paste is left
+  // alone - the browser's normal paste-into-input behavior handles that.
+  const handleSubtaskPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text')
+    const lines = pasted
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^(?:[-*•‣▪·]|\(?\d+[.)])\s+/, '').trim())
+      .filter(Boolean)
+    if (lines.length < 2) return
+    e.preventDefault()
+    setNewSubtaskText('')
+    for (const line of lines) {
+      addSubtask.mutate({ taskId: task.id, text: line })
+    }
+  }
+
   const content = (
     <>
       {editing ? (
@@ -451,6 +469,7 @@ export function TaskCard({
                 placeholder="Add a subtask... (Press '/' to focus)"
                 value={newSubtaskText}
                 onChange={(e) => setNewSubtaskText(e.target.value)}
+                onPaste={handleSubtaskPaste}
               />
               <button type="submit" className="btn-primary">
                 Add
