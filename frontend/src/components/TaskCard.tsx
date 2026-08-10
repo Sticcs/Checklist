@@ -27,9 +27,22 @@ interface Props {
   onExpandSubtasks?: (taskId: number) => void
   draggable?: boolean
   onDragEnd?: (taskId: number) => void
+  focusedSubtaskId?: number | null
+  notepadHidden?: boolean
+  onToggleNotepad?: () => void
 }
 
-export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable, onDragEnd }: Props) {
+export function TaskCard({
+  task,
+  focused,
+  todayIso,
+  onExpandSubtasks,
+  draggable,
+  onDragEnd,
+  focusedSubtaskId = null,
+  notepadHidden = false,
+  onToggleNotepad,
+}: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [editPriority, setEditPriority] = useState(task.priority)
@@ -307,9 +320,15 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.2, ease: 'easeOut' }}
-                    className={s.done ? 'subtask-row done' : 'subtask-row'}
+                    className={[
+                      'subtask-row',
+                      s.done && 'done',
+                      focusedSubtaskId === s.id && 'focused',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
                   >
-                    <span className="subtask-row-text">
+                    <span className="subtask-row-text" data-subtask-content-id={s.id}>
                       {s.text}
                       {s.due_date && (
                         <span
@@ -344,6 +363,19 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                         }}
                       />
                     )}
+                    {s.due_date && (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Clear due date"
+                        onClick={() => {
+                          setDueDatePickerSubtaskId((prev) => (prev === s.id ? null : prev))
+                          setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: null })
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
                     <button
                       type="button"
                       className={s.urgent ? 'icon-btn btn-primary' : 'icon-btn'}
@@ -363,6 +395,21 @@ export function TaskCard({ task, focused, todayIso, onExpandSubtasks, draggable,
                     <button type="button" className="icon-btn" onClick={() => deleteSubtask.mutate(s.id)}>
                       🗑️
                     </button>
+                    <AnimatePresence>
+                      {focusedSubtaskId === s.id && (
+                        <motion.button
+                          type="button"
+                          className="subtask-notepad-toggle-btn"
+                          initial={{ opacity: 0, y: -6, scale: 0.92 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -6, scale: 0.92 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+                          onClick={() => onToggleNotepad?.()}
+                        >
+                          {notepadHidden ? '📝 Show notepad' : '📝 Hide notepad'}
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
                   </motion.li>
                 ))}
               </AnimatePresence>

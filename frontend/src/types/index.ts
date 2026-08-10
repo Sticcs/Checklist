@@ -13,6 +13,7 @@ export interface Subtask {
   created_at: string
   urgent: boolean
   due_date: string | null
+  notes: string | null
   // Client-only, never sent by the server: set on an optimistically-inserted
   // subtask and carried forward when its temp id is swapped for the real
   // one, so the React key stays stable across that swap instead of

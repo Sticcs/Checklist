@@ -649,6 +649,22 @@ def set_subtask_due_date(subtask_id: int, due_date: str | None, username: str) -
     return _subtask_dict(row) if row else None
 
 
+def set_subtask_notes(subtask_id: int, notes: str) -> dict | None:
+    # Mirrors set_task_notes: no undo.save_snapshot() since notes autosave on
+    # a debounce while typing, and snapshotting every keystroke-driven save
+    # would flood the undo stack with near-identical drafts.
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE subtasks SET notes = :notes WHERE id = :id"),
+            {"notes": notes or None, "id": subtask_id},
+        )
+        row = conn.execute(
+            text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
+        ).mappings().fetchone()
+    return _subtask_dict(row) if row else None
+
+
 def delete_subtask(subtask_id: int, task_id: int, username: str) -> bool:
     undo.save_snapshot(username)
     engine = get_engine()

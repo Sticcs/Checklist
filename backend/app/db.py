@@ -43,6 +43,7 @@ subtasks_table = Table(
     Column("created_at", String, nullable=False),
     Column("urgent", Integer, nullable=False, server_default=text("0")),
     Column("due_date", String, nullable=True),
+    Column("notes", Text, nullable=True),
 )
 
 activity_log_table = Table(
@@ -150,6 +151,10 @@ def init_db() -> None:
     if "due_date" not in existing_subtask_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE subtasks ADD COLUMN due_date TEXT"))
+
+    if "notes" not in existing_subtask_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE subtasks ADD COLUMN notes TEXT"))
 
     existing_activity_columns = {c["name"] for c in inspector.get_columns("activity_log")}
     if "task_id" not in existing_activity_columns:

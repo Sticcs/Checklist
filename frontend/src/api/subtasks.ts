@@ -10,5 +10,7 @@ export const subtasksApi = {
     api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}/urgent`, { urgent }),
   setDueDate: (subtaskId: number, due_date: string | null) =>
     api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}/due-date`, { due_date }),
+  setNotes: (subtaskId: number, notes: string) =>
+    api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}/notes`, { notes }),
   remove: (subtaskId: number) => api.delete<SubtaskMutationResponse>(`/subtasks/${subtaskId}`),
 }

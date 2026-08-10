@@ -8,6 +8,7 @@ import { TaskCard } from '../components/TaskCard'
 import { ProgressBar } from '../components/ProgressBar'
 import { QuoteHeader } from '../components/QuoteHeader'
 import { Scratchpad } from '../components/Scratchpad'
+import { SubtaskNotepad } from '../components/SubtaskNotepad'
 import { AssessmentsPanel } from '../components/AssessmentsPanel'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
@@ -28,12 +29,30 @@ export function TaskListPage() {
   const [sortBy, setSortBy] = useState<SortBy>('Priority')
 
   const [focusedTaskId, setFocusedTaskId] = useState<number | null>(null)
+  const [focusedSubtaskId, setFocusedSubtaskId] = useState<number | null>(null)
+  const [notepadHidden, setNotepadHidden] = useState(false)
   const [latestTaskId, setLatestTaskId] = useState<number | null>(null)
   const [lastExpandedTaskId, setLastExpandedTaskId] = useState<number | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const tasks = useMemo(() => data?.tasks ?? [], [data])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+
+  const focusedSubtask = useMemo(() => {
+    if (focusedSubtaskId === null) return null
+    for (const t of tasks) {
+      const s = t.subtasks.find((sub) => sub.id === focusedSubtaskId)
+      if (s) return s
+    }
+    return null
+  }, [tasks, focusedSubtaskId])
+
+  // The notepad opens automatically every time focus lands on a (possibly
+  // different) subtask - any earlier "hide notepad" choice shouldn't carry
+  // over and suppress it for the next one.
+  useEffect(() => {
+    setNotepadHidden(false)
+  }, [focusedSubtaskId])
 
   // Assessments (category === 'Assessment') live in their own panel, not the
   // main list - everything else about them (mutations, undo/redo, clear
@@ -125,9 +144,22 @@ export function TaskListPage() {
       const taskCard = target.closest('[data-task-id]')
       const contentArea = target.closest('[data-task-content-id]')
       const contentId = contentArea ? Number(contentArea.getAttribute('data-task-content-id')) : null
+      // A subtask's own line (its text, not the icon buttons next to it -
+      // see the sibling layout in TaskCard) toggles that subtask's focus
+      // independently of the parent task's focus.
+      const subtaskContentArea = target.closest('[data-subtask-content-id]')
+      const subtaskContentId = subtaskContentArea
+        ? Number(subtaskContentArea.getAttribute('data-subtask-content-id'))
+        : null
 
       if (!taskCard) {
         setFocusedTaskId((prev) => (prev !== null ? null : prev))
+        setFocusedSubtaskId((prev) => (prev !== null ? null : prev))
+        return
+      }
+
+      if (subtaskContentId !== null) {
+        setFocusedSubtaskId((prev) => (prev === subtaskContentId ? null : subtaskContentId))
         return
       }
 
@@ -136,6 +168,10 @@ export function TaskListPage() {
         // panel, drag handle) - nothing to do with focus here.
         return
       }
+
+      // Focus moved to the task's own content - any subtask focus it held
+      // is no longer relevant.
+      setFocusedSubtaskId((prev) => (prev !== null ? null : prev))
 
       if (e.ctrlKey || e.metaKey) {
         const task = tasksById.get(contentId)
@@ -209,7 +245,22 @@ export function TaskListPage() {
           </div>
           <div className="bottom-panels-row">
             <Scratchpad />
-            <AssessmentsPanel assessments={assessments} focusedTaskId={focusedTaskId} todayIso={todayIso} />
+            <div className="assessments-column">
+              <AnimatePresence>
+                {focusedSubtask && !notepadHidden && (
+                  <motion.div
+                    key={focusedSubtask.id}
+                    initial={{ opacity: 0, y: -12, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -12, scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                  >
+                    <SubtaskNotepad subtask={focusedSubtask} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <AssessmentsPanel assessments={assessments} focusedTaskId={focusedTaskId} todayIso={todayIso} />
+            </div>
           </div>
         </div>
 
@@ -252,6 +303,9 @@ export function TaskListPage() {
                     onExpandSubtasks={setLastExpandedTaskId}
                     draggable
                     onDragEnd={persistPosition}
+                    focusedSubtaskId={focusedSubtaskId}
+                    notepadHidden={notepadHidden}
+                    onToggleNotepad={() => setNotepadHidden((h) => !h)}
                   />
                 ))}
               </AnimatePresence>
@@ -266,6 +320,9 @@ export function TaskListPage() {
                     focused={focusedTaskId === task.id}
                     todayIso={todayIso}
                     onExpandSubtasks={setLastExpandedTaskId}
+                    focusedSubtaskId={focusedSubtaskId}
+                    notepadHidden={notepadHidden}
+                    onToggleNotepad={() => setNotepadHidden((h) => !h)}
                   />
                 ))}
               </AnimatePresence>

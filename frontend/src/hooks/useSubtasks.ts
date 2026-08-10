@@ -42,6 +42,7 @@ export function useAddSubtask() {
                           created_at: new Date().toISOString(),
                           urgent: false,
                           due_date: null,
+                          notes: null,
                           clientKey,
                         },
                       ],
@@ -189,6 +190,46 @@ export function useSetSubtaskDueDate() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update due date')
+    },
+  })
+}
+
+// Deliberately doesn't go through beginOptimisticUpdate: notes autosave on a
+// debounce while typing, and pushing an undo-stack snapshot on every save
+// would flood the 20-entry stack with near-identical in-progress drafts.
+// Matches the backend's set_subtask_notes, which skips save_snapshot() for
+// the same reason (see useTasks.ts's useSetTaskNotes for the task-notes
+// equivalent).
+export function useSetSubtaskNotes() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ subtaskId, notes }: { subtaskId: number; notes: string }) =>
+      subtasksApi.setNotes(subtaskId, notes),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: TASKS_KEY })
+      const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+        old
+          ? {
+              ...old,
+              tasks: old.tasks.map((t) =>
+                t.subtasks.some((s) => s.id === vars.subtaskId)
+                  ? {
+                      ...t,
+                      subtasks: t.subtasks.map((s) =>
+                        s.id === vars.subtaskId ? { ...s, notes: vars.notes } : s
+                      ),
+                    }
+                  : t
+              ),
+            }
+          : old
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to save notes')
     },
   })
 }
