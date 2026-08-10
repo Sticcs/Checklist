@@ -69,7 +69,7 @@ export function SubtaskNotepad({ subtask }: Props) {
       <textarea
         ref={ref}
         className="subtask-notepad-input"
-        placeholder="Notes for this subtask..."
+        placeholder="Notes for this subtask... (Press ` to focus)"
         value={draft}
         onChange={(e) => onChange(e.target.value)}
       />

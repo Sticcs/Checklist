@@ -17,7 +17,7 @@ const GROUPS: ShortcutGroup[] = [
     title: 'Anywhere',
     rows: [
       { keys: ['?'], description: 'Show this shortcuts list' },
-      { keys: ['`'], description: 'Focus the scratchpad' },
+      { keys: ['`'], description: 'Focus the scratchpad - or a subtask notepad, if one is open' },
       { keys: ['/'], description: 'Focus a subtask input (or the main task input)' },
       { keys: ['Ctrl', 'Click'], description: 'Toggle a task complete' },
       { keys: ['Ctrl', 'Z'], description: 'Undo' },
