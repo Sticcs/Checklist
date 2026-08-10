@@ -141,6 +141,14 @@ export function TaskListPage() {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement
+      // The scratchpad and the subtask notepad (plus its expand overlay,
+      // portaled onto <body>) live outside any task card's DOM subtree -
+      // without this, any click inside them (typing a note, hitting the
+      // expand button) reads as "clicked outside every task card" below and
+      // immediately clears focus, which for the notepad also means it
+      // unmounts itself mid-click since it only renders while a subtask is
+      // focused.
+      if (target.closest('[data-focus-exempt]')) return
       const taskCard = target.closest('[data-task-id]')
       const contentArea = target.closest('[data-task-content-id]')
       const contentId = contentArea ? Number(contentArea.getAttribute('data-task-content-id')) : null

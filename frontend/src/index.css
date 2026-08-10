@@ -179,8 +179,43 @@ body[data-theme='dark'] {
   flex-direction: column;
 }
 
+/* Shared by .scratchpad and .subtask-notepad: label on the left, expand
+   button on the right. */
+.panel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.panel-header-row .scratchpad-label,
+.panel-header-row .subtask-notepad-label {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.expand-btn {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.5;
+  border-radius: 6px;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.expand-btn:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+}
+
 .scratchpad-label {
-  margin: 0 0 0.4rem;
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -209,12 +244,17 @@ body[data-theme='dark'] {
 /* ----------------------------- Assessments ----------------------------- */
 .subtask-notepad {
   /* Same square footprint as .scratchpad - they sit side by side in
-     .bottom-panels-row, so they read as a matched pair. */
+     .bottom-panels-row, so they read as a matched pair. It only ever
+     mounts while its subtask is focused, so the green focus-ring border
+     (same convention as .task-card.focused / .subtask-row.focused) is
+     unconditional here rather than a separate modifier class. */
   flex-shrink: 0;
   background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  border: 1px solid rgba(46, 204, 113, 0.6);
   border-radius: 16px;
-  box-shadow: var(--glass-shadow);
+  box-shadow:
+    var(--glass-shadow),
+    0 0 0 2px rgba(46, 204, 113, 0.25);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 0.9rem;
@@ -222,10 +262,10 @@ body[data-theme='dark'] {
   height: 180px;
   display: flex;
   flex-direction: column;
+  animation: focus-flash 0.6s ease-out 1;
 }
 
 .subtask-notepad-label {
-  margin: 0 0 0.4rem;
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -250,6 +290,78 @@ body[data-theme='dark'] {
 }
 
 .subtask-notepad-input:focus {
+  outline: none;
+  opacity: 1;
+}
+
+/* ----------------------------- Expand overlay ----------------------------- */
+.expand-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 2rem;
+}
+
+.expand-overlay-panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 1.25rem;
+  width: min(720px, 90vw);
+  height: min(560px, 80vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.expand-overlay-panel.accent {
+  border-color: rgba(46, 204, 113, 0.6);
+  box-shadow:
+    var(--glass-shadow),
+    0 0 0 2px rgba(46, 204, 113, 0.25);
+}
+
+.expand-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.expand-overlay-label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expand-overlay-input {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  overflow-y: auto;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+.expand-overlay-input:focus {
   outline: none;
   opacity: 1;
 }
@@ -1357,7 +1469,8 @@ body[data-theme='dark'] .subtask-panel {
 
 .subtask-row.done .subtask-row-text {
   text-decoration: line-through;
-  opacity: 0.5;
+  color: #2ecc71;
+  opacity: 0.85;
 }
 
 .subtask-due-badge {

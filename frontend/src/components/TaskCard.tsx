@@ -421,7 +421,7 @@ export function TaskCard({
                     <button type="button" className="icon-btn" onClick={() => deleteSubtask.mutate(s.id)}>
                       🗑️
                     </button>
-                    <AnimatePresence>
+                    <AnimatePresence mode="popLayout">
                       {focusedSubtaskId === s.id && (
                         <motion.button
                           type="button"
