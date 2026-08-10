@@ -259,7 +259,14 @@ export function TaskListPage() {
           </div>
           <div className="bottom-panels-row">
             <Scratchpad />
-            <AnimatePresence>
+            {/* popLayout: switching focus straight from one subtask to
+                another swaps the `key`, so the old notepad is exiting while
+                the new one is entering at the same time. Without popLayout
+                both compete for the same flex slot while that overlap lasts,
+                which staggers/shifts the new one's position for a few
+                frames; popLayout pulls the exiting one out of layout flow
+                immediately so the new one lands in place right away. */}
+            <AnimatePresence mode="popLayout">
               {focusedSubtask && !notepadHidden && (
                 <motion.div
                   key={focusedSubtask.id}

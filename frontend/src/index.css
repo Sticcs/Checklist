@@ -157,6 +157,12 @@ body[data-theme='dark'] {
 }
 
 .bottom-panels-row {
+  /* Positioned ancestor for the notepad's popLayout exit animation (see
+     TaskListPage) - the exiting notepad is pulled out via position:absolute
+     during a quick subtask-switch, and needs this as its anchor to stay put
+     instead of jumping to whatever positioned ancestor happens to be next
+     up the tree. */
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: stretch;
@@ -303,8 +309,11 @@ body[data-theme='dark'] {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* Strong enough to actually read as "blurred" rather than just "dimmed" -
+     matches/exceeds the panels' own 12-16px glass blur so it doesn't look
+     weaker than the UI it's covering. */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   padding: 2rem;
 }
 

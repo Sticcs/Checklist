@@ -365,6 +365,11 @@ export function TaskCard({
                           {s.due_date}
                         </span>
                       )}
+                      {s.notes && focusedSubtaskId !== s.id && (
+                        <span className="notes-indicator" title="Has notes">
+                          📝
+                        </span>
+                      )}
                     </span>
                     <button
                       type="button"
