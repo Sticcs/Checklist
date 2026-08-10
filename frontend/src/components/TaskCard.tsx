@@ -3,6 +3,7 @@ import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
 import { useSettings } from '../context/SettingsContext'
+import { useFormattableTextarea } from '../context/FormattingContext'
 import {
   useDeleteTask,
   useEditTask,
@@ -171,6 +172,8 @@ export function TaskCard({
     notesDirty.current = true
     setNotesDraft(value)
   }
+
+  const notesField = useFormattableTextarea(handleNotesChange)
 
   const startEditing = () => {
     setEditText(task.text)
@@ -489,10 +492,14 @@ export function TaskCard({
         </button>
         {notesOpen && (
           <textarea
+            ref={notesField.ref}
             className="notes-textarea"
             placeholder="Notes..."
             value={notesDraft}
             onChange={(e) => handleNotesChange(e.target.value)}
+            onFocus={notesField.onFocus}
+            onBlur={notesField.onBlur}
+            onKeyDown={notesField.onKeyDown}
           />
         )}
       </div>

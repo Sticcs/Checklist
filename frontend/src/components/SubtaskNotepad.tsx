@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { useSetSubtaskNotes } from '../hooks/useSubtasks'
+import { useFormattableTextarea } from '../context/FormattingContext'
 import { isTypingElement } from '../utils/isTypingElement'
 import { ExpandOverlay } from './ExpandOverlay'
 import type { Subtask } from '../types'
@@ -16,8 +17,15 @@ export function SubtaskNotepad({ subtask }: Props) {
   const [draft, setDraft] = useState(subtask.notes ?? '')
   const dirty = useRef(false)
   const setSubtaskNotes = useSetSubtaskNotes()
-  const ref = useRef<HTMLTextAreaElement>(null)
   const [expanded, setExpanded] = useState(false)
+
+  const onChange = (value: string) => {
+    dirty.current = true
+    setDraft(value)
+  }
+
+  const compact = useFormattableTextarea(onChange)
+  const expandedField = useFormattableTextarea(onChange)
 
   // Only overwrite the draft from server state when we're not the source of
   // the change - see the matching comment on TaskCard's notes handling.
@@ -47,16 +55,11 @@ export function SubtaskNotepad({ subtask }: Props) {
       if (isTypingElement(document.activeElement)) return
       e.preventDefault()
       e.stopPropagation()
-      ref.current?.focus()
+      compact.ref.current?.focus()
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [])
-
-  const onChange = (value: string) => {
-    dirty.current = true
-    setDraft(value)
-  }
+  }, [compact.ref])
 
   return (
     <div className="subtask-notepad" data-focus-exempt>
@@ -67,21 +70,28 @@ export function SubtaskNotepad({ subtask }: Props) {
         </button>
       </div>
       <textarea
-        ref={ref}
+        ref={compact.ref}
         className="subtask-notepad-input"
         placeholder="Notes for this subtask... (Press ` to focus)"
         value={draft}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={compact.onFocus}
+        onBlur={compact.onBlur}
+        onKeyDown={compact.onKeyDown}
       />
       <AnimatePresence>
         {expanded && (
           <ExpandOverlay label={subtask.text} onClose={() => setExpanded(false)} accent>
             <textarea
+              ref={expandedField.ref}
               className="expand-overlay-input"
               placeholder="Notes for this subtask..."
               autoFocus
               value={draft}
               onChange={(e) => onChange(e.target.value)}
+              onFocus={expandedField.onFocus}
+              onBlur={expandedField.onBlur}
+              onKeyDown={expandedField.onKeyDown}
             />
           </ExpandOverlay>
         )}

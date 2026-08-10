@@ -26,6 +26,14 @@ const GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: 'In the scratchpad, a subtask notepad, or task notes',
+    rows: [
+      { keys: ['Ctrl', 'B'], description: 'Bold the selection' },
+      { keys: ['Ctrl', 'I'], description: 'Italicize the selection' },
+      { keys: ['Ctrl', 'U'], description: 'Underline the selection' },
+    ],
+  },
+  {
     title: 'Adding a task (after pressing Enter to lock in the text)',
     rows: [
       { keys: ['H'], description: 'Category: House' },

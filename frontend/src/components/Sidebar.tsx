@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
+import { useFormattingContext } from '../context/FormattingContext'
 import { useActivity } from '../hooks/useActivity'
 import { useClearAll, useClearCompleted, useMarkAllCompleted } from '../hooks/useTasks'
 import { useUndo, useRedo } from '../hooks/useUndoRedo'
@@ -78,6 +79,7 @@ export function Sidebar({
     setNotifyDayBefore(checked)
   }
 
+  const { active: formattingActive, applyFormat } = useFormattingContext()
   const undo = useUndo()
   const redo = useRedo()
   const markAllCompleted = useMarkAllCompleted()
@@ -199,6 +201,31 @@ export function Sidebar({
       </div>
 
       <hr />
+
+      <div className="sidebar-format-row">
+        {(
+          [
+            ['bold', 'Bold (Ctrl+B)', <b key="b">B</b>],
+            ['italic', 'Italic (Ctrl+I)', <i key="i">I</i>],
+            ['underline', 'Underline (Ctrl+U)', <u key="u">U</u>],
+          ] as const
+        ).map(([kind, title, glyph]) => (
+          <button
+            key={kind}
+            type="button"
+            className={formattingActive ? 'icon-btn btn-primary' : 'icon-btn'}
+            disabled={!formattingActive}
+            title={title}
+            // Keeps focus (and the selection) in whichever textarea is
+            // active instead of moving it to this button, which is what a
+            // plain click would do - applyFormat needs that selection intact.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyFormat(kind)}
+          >
+            {glyph}
+          </button>
+        ))}
+      </div>
 
       <div className="sidebar-undo-redo">
         <button type="button" className="btn-secondary" disabled={!canUndo} onClick={() => undo.mutate()}>
