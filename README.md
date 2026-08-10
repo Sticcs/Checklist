@@ -67,6 +67,50 @@ One-time setup:
    - `DATABASE_URL` - paste the Postgres connection string from step 1.
 3. Deploy. Every push to the connected branch redeploys automatically after that.
 
+## Building a Windows desktop app (.exe)
+
+`backend/desktop.py` runs the same FastAPI app as the web deployment, bound to
+`127.0.0.1` on a free port, and shows it in a native window via
+[pywebview](https://pywebview.flowrl.com/) instead of a browser tab -
+everything else (routes, auth, subtasks, etc.) is identical. PyInstaller
+bundles that plus the built frontend into a single `.exe`.
+
+One-time setup (from `backend/`, with the venv active):
+
+```bash
+pip install -r requirements-desktop.txt
+```
+
+Build:
+
+```bash
+cd frontend && npm run build && cd ../backend
+pyinstaller checklist.spec
+```
+
+The app lands in `backend/dist/Checklist.exe` - a single portable file (onefile
+mode). Its database lives at `%LOCALAPPDATA%\Checklist\checklist.db`, independent of
+both the web deployment's Postgres and local dev's `checklist.db` (see
+`backend/app/paths.py`).
+
+### Publishing it as the website's download
+
+The sidebar's "Download app (Windows)" button (`frontend/src/components/Sidebar.tsx`,
+hidden automatically when the site is already running inside the desktop app itself -
+see `isDesktopApp`) just links to a static file, `frontend/public/downloads/Checklist-Windows.exe`.
+Render's build is Linux-only and can't produce a Windows `.exe`, so there's no way to
+build this as part of a normal deploy - after building above, copy the result into place
+by hand and redeploy:
+
+```bash
+cp backend/dist/Checklist.exe frontend/public/downloads/Checklist-Windows.exe
+```
+
+That file is committed to the repo (~27 MB) so Render's Docker build can serve it
+without a separate build step - if the repo's size becomes a concern later, moving it
+to a GitHub Release (or other external host) and pointing the button's `href` there
+instead is a straightforward follow-up.
+
 ## Tests
 
 Backend tests run against a throwaway temp database, never `checklist.db`:

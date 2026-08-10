@@ -672,6 +672,19 @@ body[data-theme='dark'] .assessment-card.done {
   width: 100%;
 }
 
+.download-app-btn {
+  /* .btn-secondary/.btn-block are shared with <button>s elsewhere, which
+     get block-ish sizing and centering for free from being a button - an
+     <a> needs it spelled out, plus the default link underline/color reset
+     so it reads as a button, not a hyperlink. */
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
+  color: inherit;
+  margin-bottom: 0.75rem;
+}
+
 @keyframes glow-pulse {
   0%,
   100% {

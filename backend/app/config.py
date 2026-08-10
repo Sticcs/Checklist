@@ -1,6 +1,6 @@
-from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.paths import user_data_dir
 
 
 class Settings(BaseSettings):
@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # regenerated per boot - otherwise every server restart invalidates every
     # logged-in session's cookie.
     secret_key: str = "dev-secret-change-me"
-    db_path: str = str(Path(__file__).resolve().parent.parent.parent / "checklist.db")
+    db_path: str = str(user_data_dir() / "checklist.db")
     # Postgres connection string for production (Render + Neon/Supabase). When
     # unset, db.py falls back to the sqlite db_path above - local dev needs no
     # setup and keeps using the plain checklist.db file.

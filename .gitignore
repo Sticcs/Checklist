@@ -6,3 +6,5 @@ __pycache__/
 node_modules/
 checklist.db-wal
 checklist.db-shm
+backend/build/
+backend/dist/

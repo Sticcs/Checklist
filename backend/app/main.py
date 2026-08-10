@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app.db import init_db
+from app.paths import resource_path
 from app.routers import activity, auth, stats, subtasks, tasks, undo_redo
 
 
@@ -30,7 +30,9 @@ app.include_router(undo_redo.router)
 # the /api/* routers above always win before this catch-all is even tried.
 # In local dev this directory won't exist (Vite serves the frontend itself
 # with its own dev server), so it's skipped entirely rather than erroring.
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+# In a frozen desktop build, resource_path() resolves this inside the
+# PyInstaller bundle instead (see checklist.spec's `datas`).
+FRONTEND_DIST = resource_path("frontend", "dist")
 
 if FRONTEND_DIST.is_dir():
 

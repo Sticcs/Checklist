@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
@@ -82,6 +82,21 @@ export function Sidebar({
   const { active: formattingActive, applyFormat } = useFormattingContext()
   const undo = useUndo()
   const redo = useRedo()
+
+  // pywebview injects `window.pywebview` into the page it's showing - so
+  // this is true only when this site is already running inside the
+  // packaged desktop app itself, where offering to download it again would
+  // be pointless. The desktop launcher's window may not have finished
+  // injecting it by first render, hence also listening for its ready event.
+  const [isDesktopApp, setIsDesktopApp] = useState(
+    () => typeof window !== 'undefined' && 'pywebview' in window
+  )
+  useEffect(() => {
+    if (isDesktopApp) return
+    const handler = () => setIsDesktopApp(true)
+    window.addEventListener('pywebviewready', handler)
+    return () => window.removeEventListener('pywebviewready', handler)
+  }, [isDesktopApp])
   const markAllCompleted = useMarkAllCompleted()
   const clearCompleted = useClearCompleted()
   const clearAll = useClearAll()
@@ -300,6 +315,17 @@ export function Sidebar({
           </label>
         </div>
       </CollapsibleSection>
+
+      {!isDesktopApp && (
+        <a
+          className="btn-secondary btn-block download-app-btn"
+          href="/downloads/Checklist-Windows.exe"
+          download
+          title="Downloads a standalone .exe - same app, runs as a native window"
+        >
+          ⬇️ Download app (Windows)
+        </a>
+      )}
 
       <p className="sidebar-credits">
         Vibecoded with Claude. Made by Debayan Mukherjee. Found a bug? DM{' '}
