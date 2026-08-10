@@ -157,7 +157,7 @@ body[data-theme='dark'] {
 }
 
 .bottom-panels-row {
-  margin-top: auto;
+  flex-shrink: 0;
   display: flex;
   align-items: stretch;
   gap: 1rem;
@@ -207,15 +207,9 @@ body[data-theme='dark'] {
 }
 
 /* ----------------------------- Assessments ----------------------------- */
-.assessments-column {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  flex: 1;
-  min-width: 0;
-}
-
 .subtask-notepad {
+  /* Same square footprint as .scratchpad - they sit side by side in
+     .bottom-panels-row, so they read as a matched pair. */
   flex-shrink: 0;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -224,7 +218,8 @@ body[data-theme='dark'] {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 0.9rem;
-  height: 140px;
+  width: 180px;
+  height: 180px;
   display: flex;
   flex-direction: column;
 }
@@ -260,8 +255,13 @@ body[data-theme='dark'] {
 }
 
 .assessments-panel {
+  /* No longer sharing .bottom-panels-row with the scratchpad/notepad
+     squares - it's its own full-width row underneath them, and grows to
+     fill whatever vertical space is left in .entry-column instead of
+     sitting at a fixed height with empty space below it. */
   flex: 1;
-  min-width: 0;
+  width: 100%;
+  min-height: 0;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
@@ -269,7 +269,6 @@ body[data-theme='dark'] {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 0.9rem;
-  height: 180px;
   display: flex;
   flex-direction: column;
 }
@@ -1132,6 +1131,13 @@ body[data-theme='dark'] .task-card.done {
   gap: 0.3rem;
   overflow: hidden;
   white-space: nowrap;
+}
+
+/* The fade-to-transparent mask only makes sense when a badge is actually
+   being clipped at the right edge - applying it unconditionally faded out
+   the last badge even when the row had plenty of room to spare (TaskCard
+   only adds this class once it measures real overflow). */
+.task-title > .subtask-due-tally-row.overflowing {
   -webkit-mask-image: linear-gradient(to right, black calc(100% - 22px), transparent 100%);
   mask-image: linear-gradient(to right, black calc(100% - 22px), transparent 100%);
 }

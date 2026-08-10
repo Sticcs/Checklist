@@ -98,6 +98,29 @@ export function TaskCard({
         ? 'due today'
         : `due in ${d} day${d === 1 ? '' : 's'}`
 
+  // The tally row's fade-to-transparent mask should only show up when a
+  // badge is actually being clipped at the right edge - measured directly
+  // rather than assumed, so it doesn't fade out the last badge on a row
+  // that has plenty of room to spare.
+  const tallyRowRef = useRef<HTMLDivElement>(null)
+  const [tallyOverflowing, setTallyOverflowing] = useState(false)
+  useEffect(() => {
+    const el = tallyRowRef.current
+    if (!el) {
+      setTallyOverflowing(false)
+      return
+    }
+    const check = () => setTallyOverflowing(el.scrollWidth > el.clientWidth + 1)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(el)
+    return () => observer.disconnect()
+    // subtaskDueTally is a fresh array every render - key off its actual
+    // contents instead, so this doesn't tear down/rebuild the observer on
+    // every unrelated re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtaskDueTally.map(([d, c]) => `${d}:${c}`).join(',')])
+
   // A one-shot glow that plays exactly once on the false->true transition
   // (not on every render while done, and not on initial mount if the task
   // was already done when it loaded).
@@ -238,7 +261,10 @@ export function TaskCard({
               </span>
             )}
             {subtaskDueTally.length > 0 && (
-              <div className="subtask-due-tally-row">
+              <div
+                ref={tallyRowRef}
+                className={tallyOverflowing ? 'subtask-due-tally-row overflowing' : 'subtask-due-tally-row'}
+              >
                 {subtaskDueTally.map(([d, count]) => (
                   <span key={d} className="subtask-due-tally-badge" title="Subtask due dates">
                     📅 {count} {subtaskDueTallyLabel(d)}

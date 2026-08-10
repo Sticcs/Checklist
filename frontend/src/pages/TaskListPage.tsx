@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
+import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
 import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
 import { AddTaskForm } from '../components/AddTaskForm'
@@ -20,6 +21,7 @@ import type { Task } from '../types'
 export function TaskListPage() {
   const { data, isLoading, error } = useTasks()
   const toggleDone = useToggleDone()
+  const toggleSubtask = useToggleSubtask()
   const setPosition = useSetPosition()
 
   const [search, setSearch] = useState('')
@@ -37,15 +39,13 @@ export function TaskListPage() {
 
   const tasks = useMemo(() => data?.tasks ?? [], [data])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+  const subtasksById = useMemo(() => {
+    const m = new Map<number, (typeof tasks)[number]['subtasks'][number]>()
+    for (const t of tasks) for (const s of t.subtasks) m.set(s.id, s)
+    return m
+  }, [tasks])
 
-  const focusedSubtask = useMemo(() => {
-    if (focusedSubtaskId === null) return null
-    for (const t of tasks) {
-      const s = t.subtasks.find((sub) => sub.id === focusedSubtaskId)
-      if (s) return s
-    }
-    return null
-  }, [tasks, focusedSubtaskId])
+  const focusedSubtask = focusedSubtaskId !== null ? (subtasksById.get(focusedSubtaskId) ?? null) : null
 
   // The notepad opens automatically every time focus lands on a (possibly
   // different) subtask - any earlier "hide notepad" choice shouldn't carry
@@ -146,7 +146,8 @@ export function TaskListPage() {
       const contentId = contentArea ? Number(contentArea.getAttribute('data-task-content-id')) : null
       // A subtask's own line (its text, not the icon buttons next to it -
       // see the sibling layout in TaskCard) toggles that subtask's focus
-      // independently of the parent task's focus.
+      // independently of the parent task's focus. Ctrl/Cmd+click there
+      // mirrors the task-level behavior above: toggle done instead of focus.
       const subtaskContentArea = target.closest('[data-subtask-content-id]')
       const subtaskContentId = subtaskContentArea
         ? Number(subtaskContentArea.getAttribute('data-subtask-content-id'))
@@ -159,6 +160,11 @@ export function TaskListPage() {
       }
 
       if (subtaskContentId !== null) {
+        if (e.ctrlKey || e.metaKey) {
+          const subtask = subtasksById.get(subtaskContentId)
+          if (subtask) toggleSubtask.mutate({ subtaskId: subtaskContentId, done: !subtask.done })
+          return
+        }
         setFocusedSubtaskId((prev) => (prev === subtaskContentId ? null : subtaskContentId))
         return
       }
@@ -183,7 +189,7 @@ export function TaskListPage() {
     }
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
-  }, [tasksById, toggleDone])
+  }, [tasksById, toggleDone, subtasksById, toggleSubtask])
 
   useSubtaskFocusHotkey({
     focusedTaskId,
@@ -245,23 +251,21 @@ export function TaskListPage() {
           </div>
           <div className="bottom-panels-row">
             <Scratchpad />
-            <div className="assessments-column">
-              <AnimatePresence>
-                {focusedSubtask && !notepadHidden && (
-                  <motion.div
-                    key={focusedSubtask.id}
-                    initial={{ opacity: 0, y: -12, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -12, scale: 0.97 }}
-                    transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-                  >
-                    <SubtaskNotepad subtask={focusedSubtask} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <AssessmentsPanel assessments={assessments} focusedTaskId={focusedTaskId} todayIso={todayIso} />
-            </div>
+            <AnimatePresence>
+              {focusedSubtask && !notepadHidden && (
+                <motion.div
+                  key={focusedSubtask.id}
+                  initial={{ opacity: 0, y: -12, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -12, scale: 0.97 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                >
+                  <SubtaskNotepad subtask={focusedSubtask} />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
+          <AssessmentsPanel assessments={assessments} focusedTaskId={focusedTaskId} todayIso={todayIso} />
         </div>
 
         <div className="task-list-column">
