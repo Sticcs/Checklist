@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { ApiError } from '../api/client'
 import { AuthQuotes } from '../components/AuthQuotes'
+import { DownloadAppButton } from '../components/DownloadAppButton'
 
 export function AuthPage() {
   const { loginAsGuest, login, signup } = useAuth()
@@ -117,6 +118,7 @@ export function AuthPage() {
           </button>
         </div>
       </div>
+      <DownloadAppButton variant="floating" />
     </div>
   )
 }

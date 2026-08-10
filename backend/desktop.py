@@ -45,8 +45,27 @@ def main() -> None:
 
     _wait_until_up(url)
 
-    webview.create_window("Checklist", url, width=1400, height=900, min_size=(900, 600))
-    webview.start()
+    window = webview.create_window("Checklist", url, width=1400, height=900, min_size=(900, 600))
+
+    def toggle_fullscreen() -> None:
+        window.toggle_fullscreen()
+
+    def expose_api() -> None:
+        # Exposed to the page as window.pywebview.api.toggle_fullscreen() -
+        # a native window has no browser chrome to supply F11 fullscreen on
+        # its own, so the frontend (useDesktopFullscreenHotkey) calls this
+        # directly instead. Deliberately done here, via expose() inside
+        # webview.start()'s callback, rather than create_window(js_api=...):
+        # passing js_api at creation time made pywebview eagerly probe
+        # window.native's WebView2 COM properties from a background thread
+        # before the GUI's own thread had it ready, which reliably hung the
+        # whole process (a recursive "AccessibilityObject.Bounds" error
+        # storm, then the HTTP server itself stopped responding - almost
+        # certainly the recursion pinning the GIL). expose() after the GUI
+        # loop is already running sidesteps that race entirely.
+        window.expose(toggle_fullscreen)
+
+    webview.start(expose_api)
 
 
 if __name__ == "__main__":

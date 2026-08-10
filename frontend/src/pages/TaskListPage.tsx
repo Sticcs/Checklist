@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useToggleSubtask } from '../hooks/useSubtasks'
+import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
 import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
 import { AddTaskForm } from '../components/AddTaskForm'
@@ -23,6 +24,7 @@ export function TaskListPage() {
   const toggleDone = useToggleDone()
   const toggleSubtask = useToggleSubtask()
   const setPosition = useSetPosition()
+  const isDesktopApp = useIsDesktopApp()
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
@@ -209,7 +211,7 @@ export function TaskListPage() {
   useDueDateNotifications(tasks)
 
   return (
-    <div className="app-layout">
+    <div className={isDesktopApp ? 'app-layout desktop-app' : 'app-layout'}>
       <AnimatePresence>
         {!sidebarOpen && (
           <motion.button

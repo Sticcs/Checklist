@@ -72,6 +72,37 @@ export interface SubtaskMutationResponse {
   parent_done: boolean
 }
 
+export interface ExportedSubtask {
+  text: string
+  done: boolean
+  urgent: boolean
+  due_date: string | null
+  notes: string | null
+}
+
+export interface ExportedTask {
+  text: string
+  priority: string
+  category: string
+  due_date: string | null
+  done: boolean
+  pinned: boolean
+  urgent: boolean
+  notes: string | null
+  subtasks: ExportedSubtask[]
+}
+
+export interface ExportPayload {
+  version: number
+  exported_at: string
+  tasks: ExportedTask[]
+}
+
+export interface ImportResponse {
+  imported_tasks: number
+  imported_subtasks: number
+}
+
 export interface ActivityEntry {
   id: number
   action: string

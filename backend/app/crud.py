@@ -318,8 +318,8 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
         for s in state_subtasks:
             conn.execute(
                 text(
-                    "INSERT INTO subtasks (id, task_id, text, done, created_at, urgent, due_date) "
-                    "VALUES (:id, :task_id, :text, :done, :created_at, :urgent, :due_date)"
+                    "INSERT INTO subtasks (id, task_id, text, done, created_at, urgent, due_date, notes) "
+                    "VALUES (:id, :task_id, :text, :done, :created_at, :urgent, :due_date, :notes)"
                 ),
                 {
                     "id": s["id"],
@@ -329,6 +329,12 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
                     "created_at": s["created_at"],
                     "urgent": int(s.get("urgent", False)),
                     "due_date": s.get("due_date"),
+                    # Like the matching comment in restore_state: subtask
+                    # notes have no dedicated undo history of their own, but
+                    # must still round-trip through restores triggered by
+                    # *other* undo/redo actions, or any undo/redo at all
+                    # would silently wipe every subtask's notes.
+                    "notes": s.get("notes"),
                 },
             )
 
@@ -687,3 +693,86 @@ def delete_subtask(subtask_id: int, task_id: int, username: str) -> bool:
         ).mappings().fetchone()
 
     return bool(task_row["done"]) if task_row else False
+
+
+# ----------------------------- Export / Import -----------------------------
+
+def import_data(tasks: list[dict], username: str) -> tuple[int, int]:
+    """Additive, not a replace: existing tasks are left alone, imported ones
+    land as a new batch on top (see the position math below) - unlike
+    restore_state/restore_subtasks, which are specifically an undo/redo
+    primitive that intentionally wipes and replaces everything.
+
+    Deliberately doesn't touch streak/heatmap stats (get_stats reads
+    activity_log rows dated by when a task was actually completed) - the
+    export format has no original completion date to attribute an imported
+    done=True task to, and fabricating a "completed today" entry for
+    already-old work would inflate the streak with activity that didn't
+    happen today."""
+    if not tasks:
+        return 0, 0
+
+    undo.save_snapshot(username)
+    engine = get_engine()
+    imported_tasks = 0
+    imported_subtasks = 0
+    now = datetime.now().isoformat()
+
+    with engine.begin() as conn:
+        # Same "joins at the top" convention as add_task, computed once for
+        # the whole batch so the imported tasks keep their relative order
+        # among themselves instead of landing reversed (one-at-a-time top
+        # insertion would put the *last* imported task at the very top).
+        min_position = conn.execute(
+            text("SELECT MIN(position) FROM tasks WHERE username = :username"), {"username": username}
+        ).scalar_one()
+        base_position = (min_position if min_position is not None else 0) - len(tasks)
+
+        for i, t in enumerate(tasks):
+            new_task_id = conn.execute(
+                text(
+                    "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent) "
+                    "VALUES (:text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent) "
+                    "RETURNING id"
+                ),
+                {
+                    "text": t["text"],
+                    "done": int(t.get("done", False)),
+                    "priority": t.get("priority") or "Medium",
+                    "category": t.get("category") or "General",
+                    "due_date": t.get("due_date"),
+                    "created_at": now,
+                    "username": username,
+                    "pinned": int(t.get("pinned", False)),
+                    "position": base_position + i,
+                    "notes": t.get("notes"),
+                    "urgent": int(t.get("urgent", False)),
+                },
+            ).scalar_one()
+            imported_tasks += 1
+
+            for s in t.get("subtasks") or []:
+                conn.execute(
+                    text(
+                        "INSERT INTO subtasks (task_id, text, done, created_at, urgent, due_date, notes) "
+                        "VALUES (:task_id, :text, :done, :created_at, :urgent, :due_date, :notes)"
+                    ),
+                    {
+                        "task_id": new_task_id,
+                        "text": s["text"],
+                        "done": int(s.get("done", False)),
+                        "created_at": now,
+                        "urgent": int(s.get("urgent", False)),
+                        "due_date": s.get("due_date"),
+                        "notes": s.get("notes"),
+                    },
+                )
+                imported_subtasks += 1
+
+    log_activity(
+        username,
+        "imported",
+        f"{imported_tasks} task{'s' if imported_tasks != 1 else ''}, "
+        f"{imported_subtasks} subtask{'s' if imported_subtasks != 1 else ''}",
+    )
+    return imported_tasks, imported_subtasks

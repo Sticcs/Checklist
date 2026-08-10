@@ -89,9 +89,35 @@ pyinstaller checklist.spec
 ```
 
 The app lands in `backend/dist/Checklist.exe` - a single portable file (onefile
-mode). Its database lives at `%LOCALAPPDATA%\Checklist\checklist.db`, independent of
-both the web deployment's Postgres and local dev's `checklist.db` (see
-`backend/app/paths.py`).
+mode), using the same artwork as the website's favicon as its icon (regenerate
+`backend/icon.ico` via the command in `checklist.spec` if `frontend/public/favicon.png`
+ever changes). Its database lives at `%LOCALAPPDATA%\Checklist\checklist.db`,
+independent of both the web deployment's Postgres and local dev's `checklist.db`
+(see `backend/app/paths.py`) - it's a fully offline app with no account syncing.
+To move tasks between it and the website, use Export/Import in the sidebar (see
+below) rather than expecting the same login to show the same data on both.
+
+### Moving data between the website and the desktop app
+
+Since the desktop app's database is intentionally separate (see above), the
+sidebar's "💾 Export data" / "📤 Import data" buttons (`backend/app/routers/data.py`,
+`frontend/src/components/Sidebar.tsx`) are the bridge between them: Export downloads
+every task, subtask, and note as a JSON file from wherever you're currently logged in
+(the website or the app); Import reads that file back in, additively - it adds the
+imported tasks alongside whatever's already there rather than replacing anything, so
+it's safe to import into an account that isn't empty. Both buttons work identically on
+the website and inside the desktop app.
+
+### Fullscreen and the responsive layout
+
+`F11` toggles a real OS-level fullscreen inside the packaged app (via a `pywebview`
+API the frontend calls - `backend/desktop.py`'s `expose_api`,
+`frontend/src/hooks/useDesktopFullscreenHotkey.ts`); a plain browser tab already owns
+`F11` itself, so this only activates inside the app. Below 900px width (the app
+window's minimum size, see `min_size` in `desktop.py`) the sidebar and the
+scratchpad/notepad/assessments column both hide inside the desktop app specifically,
+leaving just the task list - the website's own mobile layout at that width is
+unchanged (stacked panels, not hidden). See the `.desktop-app` class in `index.css`.
 
 ### Publishing it as the website's download
 
@@ -106,7 +132,7 @@ by hand and redeploy:
 cp backend/dist/Checklist.exe frontend/public/downloads/Checklist-Windows.exe
 ```
 
-That file is committed to the repo (~27 MB) so Render's Docker build can serve it
+That file is committed to the repo (~55 MB) so Render's Docker build can serve it
 without a separate build step - if the repo's size becomes a concern later, moving it
 to a GitHub Release (or other external host) and pointing the button's `href` there
 instead is a straightforward follow-up.

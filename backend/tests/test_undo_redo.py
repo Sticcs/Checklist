@@ -152,6 +152,29 @@ def test_undo_unrelated_action_does_not_touch_a_separate_completion(guest_client
     assert stats["total_completed"] == 1  # Task A's completion is untouched
 
 
+def test_undo_of_unrelated_action_preserves_subtask_notes(guest_client):
+    """restore_subtasks() deletes and reinserts every subtask on any
+    undo/redo (see its docstring) - notes have no undo history of their own
+    (like task notes), so this only round-trips correctly if the reinsert
+    actually carries the notes column along."""
+    client, _ = guest_client
+    task = client.post(
+        "/api/tasks", json={"text": "Task A", "priority": "Medium", "category": "General"}
+    ).json()
+    subtask = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Step 1"}).json()["subtask"]
+    client.patch(f"/api/subtasks/{subtask['id']}/notes", json={"notes": "Remember to bring snacks"})
+
+    # An unrelated mutation - its undo snapshot is what actually gets
+    # restored below, not anything to do with the subtask itself.
+    client.post("/api/tasks", json={"text": "Task B", "priority": "Medium", "category": "General"})
+    r = client.post("/api/undo")
+    assert r.status_code == 200
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    task_a = next(t for t in tasks if t["text"] == "Task A")
+    assert task_a["subtasks"][0]["notes"] == "Remember to bring snacks"
+
+
 def test_undo_redo_isolated_per_user(client):
     from fastapi.testclient import TestClient
 

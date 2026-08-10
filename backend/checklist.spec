@@ -59,4 +59,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    # Same artwork as the website's favicon (frontend/public/favicon.png) -
+    # regenerate via: python -c "from PIL import Image; Image.open('../frontend/public/favicon.png').save('icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+    icon="icon.ico",
 )

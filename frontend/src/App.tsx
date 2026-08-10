@@ -1,10 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
+import { useDesktopFullscreenHotkey } from './hooks/useDesktopFullscreenHotkey'
 import { AuthPage } from './pages/AuthPage'
 import { TaskListPage } from './pages/TaskListPage'
 
 export default function App() {
   const { status } = useAuth()
+  useDesktopFullscreenHotkey()
 
   if (status === 'loading') return null
 

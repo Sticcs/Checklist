@@ -126,6 +126,44 @@ class ClearResponse(BaseModel):
     deleted_count: int
 
 
+# ----------------------------- Export / Import -----------------------------
+# A deliberately portable subset of Task/Subtask - no id, task_id, username,
+# created_at, or position, since those are meaningless (or actively wrong,
+# e.g. an id colliding with one already in the target database) once the
+# data moves to a different account/database, which is exactly the point of
+# export/import (see the desktop app's offline database - README.md).
+
+class ExportedSubtask(BaseModel):
+    text: str
+    done: bool = False
+    urgent: bool = False
+    due_date: str | None = None
+    notes: str | None = None
+
+
+class ExportedTask(BaseModel):
+    text: str
+    priority: str
+    category: str
+    due_date: str | None = None
+    done: bool = False
+    pinned: bool = False
+    urgent: bool = False
+    notes: str | None = None
+    subtasks: list[ExportedSubtask] = []
+
+
+class ExportPayload(BaseModel):
+    version: int = 1
+    exported_at: str
+    tasks: list[ExportedTask]
+
+
+class ImportResponse(BaseModel):
+    imported_tasks: int
+    imported_subtasks: int
+
+
 # ----------------------------- Activity -----------------------------
 
 class ActivityEntry(BaseModel):

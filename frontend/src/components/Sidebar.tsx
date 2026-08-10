@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
@@ -6,10 +7,12 @@ import { useFormattingContext } from '../context/FormattingContext'
 import { useActivity } from '../hooks/useActivity'
 import { useClearAll, useClearCompleted, useMarkAllCompleted } from '../hooks/useTasks'
 import { useUndo, useRedo } from '../hooks/useUndoRedo'
+import { useImportData } from '../hooks/useData'
 import { useWallpaper } from '../hooks/useWallpaper'
 import { resizeImageToDataUrl } from '../utils/resizeImage'
 import { StatsPanel } from './StatsPanel'
 import { CollapsibleSection } from './CollapsibleSection'
+import { DownloadAppButton } from './DownloadAppButton'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -70,6 +73,7 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [wallpaper, setWallpaper] = useWallpaper(user?.username)
   const wallpaperInputRef = useRef<HTMLInputElement>(null)
+  const importFileInputRef = useRef<HTMLInputElement>(null)
 
   const handleNotifyToggle = async (checked: boolean) => {
     if (checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -82,25 +86,21 @@ export function Sidebar({
   const { active: formattingActive, applyFormat } = useFormattingContext()
   const undo = useUndo()
   const redo = useRedo()
-
-  // pywebview injects `window.pywebview` into the page it's showing - so
-  // this is true only when this site is already running inside the
-  // packaged desktop app itself, where offering to download it again would
-  // be pointless. The desktop launcher's window may not have finished
-  // injecting it by first render, hence also listening for its ready event.
-  const [isDesktopApp, setIsDesktopApp] = useState(
-    () => typeof window !== 'undefined' && 'pywebview' in window
-  )
-  useEffect(() => {
-    if (isDesktopApp) return
-    const handler = () => setIsDesktopApp(true)
-    window.addEventListener('pywebviewready', handler)
-    return () => window.removeEventListener('pywebviewready', handler)
-  }, [isDesktopApp])
   const markAllCompleted = useMarkAllCompleted()
   const clearCompleted = useClearCompleted()
   const clearAll = useClearAll()
+  const importData = useImportData()
   const activity = useActivity(activityOpen)
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const payload = JSON.parse(await file.text())
+      importData.mutate(payload)
+    } catch {
+      toast.error("Couldn't read that file - make sure it's a Checklist export")
+    }
+  }
 
   const handleWallpaperFile = async (file: File | undefined) => {
     if (!file) return
@@ -147,7 +147,7 @@ export function Sidebar({
               ref={wallpaperInputRef}
               type="file"
               accept="image/*"
-              className="wallpaper-file-input"
+              className="visually-hidden-input"
               onChange={(e) => {
                 void handleWallpaperFile(e.target.files?.[0])
                 e.target.value = ''
@@ -267,6 +267,36 @@ export function Sidebar({
         </button>
       </div>
 
+      <div className="sidebar-bulk-actions">
+        <a
+          className="btn-secondary btn-block"
+          href="/api/export"
+          download
+          title="Download every task, subtask, and note as a JSON file"
+        >
+          💾 Export data
+        </a>
+        <button
+          type="button"
+          className="btn-secondary btn-block"
+          onClick={() => importFileInputRef.current?.click()}
+          disabled={importData.isPending}
+          title="Load tasks from a Checklist export file - adds to what's already here, doesn't replace it"
+        >
+          {importData.isPending ? 'Importing...' : '📤 Import data'}
+        </button>
+        <input
+          ref={importFileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="visually-hidden-input"
+          onChange={(e) => {
+            void handleImportFile(e.target.files?.[0])
+            e.target.value = ''
+          }}
+        />
+      </div>
+
       <hr />
 
       <StatsPanel open={statsOpen} onToggle={setStatsOpen} />
@@ -316,16 +346,7 @@ export function Sidebar({
         </div>
       </CollapsibleSection>
 
-      {!isDesktopApp && (
-        <a
-          className="btn-secondary btn-block download-app-btn"
-          href="/downloads/Checklist-Windows.exe"
-          download
-          title="Downloads a standalone .exe - same app, runs as a native window"
-        >
-          ⬇️ Download app (Windows)
-        </a>
-      )}
+      <DownloadAppButton />
 
       <p className="sidebar-credits">
         Vibecoded with Claude. Made by Debayan Mukherjee. Found a bug? DM{' '}
