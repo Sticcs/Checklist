@@ -19,16 +19,28 @@ from pathlib import Path
 block_cipher = None
 is_macos = sys.platform == "darwin"
 
+# The built frontend (frontend/dist, produced by `npm run build`) is bundled
+# read-only alongside the app - app/paths.py's resource_path() resolves it
+# inside sys._MEIPASS at this same relative path when frozen. Built file-by-
+# file (skipping frontend/dist/downloads) rather than as a single directory
+# tuple: Vite copies frontend/public/ verbatim into dist/, and public/
+# holds the website's downloadable ChecklistApp.exe / ChecklistApp-mac.zip -
+# bundling those into the desktop app itself is pure dead weight (the app
+# never needs to serve its own installer to itself), and worse, compounds on
+# every rebuild: build once with a mac.zip already in public/downloads/ and
+# the next app embeds a copy of the previous one, growing without bound.
+_frontend_dist_src = Path("..") / "frontend" / "dist"
+_frontend_datas = [
+    (str(f), str(Path("frontend") / "dist" / f.relative_to(_frontend_dist_src).parent))
+    for f in _frontend_dist_src.rglob("*")
+    if f.is_file() and "downloads" not in f.relative_to(_frontend_dist_src).parts[:-1]
+]
+
 a = Analysis(
     ["desktop.py"],
     pathex=[],
     binaries=[],
-    # The built frontend (frontend/dist, produced by `npm run build`) is
-    # bundled read-only alongside the app - app/paths.py's resource_path()
-    # resolves it inside sys._MEIPASS at this same relative path when frozen.
-    datas=[
-        (str(Path("..") / "frontend" / "dist"), str(Path("frontend") / "dist")),
-    ],
+    datas=_frontend_datas,
     hiddenimports=[
         # uvicorn resolves these dynamically at runtime (by string, not a
         # top-level import), so PyInstaller's static analysis misses them
@@ -79,7 +91,15 @@ if is_macos:
         disable_windowed_traceback=False,
         target_arch=None,
         codesign_identity=None,
-        entitlements_file=None,
+        # Standard, low-risk entitlements for any codesigned app embedding
+        # WKWebView (see entitlements.plist) - disables a few hardened-
+        # runtime restrictions (library validation, JIT, unsigned executable
+        # memory) that WebKit's own helper processes can need. Not required
+        # to fix the actual blank-white-window bug this build hit (that
+        # turned out to be a symlink-resolution bug in app/paths.py's
+        # resource_path(), unrelated to code signing - see its docstring),
+        # but harmless and worth keeping as a defensive default.
+        entitlements_file="entitlements.plist",
         icon=icon_file,
     )
     coll = COLLECT(
@@ -100,6 +120,13 @@ if is_macos:
         info_plist={
             "CFBundleShortVersionString": "1.0.0",
             "NSHighResolutionCapable": True,
+            # desktop.py loads http://127.0.0.1:<port> (plain HTTP, an IP
+            # literal rather than the hostname "localhost") into the native
+            # WKWebView window. App Transport Security blocks non-HTTPS
+            # loads by default and doesn't automatically exempt IP-literal
+            # loopback addresses the way it does a browser tab, so this key
+            # is needed for the load to be allowed at all.
+            "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
         },
     )
 else:

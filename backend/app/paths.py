@@ -13,9 +13,24 @@ _BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", "")) if _FROZEN else None
 def resource_path(*parts: str) -> Path:
     """A read-only bundled resource (e.g. the built frontend) - inside the
     PyInstaller bundle when frozen (see checklist.spec's `datas`), otherwise
-    the same path in the repo."""
+    the same path in the repo.
+
+    Resolved (symlinks followed) before returning: a macOS onedir .app
+    bundle lays out `Contents/Frameworks/<name>` as a symlink to the real
+    `Contents/Resources/<name>`, and sys._MEIPASS points at the Frameworks
+    side. main.py's static-file route resolves each *candidate* file path
+    before checking it's still inside this directory (`is_relative_to`) -
+    resolving there follows the symlink to the Resources-side real path,
+    but comparing it against an unresolved Frameworks-side base never
+    matches, since is_relative_to is a plain path-component comparison, not
+    symlink-aware. Every asset request failed that check and silently fell
+    through to the index.html fallback (right HTTP status, wrong body - a
+    .js request got HTML back), which is what made the packaged macOS app
+    render as a blank white window despite the server, navigation, and
+    webview attachment all genuinely working. Resolving once here keeps
+    every caller consistent instead of requiring each one to remember to."""
     base = _BUNDLE_DIR if _FROZEN else _REPO_ROOT
-    return base.joinpath(*parts)
+    return base.joinpath(*parts).resolve()
 
 
 def user_data_dir() -> Path:

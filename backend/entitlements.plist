@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Standard, low-risk entitlements for any codesigned macOS app that
+	     embeds WKWebView - PyInstaller ad-hoc signs the frozen build (see
+	     checklist.spec), which enables a few hardened-runtime restrictions
+	     WebKit's own helper processes can run into (JIT for JavaScriptCore,
+	     library validation for PyObjC's dlsym-based bridge calls). Not
+	     required to fix this build's actual blank-white-window bug (a
+	     symlink-resolution bug in app/paths.py's resource_path(), see its
+	     docstring) - kept anyway as cheap insurance against a real class of
+	     WebKit-in-a-signed-app failure. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+	<!-- JavaScriptCore (the JS engine the embedded WKWebView runs) needs to
+	     JIT-compile - without this, any codesigned app embedding WebKit can
+	     have its web content silently fail to render/execute, since the JIT
+	     allocation itself is blocked. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+</dict>
+</plist>
