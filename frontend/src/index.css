@@ -1028,6 +1028,10 @@ button:disabled {
   gap: 0.6rem;
 }
 
+.google-signin-btn {
+  margin-bottom: 0.6rem;
+}
+
 .auth-success {
   color: #2ecc71;
   font-size: 0.85rem;

@@ -67,6 +67,34 @@ One-time setup:
    - `DATABASE_URL` - paste the Postgres connection string from step 1.
 3. Deploy. Every push to the connected branch redeploys automatically after that.
 
+### Google sign-in (optional)
+
+"Sign in with Google" (`backend/app/routers/auth.py`) is a separate, self-contained
+account path - a Google-authenticated account is never merged with an existing
+username/password account, even if the email matches (see
+`get_or_create_google_user`'s docstring). It's entirely optional: unset, the login
+route just 503s and the button still shows but errors if clicked.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
+   create an OAuth 2.0 Client ID, type "Web application." The consent screen can
+   stay in "Testing" mode (add yourself, and anyone else who should be able to sign
+   in, as test users) - no need to submit for verification for personal use, since
+   the scopes used (`openid email profile`) aren't sensitive.
+2. Add an authorized redirect URI: `<PUBLIC_BASE_URL>/api/auth/google/callback` -
+   for this deployment, `https://checklist-kmtw.onrender.com/api/auth/google/callback`.
+3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in Render's dashboard (they're
+   `sync: false` in `render.yaml`, i.e. not stored in the repo). `PUBLIC_BASE_URL`
+   is already set in `render.yaml` - update it there if the deployment URL ever
+   changes.
+
+This is also the one thing that makes the desktop app's data match the website's:
+the app's own local server never handles Google sign-in - `frontend/src/pages/AuthPage.tsx`
+points that one link at `PRODUCTION_URL` (an absolute URL, not the local server) when
+running inside the desktop app (see `useIsDesktopApp`), so completing it lands the
+app on the real deployed site, same account and tasks as the website. It's the only
+account path that needs internet; local username/password/guest accounts are
+unaffected and still fully offline.
+
 ## Building a Windows desktop app (.exe)
 
 `backend/desktop.py` runs the same FastAPI app as the web deployment, bound to

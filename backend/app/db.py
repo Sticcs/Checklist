@@ -14,6 +14,12 @@ users_table = Table(
     metadata,
     Column("username", String, primary_key=True),
     Column("password", String, nullable=False),
+    # Set only for accounts created via "Sign in with Google" (see
+    # get_or_create_google_user) - such accounts still get a normal (random,
+    # unusable) password hash rather than a nullable password column, so
+    # this is the only schema change needed to support them. NULL for every
+    # username/password/guest account, which is the vast majority.
+    Column("google_sub", String, nullable=True, unique=True),
 )
 
 tasks_table = Table(
@@ -160,3 +166,14 @@ def init_db() -> None:
     if "task_id" not in existing_activity_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE activity_log ADD COLUMN task_id INTEGER"))
+
+    existing_user_columns = {c["name"] for c in inspector.get_columns("users")}
+    if "google_sub" not in existing_user_columns:
+        with engine.begin() as conn:
+            # No UNIQUE constraint here (unlike the Table def above, which
+            # only applies to fresh installs) - adding one via ALTER TABLE
+            # isn't portable across SQLite/Postgres without dialect-specific
+            # DDL, and get_or_create_google_user already looks up by
+            # google_sub before ever inserting, so the practical uniqueness
+            # holds without the database enforcing it too.
+            conn.execute(text("ALTER TABLE users ADD COLUMN google_sub TEXT"))

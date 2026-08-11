@@ -4,10 +4,18 @@ import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { ApiError } from '../api/client'
 import { AuthQuotes } from '../components/AuthQuotes'
 import { DownloadAppButton } from '../components/DownloadAppButton'
+import { PRODUCTION_URL } from '../constants'
 
 export function AuthPage() {
   const { loginAsGuest, login, signup } = useAuth()
   const isDesktopApp = useIsDesktopApp()
+  // OAuth is a full-page-redirect flow, not a fetch call - and from inside
+  // the desktop app it must hit the real deployed backend directly (an
+  // absolute URL, leaving the local server's page entirely), never the
+  // local-only server the rest of the app talks to. See PRODUCTION_URL.
+  const googleLoginHref = isDesktopApp
+    ? `${PRODUCTION_URL}/api/auth/google/login`
+    : '/api/auth/google/login'
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -60,8 +68,8 @@ export function AuthPage() {
 
           {isDesktopApp && (
             <p className="desktop-app-note">
-              🖥️ App version - separate account and data from the website. Data can be imported (see the sidebar
-              once signed in).
+              🖥️ App version - local accounts keep separate data from the website (import it via the sidebar), or
+              sign in with Google for the same account and tasks online (needs internet).
             </p>
           )}
 
@@ -116,6 +124,10 @@ export function AuthPage() {
           )}
 
           <hr />
+
+          <a href={googleLoginHref} className="btn-secondary btn-block google-signin-btn">
+            Sign in with Google
+          </a>
 
           <button
             type="button"

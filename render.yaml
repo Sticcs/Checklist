@@ -15,3 +15,15 @@ services:
       # Filled in from the Render dashboard, not stored in this file.
       - key: DATABASE_URL
         sync: false
+      # "Sign in with Google" (backend/app/routers/auth.py) - from a Google
+      # Cloud project's OAuth 2.0 Client ID (type "Web application"), with
+      # PUBLIC_BASE_URL + "/api/auth/google/callback" added as an authorized
+      # redirect URI. Google sign-in is simply unavailable (the login route
+      # 503s) until these are filled in - not required for the rest of the
+      # app to work.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://checklist-kmtw.onrender.com

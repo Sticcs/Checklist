@@ -1,3 +1,4 @@
+import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
@@ -32,6 +33,40 @@ def verify_user(username: str, password: str) -> bool:
             {"username": username.strip()},
         ).mappings().fetchone()
     return row is not None and verify_password(password, row["password"])
+
+
+def get_or_create_google_user(google_sub: str, email: str | None) -> str:
+    """Finds the account already linked to this Google account, or creates
+    one - keyed by google_sub, not email (an email could theoretically be
+    reused across Google accounts over time; the sub is Google's own stable,
+    permanent identifier). This account is entirely separate from any
+    username/password account that happens to share the same email -
+    there's no merging/linking with an existing manual account."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT username FROM users WHERE google_sub = :sub"), {"sub": google_sub}
+        ).mappings().fetchone()
+        if row:
+            return row["username"]
+
+        base_username = (email.split("@")[0].strip() if email else "") or f"google-{google_sub[:8]}"
+        username = base_username
+        suffix = 1
+        while conn.execute(
+            text("SELECT 1 FROM users WHERE username = :username"), {"username": username}
+        ).fetchone():
+            suffix += 1
+            username = f"{base_username}{suffix}"
+
+        # No login flow ever checks this password (Google accounts only
+        # authenticate via the OAuth callback) - it just satisfies the
+        # column's NOT NULL constraint with something nobody can guess.
+        conn.execute(
+            text("INSERT INTO users (username, password, google_sub) VALUES (:username, :password, :sub)"),
+            {"username": username, "password": hash_password(secrets.token_urlsafe(32)), "sub": google_sub},
+        )
+        return username
 
 
 # ----------------------------- Row -> dict helpers -----------------------------

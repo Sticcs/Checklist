@@ -18,3 +18,10 @@ export const PRIORITY_ORDER: Record<string, number> = { High: 0, Medium: 1, Low:
 // about them (mutations, undo/redo, clear completed) is shared with normal
 // tasks, only the UI they render into and the fields they expose differ.
 export const ASSESSMENT_CATEGORY = 'Assessment'
+
+// The one real deployment of this app - used only by the desktop app's
+// "Sign in with Google" link (AuthPage), which must hit the actual live
+// backend even from inside the otherwise fully-offline desktop app, since
+// that's what makes the same Google account show the same tasks on both.
+// See backend/app/config.py's public_base_url for the matching backend value.
+export const PRODUCTION_URL = 'https://checklist-kmtw.onrender.com'

@@ -22,6 +22,19 @@ class Settings(BaseSettings):
     # plain http, which local dev uses, so this needs to be togglable rather
     # than hardcoded either way.
     cookie_secure: bool = False
+    # Google OAuth ("Sign in with Google" - app/routers/auth.py). Unset means
+    # the feature is simply unavailable (the login route 503s) rather than
+    # erroring at startup - local dev and the desktop app's own local server
+    # never need these, only the deployed site does.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    # Where Google should redirect back to, and what the desktop app points
+    # its "Sign in with Google" link straight at (see useIsDesktopApp on the
+    # frontend) - deliberately the one account path that requires internet
+    # and always talks to the *real* deployed backend, even from inside the
+    # otherwise fully-offline desktop app, since that's what makes "same
+    # Google account -> same tasks on both" true.
+    public_base_url: str = "https://checklist-kmtw.onrender.com"
 
 
 settings = Settings()
