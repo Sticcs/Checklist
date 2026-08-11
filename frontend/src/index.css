@@ -1030,6 +1030,26 @@ button:disabled {
 
 .google-signin-btn {
   margin-bottom: 0.6rem;
+  /* Always white, matching Google's own button guidelines, regardless of
+     app theme - overridden explicitly for dark mode below since
+     body[data-theme='dark'] .btn-secondary otherwise wins on specificity. */
+  background: #fff;
+  color: #3c4043;
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+.google-signin-btn:hover {
+  background: #f8f8f8;
+}
+
+body[data-theme='dark'] .google-signin-btn {
+  background: #fff;
+  color: #3c4043;
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+body[data-theme='dark'] .google-signin-btn:hover {
+  background: #f1f1f1;
 }
 
 .auth-success {
