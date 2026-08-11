@@ -95,13 +95,16 @@ app on the real deployed site, same account and tasks as the website. It's the o
 account path that needs internet; local username/password/guest accounts are
 unaffected and still fully offline.
 
-## Building a Windows desktop app (.exe)
+## Building the desktop apps (Windows .exe / macOS .app)
 
 `backend/desktop.py` runs the same FastAPI app as the web deployment, bound to
 `127.0.0.1` on a free port, and shows it in a native window via
 [pywebview](https://pywebview.flowrl.com/) instead of a browser tab -
 everything else (routes, auth, subtasks, etc.) is identical. PyInstaller
-bundles that plus the built frontend into a single `.exe`.
+bundles that plus the built frontend into a platform-native package -
+`checklist.spec` builds whichever platform it's run on (there's no cross-
+compiling: a Windows `.exe` has to be built on Windows, a macOS `.app` on
+macOS).
 
 One-time setup (from `backend/`, with the venv active):
 
@@ -109,21 +112,39 @@ One-time setup (from `backend/`, with the venv active):
 pip install -r requirements-desktop.txt
 ```
 
-Build:
+On macOS this also pulls in `pyobjc` (pywebview's Cocoa/WebKit backend) via
+an environment marker in `requirements-desktop.txt` - nothing extra to run.
+
+Build (same command on both platforms):
 
 ```bash
 cd frontend && npm run build && cd ../backend
 pyinstaller checklist.spec
 ```
 
-The app lands in `backend/dist/ChecklistApp.exe` - a single portable file (onefile
-mode), using the same artwork as the website's favicon as its icon (regenerate
-`backend/icon.ico` via the command in `checklist.spec` if `frontend/public/favicon.png`
-ever changes). Its database lives at `%LOCALAPPDATA%\Checklist\checklist.db`,
-independent of both the web deployment's Postgres and local dev's `checklist.db`
-(see `backend/app/paths.py`) - it's a fully offline app with no account syncing.
-To move tasks between it and the website, use Export/Import in the sidebar (see
-below) rather than expecting the same login to show the same data on both.
+**Windows** lands the app at `backend/dist/ChecklistApp.exe` - a single portable
+file (onefile mode), using the same artwork as the website's favicon as its icon
+(regenerate `backend/icon.ico` via the command in `checklist.spec` if
+`frontend/public/favicon.png` ever changes). Its database lives at
+`%LOCALAPPDATA%\Checklist\checklist.db`.
+
+**macOS** lands the app at `backend/dist/ChecklistApp.app`. Unlike Windows,
+PyInstaller deprecates combining onefile mode with a `.app` bundle ("clashes
+with macOS's security"), so the spec builds macOS in onedir mode instead -
+`EXE()` produces just the bootloader, `COLLECT()` gathers every dependency
+into `backend/dist/ChecklistApp/`, and `BUNDLE()` wraps that into the final
+`.app` (icon from `backend/icon.icns` - regenerate via the command in
+`checklist.spec` the same way as the `.ico`). Its database lives at
+`~/Library/Application Support/Checklist/checklist.db`. The build produces an
+ad-hoc code signature (enough to run locally), but it isn't notarized (that
+needs a paid Apple Developer account) - see the Gatekeeper note below for
+what that means for anyone downloading it.
+
+Either platform's app is fully offline with no account syncing, independent
+of both the web deployment's Postgres and local dev's `checklist.db` (see
+`backend/app/paths.py`). To move tasks between it and the website, use
+Export/Import in the sidebar (see below) rather than expecting the same
+login to show the same data on both.
 
 ### Moving data between the website and the desktop app
 
@@ -149,22 +170,41 @@ unchanged (stacked panels, not hidden). See the `.desktop-app` class in `index.c
 
 ### Publishing it as the website's download
 
-The sidebar's "Download app (Windows)" button (`frontend/src/components/Sidebar.tsx`,
-hidden automatically when the site is already running inside the desktop app itself -
-see `isDesktopApp`) just links to a static file, `frontend/public/downloads/ChecklistApp.exe`.
-Render's build is Linux-only and can't produce a Windows `.exe`, so there's no way to
-build this as part of a normal deploy - after building above, copy the result into place
-by hand and redeploy (the build already names it `ChecklistApp.exe`, so this is a
-straight copy, no renaming):
+`DownloadAppButton` (`frontend/src/components/DownloadAppButton.tsx`, hidden
+automatically when the site is already running inside the desktop app itself -
+see `useIsDesktopApp`) sniffs `navigator.platform`/`navigator.userAgent` to
+offer the right download by default, with a small link underneath to grab the
+other platform's build instead - it just links to two static files,
+`frontend/public/downloads/ChecklistApp.exe` and
+`frontend/public/downloads/ChecklistApp-mac.zip` (the `.app` zipped with
+`ditto -c -k --sequesterRsrc --keepParent`, the Apple-recommended way to zip
+a bundle so it un-zips back into a working `.app`, not `zip`/`Compress`).
+Render's build is Linux-only and can't produce either one, so there's no way
+to build these as part of a normal deploy - after building above, copy the
+result into place by hand and redeploy:
 
 ```bash
+# Windows (build already names it ChecklistApp.exe, so this is a straight copy):
 cp backend/dist/ChecklistApp.exe frontend/public/downloads/ChecklistApp.exe
+
+# macOS (zip the .app bundle first):
+cd backend/dist && ditto -c -k --sequesterRsrc --keepParent ChecklistApp.app ChecklistApp-mac.zip && cd ../..
+cp backend/dist/ChecklistApp-mac.zip frontend/public/downloads/ChecklistApp-mac.zip
 ```
 
-That file is committed to the repo (~55 MB) so Render's Docker build can serve it
-without a separate build step - if the repo's size becomes a concern later, moving it
-to a GitHub Release (or other external host) and pointing the button's `href` there
-instead is a straightforward follow-up.
+Both files are committed to the repo (~65 MB / ~90 MB) so Render's Docker build
+can serve them without a separate build step - if the repo's size becomes a
+concern later, moving them to a GitHub Release (or other external host) and
+pointing `DownloadAppButton`'s hrefs there instead is a straightforward follow-up.
+
+**Gatekeeper on macOS:** the app isn't notarized (no paid Apple Developer
+account), so a fresh download will be quarantined by macOS and refuse to open
+with a plain double-click ("Apple could not verify..."). The fix is a one-time
+right-click (or Control-click) → **Open** → **Open** in the confirmation dialog,
+instead of double-clicking - this is standard behavior for any unsigned/
+unnotarized app, not specific to this one, and only has to be done once per
+machine. Mentioning this on the download button/page is worth doing if this
+ships to anyone other than the developer.
 
 ## Tests
 

@@ -680,8 +680,23 @@ body[data-theme='dark'] .assessment-card.done {
   width: 100%;
 }
 
+.download-app-group {
+  display: flex;
+  flex-direction: column;
+}
+
 .download-app-btn {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.download-app-alt-link {
+  text-align: center;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.download-app-alt-link:hover {
+  opacity: 1;
 }
 
 @keyframes glow-pulse {

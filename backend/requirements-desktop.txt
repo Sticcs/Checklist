@@ -1,3 +1,11 @@
 -r requirements.txt
 pywebview
+# pywebview's macOS backend is Cocoa/WebKit via PyObjC - pip doesn't pull
+# these in automatically the way `pip install pywebview[cocoa]` would, and
+# that extras syntax doesn't get skipped cleanly on other platforms, so
+# they're listed directly here instead, gated by environment marker (a
+# no-op install on Windows/Linux).
+pyobjc-framework-Cocoa; sys_platform == "darwin"
+pyobjc-framework-WebKit; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
 pyinstaller

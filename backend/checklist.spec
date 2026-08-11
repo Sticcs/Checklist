@@ -1,9 +1,23 @@
 # Build with: pyinstaller checklist.spec (from backend/, desktop venv active)
-# Produces dist/ChecklistApp.exe - a single portable file (onefile mode), so
-# it's easy to serve as a direct download from the website - see README.md.
+#
+# Windows: dist/ChecklistApp.exe - a single portable file (onefile mode).
+#
+# macOS: dist/ChecklistApp.app - PyInstaller deprecates onefile+BUNDLE()
+# together ("a .app bundle can not be a single file and clashes with
+# macOS's security" - confirmed by a real build: it works today but warns
+# this becomes a hard error in PyInstaller v7), so macOS instead uses the
+# onedir + COLLECT() + BUNDLE() path it actually recommends: EXE() here
+# builds just the bootloader (exclude_binaries=True), COLLECT() gathers it
+# plus every dependency into dist/ChecklistApp/, and BUNDLE() wraps that
+# directory into the final .app package.
+#
+# Either way, the result is meant to be served as a direct download from the
+# website - see README.md.
+import sys
 from pathlib import Path
 
 block_cipher = None
+is_macos = sys.platform == "darwin"
 
 a = Analysis(
     ["desktop.py"],
@@ -40,26 +54,73 @@ a = Analysis(
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name="ChecklistApp",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    # Same artwork as the website's favicon (frontend/public/favicon.png) -
-    # regenerate via: python -c "from PIL import Image; Image.open('../frontend/public/favicon.png').save('icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
-    icon="icon.ico",
-)
+# Same artwork as the website's favicon (frontend/public/favicon.png).
+# Windows wants .ico; regenerate via:
+#   python -c "from PIL import Image; Image.open('../frontend/public/favicon.png').save('icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+# macOS wants .icns; regenerate via (from backend/, macOS only):
+#   rm -rf icon.iconset && mkdir icon.iconset && SRC=../frontend/public/favicon.png && \
+#   for s in 16 32 128 256; do sips -z $s $s "$SRC" --out icon.iconset/icon_${s}x${s}.png; \
+#   sips -z $((s*2)) $((s*2)) "$SRC" --out icon.iconset/icon_${s}x${s}@2x.png; done && \
+#   iconutil -c icns icon.iconset -o icon.icns && rm -rf icon.iconset
+icon_file = "icon.icns" if is_macos else "icon.ico"
+
+if is_macos:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name="ChecklistApp",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        disable_windowed_traceback=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=icon_file,
+    )
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name="ChecklistApp",
+    )
+    app = BUNDLE(
+        coll,
+        name="ChecklistApp.app",
+        icon=icon_file,
+        bundle_identifier="com.debayanm.checklist",
+        info_plist={
+            "CFBundleShortVersionString": "1.0.0",
+            "NSHighResolutionCapable": True,
+        },
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        [],
+        name="ChecklistApp",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,
+        disable_windowed_traceback=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=icon_file,
+    )
