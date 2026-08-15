@@ -40,3 +40,22 @@ export function useSyncFromWebsite() {
     },
   })
 }
+
+export function usePushToWebsite() {
+  // No TASKS_KEY invalidation - push only changes the *website's* data, the
+  // local account this ran from is untouched (see the backend test asserting
+  // exactly that).
+  return useMutation({
+    mutationFn: ({ username, password }: { username: string; password: string }) =>
+      authApi.push(username, password),
+    onSuccess: (res: ImportResponse) => {
+      toast(
+        `⬆️ Pushed ${res.imported_tasks} task${res.imported_tasks === 1 ? '' : 's'} to the website` +
+          (res.imported_subtasks > 0 ? ` (${res.imported_subtasks} subtasks)` : '')
+      )
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't push - try again")
+    },
+  })
+}

@@ -14,7 +14,7 @@ import { StatsPanel } from './StatsPanel'
 import { CollapsibleSection } from './CollapsibleSection'
 import { DownloadAppButton } from './DownloadAppButton'
 import { DataBackupButtons } from './DataBackupButtons'
-import { SyncNowButton } from './SyncNowButton'
+import { WebsiteSyncButtons } from './WebsiteSyncButtons'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -282,7 +282,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <SyncNowButton />
+      <WebsiteSyncButtons />
 
       <hr />
 

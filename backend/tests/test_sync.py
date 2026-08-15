@@ -1,3 +1,5 @@
+import pytest
+
 from app import paths
 from app.config import settings
 
@@ -15,7 +17,12 @@ class _FakeResponse:
 class _FakeWebsiteClient:
     """Stands in for httpx.Client so tests never make a real network call -
     simulates a website with exactly one account, alice/correct-password,
-    holding one task."""
+    holding one task. Also records every /api/import payload it receives
+    (class-level, since a fresh instance is constructed per `with` block),
+    so push tests can assert what was actually sent - see the autouse
+    fixture below that resets it between tests."""
+
+    imported_payloads: list[dict] = []
 
     def __init__(self, *args, **kwargs):
         pass
@@ -26,15 +33,23 @@ class _FakeWebsiteClient:
     def __exit__(self, *args):
         return False
 
-    def post(self, url, json=None):
-        assert url.endswith("/api/auth/login")
-        if json.get("username") == "alice" and json.get("password") == "correct-password":
-            return _FakeResponse(200, cookies={settings.cookie_name: "fake-session-token"})
-        return _FakeResponse(401)
+    def post(self, url, json=None, cookies=None):
+        if url.endswith("/api/auth/login"):
+            if json.get("username") == "alice" and json.get("password") == "correct-password":
+                return _FakeResponse(200, cookies={settings.cookie_name: "fake-session-token"})
+            return _FakeResponse(401)
+        if url.endswith("/api/import"):
+            if (cookies or {}).get(settings.cookie_name) != "fake-session-token":
+                return _FakeResponse(401)
+            _FakeWebsiteClient.imported_payloads.append(json)
+            tasks = (json or {}).get("tasks", [])
+            subtask_count = sum(len(t.get("subtasks", [])) for t in tasks)
+            return _FakeResponse(200, {"imported_tasks": len(tasks), "imported_subtasks": subtask_count})
+        raise AssertionError(f"unexpected POST {url}")
 
     def get(self, url, cookies=None):
         assert url.endswith("/api/export")
-        if cookies.get(settings.cookie_name) == "fake-session-token":
+        if (cookies or {}).get(settings.cookie_name) == "fake-session-token":
             return _FakeResponse(
                 200,
                 {
@@ -51,6 +66,11 @@ class _FakeWebsiteClient:
                 },
             )
         return _FakeResponse(401)
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_website_imports():
+    _FakeWebsiteClient.imported_payloads = []
 
 
 def test_login_with_website_credentials_bootstraps_local_account_and_data(client, monkeypatch):
@@ -146,3 +166,68 @@ def test_sync_now_is_additive_across_repeated_calls(client, monkeypatch):
 
     tasks = client.get("/api/tasks").json()["tasks"]
     assert len(tasks) == 2  # deliberately duplicates, like Import already does - not a bug
+
+
+def test_push_requires_desktop_build(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: False)
+    client.post("/api/auth/guest")
+    r = client.post("/api/auth/push", json={"username": "alice", "password": "correct-password"})
+    assert r.status_code == 503
+
+
+def test_push_requires_local_login(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    r = client.post("/api/auth/push", json={"username": "alice", "password": "correct-password"})
+    assert r.status_code == 401
+
+
+def test_push_rejects_bad_website_credentials(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+    client.post("/api/auth/guest")
+
+    r = client.post("/api/auth/push", json={"username": "alice", "password": "wrong-password"})
+    assert r.status_code == 401
+    assert _FakeWebsiteClient.imported_payloads == []
+
+
+def test_push_sends_local_tasks_to_the_website(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+
+    client.post("/api/auth/guest")
+    client.post("/api/tasks", json={"text": "Local task to push", "priority": "High", "category": "Work"})
+    task_id = client.get("/api/tasks").json()["tasks"][0]["id"]
+    client.post(f"/api/tasks/{task_id}/subtasks", json={"text": "Local subtask"})
+
+    r = client.post("/api/auth/push", json={"username": "alice", "password": "correct-password"})
+    assert r.status_code == 200
+    assert r.json() == {"imported_tasks": 1, "imported_subtasks": 1}
+
+    # The website's /api/import actually received this local task - not just
+    # a locally-fabricated success response.
+    assert len(_FakeWebsiteClient.imported_payloads) == 1
+    sent_tasks = _FakeWebsiteClient.imported_payloads[0]["tasks"]
+    assert len(sent_tasks) == 1
+    assert sent_tasks[0]["text"] == "Local task to push"
+    assert sent_tasks[0]["subtasks"][0]["text"] == "Local subtask"
+    # Portable fields only, matching /api/export's own shape - no id/
+    # username/created_at/position leaking into the pushed payload.
+    assert set(sent_tasks[0].keys()) == {
+        "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes", "subtasks",
+    }
+
+
+def test_push_does_not_touch_local_data(client, monkeypatch):
+    """Push is one-directional - the local account's own tasks are read-only
+    from push's perspective, never modified by the response it gets back."""
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+
+    client.post("/api/auth/guest")
+    client.post("/api/tasks", json={"text": "Stays local", "priority": "Medium", "category": "General"})
+
+    client.post("/api/auth/push", json={"username": "alice", "password": "correct-password"})
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    assert [t["text"] for t in tasks] == ["Stays local"]

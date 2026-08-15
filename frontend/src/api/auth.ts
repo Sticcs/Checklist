@@ -12,4 +12,8 @@ export const authApi = {
   // account's data into whichever local account is currently logged in.
   sync: (username: string, password: string) =>
     api.post<ImportResponse>('/auth/sync', { username, password }),
+  // The opposite direction - pushes the currently logged-in local
+  // account's data up into the given website account.
+  push: (username: string, password: string) =>
+    api.post<ImportResponse>('/auth/push', { username, password }),
 }

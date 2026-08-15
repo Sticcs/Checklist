@@ -707,6 +707,15 @@ body[data-theme='dark'] .assessment-card.done {
   gap: 0.5rem;
 }
 
+.sync-now-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sync-now-actions .btn-primary {
+  flex: 1;
+}
+
 .settings-data-buttons {
   display: flex;
   flex-direction: column;

@@ -1,4 +1,5 @@
 import secrets
+from datetime import datetime
 from urllib.parse import urlencode
 
 import httpx
@@ -7,7 +8,7 @@ from fastapi.responses import RedirectResponse
 
 from app import crud
 from app.config import settings
-from app.models import ImportResponse, LoginRequest, SignupRequest, UserResponse
+from app.models import ExportPayload, ImportResponse, LoginRequest, SignupRequest, UserResponse
 from app.paths import is_desktop_build
 from app.security import (
     CurrentUser,
@@ -28,23 +29,36 @@ OAUTH_STATE_COOKIE = "google_oauth_state"
 # ----------------------------- Desktop <-> website sync -----------------------------
 # The desktop app's own server is otherwise fully local/offline (see
 # app/paths.py) - this is the one place it deliberately reaches out to the
-# real deployed site (settings.public_base_url), to pull a website account's
-# data in by re-authenticating against it with the same credentials.
+# real deployed site (settings.public_base_url), to either pull a website
+# account's data in or push its own data up, by re-authenticating against it
+# with credentials the user provides fresh each time (never stored).
+#
+# Only ever this one direction (app -> production, an ordinary outbound
+# request) - there's no way to go the other way, i.e. no "pull from the app"
+# button on the website itself: the app's server only exists at
+# 127.0.0.1:<random-port> on the user's own machine while it happens to be
+# open, which Render's servers have no route to (no fixed address, and
+# almost always behind a NAT/firewall besides).
+
+
+def _website_session_cookie(client: httpx.Client, username: str, password: str) -> str | None:
+    """Logs into the real deployed site with these credentials and returns
+    its session cookie, or None if they don't match a website account."""
+    login_resp = client.post(
+        f"{settings.public_base_url}/api/auth/login",
+        json={"username": username, "password": password},
+    )
+    if login_resp.status_code != 200:
+        return None
+    return login_resp.cookies.get(settings.cookie_name)
 
 
 def _fetch_from_website(username: str, password: str) -> list | None:
-    """Logs into the real deployed site with these credentials and returns
-    its exported tasks, or None if the credentials don't match a website
-    account or the site couldn't be reached. Never raises."""
+    """Returns the website account's exported tasks, or None if the
+    credentials don't match or the site couldn't be reached. Never raises."""
     try:
         with httpx.Client(timeout=15) as client:
-            login_resp = client.post(
-                f"{settings.public_base_url}/api/auth/login",
-                json={"username": username, "password": password},
-            )
-            if login_resp.status_code != 200:
-                return None
-            session_cookie = login_resp.cookies.get(settings.cookie_name)
+            session_cookie = _website_session_cookie(client, username, password)
             if not session_cookie:
                 return None
             export_resp = client.get(
@@ -54,6 +68,29 @@ def _fetch_from_website(username: str, password: str) -> list | None:
             if export_resp.status_code != 200:
                 return None
             return export_resp.json().get("tasks", [])
+    except httpx.HTTPError:
+        return None
+
+
+def _push_to_website(username: str, password: str, payload: dict) -> tuple[int, int] | None:
+    """Imports `payload` (an ExportPayload dict) into the website account
+    matching these credentials. Returns (imported_tasks, imported_subtasks),
+    or None if the credentials don't match or the site couldn't be reached.
+    Never raises."""
+    try:
+        with httpx.Client(timeout=15) as client:
+            session_cookie = _website_session_cookie(client, username, password)
+            if not session_cookie:
+                return None
+            import_resp = client.post(
+                f"{settings.public_base_url}/api/import",
+                json=payload,
+                cookies={settings.cookie_name: session_cookie},
+            )
+            if import_resp.status_code != 200:
+                return None
+            body = import_resp.json()
+            return body.get("imported_tasks", 0), body.get("imported_subtasks", 0)
     except httpx.HTTPError:
         return None
 
@@ -104,6 +141,22 @@ def sync_from_website(body: LoginRequest, current_user: CurrentUser = Depends(ge
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Those credentials don't match a website account")
 
     imported_tasks, imported_subtasks = crud.import_data(tasks, current_user.username)
+    return ImportResponse(imported_tasks=imported_tasks, imported_subtasks=imported_subtasks)
+
+
+@router.post("/push", response_model=ImportResponse)
+def push_to_website(body: LoginRequest, current_user: CurrentUser = Depends(get_current_user)) -> ImportResponse:
+    if not is_desktop_build():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Push is only available in the desktop app")
+
+    tasks = crud.get_tasks_with_subtasks(current_user.username)
+    payload = ExportPayload(exported_at=datetime.now().isoformat(), tasks=tasks).model_dump()
+
+    result = _push_to_website(body.username, body.password, payload)
+    if result is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Those credentials don't match a website account")
+
+    imported_tasks, imported_subtasks = result
     return ImportResponse(imported_tasks=imported_tasks, imported_subtasks=imported_subtasks)
 
 
