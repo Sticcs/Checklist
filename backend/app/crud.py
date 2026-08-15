@@ -741,11 +741,20 @@ def delete_subtask(subtask_id: int, task_id: int, username: str) -> bool:
 
 # ----------------------------- Export / Import -----------------------------
 
-def import_data(tasks: list[dict], username: str) -> tuple[int, int]:
-    """Additive, not a replace: existing tasks are left alone, imported ones
-    land as a new batch on top (see the position math below) - unlike
+def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> tuple[int, int]:
+    """Additive by default: existing tasks are left alone, imported ones land
+    as a new batch on top (see the position math below) - unlike
     restore_state/restore_subtasks, which are specifically an undo/redo
     primitive that intentionally wipes and replaces everything.
+
+    With replace=True, this *does* wipe first - every existing task/subtask
+    for `username` is deleted before the batch is inserted, same as clear_all
+    followed by a plain import. Used by the desktop app's Pull/Push (see
+    routers/auth.py's /sync and /push) so they act as a mirror/copy rather
+    than an ever-growing merge; the regular file-based Import (routers/
+    data.py's POST /api/import, no query param) keeps the additive default,
+    since silently wiping a user's data because they imported a backup file
+    would be a nasty surprise.
 
     Deliberately doesn't touch streak/heatmap stats (get_stats reads
     activity_log rows dated by when a task was actually completed) - the
@@ -753,7 +762,7 @@ def import_data(tasks: list[dict], username: str) -> tuple[int, int]:
     done=True task to, and fabricating a "completed today" entry for
     already-old work would inflate the streak with activity that didn't
     happen today."""
-    if not tasks:
+    if not tasks and not replace:
         return 0, 0
 
     undo.save_snapshot(username)
@@ -763,10 +772,19 @@ def import_data(tasks: list[dict], username: str) -> tuple[int, int]:
     now = datetime.now().isoformat()
 
     with engine.begin() as conn:
+        if replace:
+            conn.execute(
+                text("DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE username = :username)"),
+                {"username": username},
+            )
+            conn.execute(text("DELETE FROM tasks WHERE username = :username"), {"username": username})
+
         # Same "joins at the top" convention as add_task, computed once for
         # the whole batch so the imported tasks keep their relative order
         # among themselves instead of landing reversed (one-at-a-time top
         # insertion would put the *last* imported task at the very top).
+        # After a replace-mode delete there's nothing left to join above, so
+        # this naturally comes out as just -len(tasks).
         min_position = conn.execute(
             text("SELECT MIN(position) FROM tasks WHERE username = :username"), {"username": username}
         ).scalar_one()

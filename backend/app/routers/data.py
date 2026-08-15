@@ -20,8 +20,14 @@ def export_data(response: Response, current_user: CurrentUser = Depends(get_curr
 
 
 @router.post("/import", response_model=ImportResponse)
-def import_data(payload: ExportPayload, current_user: CurrentUser = Depends(get_current_user)) -> ImportResponse:
+def import_data(
+    payload: ExportPayload, replace: bool = False, current_user: CurrentUser = Depends(get_current_user)
+) -> ImportResponse:
+    # replace=true is only ever sent by the desktop app's Push (see
+    # routers/auth.py's _push_to_website) - a regular file import from the
+    # UI never sets it, so that path stays additive (see crud.import_data's
+    # docstring for why).
     imported_tasks, imported_subtasks = crud.import_data(
-        [t.model_dump() for t in payload.tasks], current_user.username
+        [t.model_dump() for t in payload.tasks], current_user.username, replace=replace
     )
     return ImportResponse(imported_tasks=imported_tasks, imported_subtasks=imported_subtasks)

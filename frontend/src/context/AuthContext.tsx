@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import { resetUndoRedoStacks } from '../hooks/undoRedoStack'
+import { markSaved } from '../hooks/saveState'
+import { clearLinkedCredentials } from '../hooks/websiteLink'
 import type { User } from '../types'
 
 type AuthStatus = 'loading' | 'authed' | 'anonymous'
@@ -51,6 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // able to Undo/Redo into the previous user's history.
     queryClient.clear()
     resetUndoRedoStacks()
+    markSaved()
+    clearLinkedCredentials()
   }
 
   return (

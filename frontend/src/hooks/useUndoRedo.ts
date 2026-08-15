@@ -4,6 +4,7 @@ import { undoApi } from '../api/undo'
 import { TASKS_KEY } from './useTasks'
 import { STATS_KEY } from './useStats'
 import { popRedo, popUndo, redoStackHasMore, undoStackHasMore } from './undoRedoStack'
+import { markDirty } from './saveState'
 import type { TasksResponse } from '../types'
 
 // Optimistic when the client-side mirror stack (undoRedoStack.ts) has a
@@ -53,6 +54,7 @@ export function useUndo() {
         return
       }
       queryClient.setQueryData(TASKS_KEY, data)
+      markDirty()
       toast('↩️ Undid last action')
     },
     onError: (_err, _vars, ctx) => {
@@ -89,6 +91,7 @@ export function useRedo() {
         return
       }
       queryClient.setQueryData(TASKS_KEY, data)
+      markDirty()
       toast('↪️ Redid last action')
     },
     onError: (_err, _vars, ctx) => {

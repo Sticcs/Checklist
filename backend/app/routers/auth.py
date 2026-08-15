@@ -83,7 +83,7 @@ def _push_to_website(username: str, password: str, payload: dict) -> tuple[int, 
             if not session_cookie:
                 return None
             import_resp = client.post(
-                f"{settings.public_base_url}/api/import",
+                f"{settings.public_base_url}/api/import?replace=true",
                 json=payload,
                 cookies={settings.cookie_name: session_cookie},
             )
@@ -140,7 +140,10 @@ def sync_from_website(body: LoginRequest, current_user: CurrentUser = Depends(ge
     if tasks is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Those credentials don't match a website account")
 
-    imported_tasks, imported_subtasks = crud.import_data(tasks, current_user.username)
+    # replace=True: Pull is a mirror/copy, not a merge - the local account
+    # ends up holding exactly the website's tasks, nothing more. See
+    # crud.import_data's docstring.
+    imported_tasks, imported_subtasks = crud.import_data(tasks, current_user.username, replace=True)
     return ImportResponse(imported_tasks=imported_tasks, imported_subtasks=imported_subtasks)
 
 

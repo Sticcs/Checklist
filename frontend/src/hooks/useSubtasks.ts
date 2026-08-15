@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { subtasksApi } from '../api/subtasks'
 import { TASKS_KEY } from './useTasks'
 import { pushUndoSnapshot } from './undoRedoStack'
+import { markDirty } from './saveState'
 import type { TasksResponse } from '../types'
 
 async function beginOptimisticUpdate(queryClient: ReturnType<typeof useQueryClient>) {
@@ -232,6 +233,7 @@ export function useSetSubtaskNotes() {
             }
           : old
       )
+      markDirty()
       return { previous }
     },
     onError: (_err, _vars, ctx) => {

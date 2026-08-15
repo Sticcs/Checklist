@@ -1,22 +1,27 @@
 import { useState } from 'react'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useSyncFromWebsite, usePushToWebsite } from '../hooks/useData'
+import { setLinkedCredentials } from '../hooks/websiteLink'
 
-// Desktop app only - moves tasks between the currently logged-in local
+// Desktop app only - mirrors tasks between the currently logged-in local
 // account and a website account, in either direction:
-//   - Pull: website -> this local account (also happens automatically the
-//     first time you log in locally with website credentials - see
+//   - Pull: website -> this local account, replacing it (see
+//     crud.import_data's replace mode) - also happens automatically the
+//     first time you log in locally with website credentials (see
 //     backend/app/routers/auth.py's login()). This is the repeatable,
-//     on-demand version, since the app never stores the website password to
-//     re-run that check on its own.
-//   - Push: this local account -> website. There's no way to build the
-//     reverse of *this* (a "pull from the app" button on the website) - the
-//     app's local server only exists at 127.0.0.1:<random-port> on this
-//     machine while it's open, which the website's server has no route to.
-//     Push covers the same need from the other end: an ordinary outbound
-//     request the app itself initiates.
+//     on-demand version.
+//   - Push: this local account -> website, replacing it. There's no way to
+//     build the reverse of *this* (a "pull from the app" button on the
+//     website) - the app's local server only exists at
+//     127.0.0.1:<random-port> on this machine while it's open, which the
+//     website's server has no route to. Push covers the same need from the
+//     other end: an ordinary outbound request the app itself initiates.
 // Both share one credentials form since they're normally the same website
-// account either way.
+// account either way. Whichever succeeds first "links" the account in
+// memory for this run of the app (see websiteLink.ts), which is what turns
+// on the autosave timer/Ctrl+S/exit-save-prompt (AutosaveIndicator.tsx,
+// ExitSavePrompt.tsx) - Push effectively becomes the app's save system from
+// that point on.
 export function WebsiteSyncButtons() {
   const isDesktopApp = useIsDesktopApp()
   const [open, setOpen] = useState(false)
@@ -35,6 +40,7 @@ export function WebsiteSyncButtons() {
       { username, password },
       {
         onSuccess: () => {
+          setLinkedCredentials(username, password)
           setOpen(false)
           setPassword('')
         },
@@ -47,6 +53,7 @@ export function WebsiteSyncButtons() {
       { username, password },
       {
         onSuccess: () => {
+          setLinkedCredentials(username, password)
           setOpen(false)
           setPassword('')
         },
@@ -84,7 +91,7 @@ export function WebsiteSyncButtons() {
               type="submit"
               className="btn-primary"
               disabled={pending}
-              title="Pull this website account's tasks into this local account"
+              title="Replace this local account's tasks with the website's"
             >
               {pull.isPending ? 'Pulling...' : '⬇️ Pull'}
             </button>
@@ -93,7 +100,7 @@ export function WebsiteSyncButtons() {
               className="btn-primary"
               disabled={pending}
               onClick={handlePush}
-              title="Push this local account's tasks up to the website"
+              title="Replace the website's tasks with this local account's"
             >
               {push.isPending ? 'Pushing...' : '⬆️ Push'}
             </button>

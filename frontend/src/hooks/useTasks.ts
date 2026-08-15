@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { tasksApi } from '../api/tasks'
 import type { Task, TasksResponse } from '../types'
 import { pushUndoSnapshot } from './undoRedoStack'
+import { markDirty } from './saveState'
 import { STATS_KEY } from './useStats'
 
 export const TASKS_KEY = ['tasks']
@@ -283,6 +284,7 @@ export function useSetTaskNotes() {
         ...old,
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, notes: vars.notes } : t)),
       }))
+      markDirty()
       return { previous }
     },
     onError: (_err, _vars, ctx) => {

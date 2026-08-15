@@ -15,6 +15,7 @@ import { CollapsibleSection } from './CollapsibleSection'
 import { DownloadAppButton } from './DownloadAppButton'
 import { DataBackupButtons } from './DataBackupButtons'
 import { WebsiteSyncButtons } from './WebsiteSyncButtons'
+import { AutosaveIndicator } from './AutosaveIndicator'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -150,6 +151,7 @@ export function Sidebar({
               }}
             />
           </div>
+          <AutosaveIndicator />
         </div>
         <button type="button" className="icon-btn" onClick={onClose} title="Close sidebar">
           ✕

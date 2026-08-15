@@ -23,6 +23,7 @@ class _FakeWebsiteClient:
     fixture below that resets it between tests."""
 
     imported_payloads: list[dict] = []
+    import_urls: list[str] = []
 
     def __init__(self, *args, **kwargs):
         pass
@@ -38,10 +39,11 @@ class _FakeWebsiteClient:
             if json.get("username") == "alice" and json.get("password") == "correct-password":
                 return _FakeResponse(200, cookies={settings.cookie_name: "fake-session-token"})
             return _FakeResponse(401)
-        if url.endswith("/api/import"):
+        if url.split("?")[0].endswith("/api/import"):
             if (cookies or {}).get(settings.cookie_name) != "fake-session-token":
                 return _FakeResponse(401)
             _FakeWebsiteClient.imported_payloads.append(json)
+            _FakeWebsiteClient.import_urls.append(url)
             tasks = (json or {}).get("tasks", [])
             subtask_count = sum(len(t.get("subtasks", [])) for t in tasks)
             return _FakeResponse(200, {"imported_tasks": len(tasks), "imported_subtasks": subtask_count})
@@ -71,6 +73,7 @@ class _FakeWebsiteClient:
 @pytest.fixture(autouse=True)
 def _reset_fake_website_imports():
     _FakeWebsiteClient.imported_payloads = []
+    _FakeWebsiteClient.import_urls = []
 
 
 def test_login_with_website_credentials_bootstraps_local_account_and_data(client, monkeypatch):
@@ -134,7 +137,7 @@ def test_sync_now_rejects_bad_website_credentials(client, monkeypatch):
     assert r.status_code == 401
 
 
-def test_sync_now_imports_into_currently_logged_in_local_account(client, monkeypatch):
+def test_sync_now_replaces_the_currently_logged_in_local_account(client, monkeypatch):
     monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
     monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
 
@@ -147,16 +150,17 @@ def test_sync_now_imports_into_currently_logged_in_local_account(client, monkeyp
     assert r.status_code == 200
     assert r.json() == {"imported_tasks": 1, "imported_subtasks": 0}
 
+    # Pull is a mirror, not a merge: the pre-existing local task is gone,
+    # replaced entirely by the website's.
     tasks = client.get("/api/tasks").json()["tasks"]
-    texts = sorted(t["text"] for t in tasks)
-    assert texts == ["Already local", "Task from the website"]
+    assert [t["text"] for t in tasks] == ["Task from the website"]
 
     # Sanity: nothing landed in some other/new account - it's specifically
     # the currently-authenticated local guest that got the imported task.
     assert client.get("/api/auth/me").json()["username"] == guest_username
 
 
-def test_sync_now_is_additive_across_repeated_calls(client, monkeypatch):
+def test_sync_now_does_not_duplicate_across_repeated_calls(client, monkeypatch):
     monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
     monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
     client.post("/api/auth/guest")
@@ -165,7 +169,7 @@ def test_sync_now_is_additive_across_repeated_calls(client, monkeypatch):
     client.post("/api/auth/sync", json={"username": "alice", "password": "correct-password"})
 
     tasks = client.get("/api/tasks").json()["tasks"]
-    assert len(tasks) == 2  # deliberately duplicates, like Import already does - not a bug
+    assert len(tasks) == 1  # each pull replaces the last, not adds to it
 
 
 def test_push_requires_desktop_build(client, monkeypatch):
@@ -216,6 +220,10 @@ def test_push_sends_local_tasks_to_the_website(client, monkeypatch):
     assert set(sent_tasks[0].keys()) == {
         "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes", "subtasks",
     }
+    # Push mirrors onto the website (see crud.import_data's replace mode) -
+    # it must ask for that explicitly, not fall back to the regular
+    # file-import endpoint's additive default.
+    assert _FakeWebsiteClient.import_urls == ["https://checklist-kmtw.onrender.com/api/import?replace=true"]
 
 
 def test_push_does_not_touch_local_data(client, monkeypatch):

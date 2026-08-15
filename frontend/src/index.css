@@ -611,6 +611,12 @@ body[data-theme='dark'] .assessment-card.done {
   margin-top: 0.6rem;
 }
 
+.autosave-indicator {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin: 0.4rem 0 0;
+}
+
 .theme-toggle {
   font-size: 1rem;
 }
@@ -1834,4 +1840,36 @@ kbd {
 .shortcuts-desc {
   opacity: 0.8;
   text-align: right;
+}
+
+.exit-save-modal {
+  max-width: 380px;
+}
+
+.exit-save-message {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  margin: 0 0 1rem;
+  line-height: 1.5;
+}
+
+.exit-save-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.exit-save-discard {
+  display: block;
+  margin: 0.75rem auto 0;
+  background: none;
+  border: none;
+  font-size: 0.72rem;
+  opacity: 0.55;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.exit-save-discard:hover {
+  opacity: 0.85;
 }

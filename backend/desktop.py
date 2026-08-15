@@ -48,6 +48,50 @@ def main() -> None:
 
     window = webview.create_window("Checklist", url, width=1400, height=900, min_size=(900, 600))
 
+    # Whether there's unsaved work linked to a website account right now -
+    # kept in sync by the page itself calling set_dirty_state() (see
+    # ExitSavePrompt.tsx) whenever it changes, rather than on_closing asking
+    # the page for it on the way out. That "ask on the way out" version is
+    # what this replaced: window.events.closing runs synchronously on the
+    # UI thread (should_lock=True in webview/event.py), and WebView2's
+    # evaluate_js blocks that same thread on a semaphore waiting for a
+    # continuation that's scheduled to run back on... the UI thread - which
+    # can't happen while it's the one blocked. That's a real, reproducible
+    # deadlock (confirmed by hand: the window simply stopped responding to
+    # its own close button), not a hypothetical one - a plain push from the
+    # page avoids ever calling evaluate_js from inside this handler.
+    _save_state = {"should_prompt": False}
+
+    def set_dirty_state(dirty: bool, linked: bool) -> None:
+        _save_state["should_prompt"] = bool(dirty and linked)
+
+    def on_closing() -> bool:
+        if not _save_state["should_prompt"]:
+            return True
+        # Still can't call evaluate_js synchronously here for the same
+        # deadlock reason - but on_closing returning False right away frees
+        # the UI thread to keep pumping messages, so doing it on a plain
+        # background thread (which only needs to *start* the call, not wait
+        # out the whole close) works fine.
+        threading.Thread(
+            target=lambda: window.evaluate_js(
+                "window.__checklistShowExitPrompt && window.__checklistShowExitPrompt()"
+            ),
+            daemon=True,
+        ).start()
+        return False
+
+    window.events.closing += on_closing
+
+    def close_app() -> None:
+        # Called from the exit-save prompt once it's actually safe to close
+        # (the save succeeded, or the user chose to discard changes).
+        # Unregisters on_closing first - window.destroy() re-fires the same
+        # native close event on its way out, and without this it would just
+        # cancel itself and re-show the prompt instead of ever closing.
+        window.events.closing -= on_closing
+        window.destroy()
+
     def toggle_fullscreen() -> None:
         window.toggle_fullscreen()
 
@@ -93,7 +137,7 @@ def main() -> None:
         # itself stopped responding - almost certainly the recursion pinning
         # the GIL). expose() after the GUI loop is already running sidesteps
         # that race entirely.
-        window.expose(toggle_fullscreen, save_export, notify)
+        window.expose(toggle_fullscreen, save_export, notify, close_app, set_dirty_state)
 
     webview.start(expose_api)
 
