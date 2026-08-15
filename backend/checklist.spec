@@ -56,6 +56,12 @@ a = Analysis(
         "uvicorn.protocols.websockets.auto",
         "uvicorn.lifespan",
         "uvicorn.lifespan.on",
+        # plyer.notification (desktop.py) picks its backend module by
+        # platform string at runtime, not a static top-level import, so
+        # PyInstaller's analysis misses it the same way it misses uvicorn's
+        # dynamic imports above - only the current platform's module exists
+        # to even scan.
+        "plyer.platforms.macosx.notification" if is_macos else "plyer.platforms.win.notification",
     ],
     hookspath=[],
     hooksconfig={},

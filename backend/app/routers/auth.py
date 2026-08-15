@@ -7,7 +7,8 @@ from fastapi.responses import RedirectResponse
 
 from app import crud
 from app.config import settings
-from app.models import LoginRequest, SignupRequest, UserResponse
+from app.models import ImportResponse, LoginRequest, SignupRequest, UserResponse
+from app.paths import is_desktop_build
 from app.security import (
     CurrentUser,
     clear_session_cookie,
@@ -24,6 +25,39 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 OAUTH_STATE_COOKIE = "google_oauth_state"
 
 
+# ----------------------------- Desktop <-> website sync -----------------------------
+# The desktop app's own server is otherwise fully local/offline (see
+# app/paths.py) - this is the one place it deliberately reaches out to the
+# real deployed site (settings.public_base_url), to pull a website account's
+# data in by re-authenticating against it with the same credentials.
+
+
+def _fetch_from_website(username: str, password: str) -> list | None:
+    """Logs into the real deployed site with these credentials and returns
+    its exported tasks, or None if the credentials don't match a website
+    account or the site couldn't be reached. Never raises."""
+    try:
+        with httpx.Client(timeout=15) as client:
+            login_resp = client.post(
+                f"{settings.public_base_url}/api/auth/login",
+                json={"username": username, "password": password},
+            )
+            if login_resp.status_code != 200:
+                return None
+            session_cookie = login_resp.cookies.get(settings.cookie_name)
+            if not session_cookie:
+                return None
+            export_resp = client.get(
+                f"{settings.public_base_url}/api/export",
+                cookies={settings.cookie_name: session_cookie},
+            )
+            if export_resp.status_code != 200:
+                return None
+            return export_resp.json().get("tasks", [])
+    except httpx.HTTPError:
+        return None
+
+
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 def signup(body: SignupRequest) -> dict:
     if not body.username.strip() or not body.password:
@@ -35,11 +69,42 @@ def signup(body: SignupRequest) -> dict:
 
 @router.post("/login", response_model=UserResponse)
 def login(body: LoginRequest, response: Response) -> UserResponse:
-    if not crud.verify_user(body.username, body.password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     username = body.username.strip()
-    set_session_cookie(response, username, is_guest=False)
-    return UserResponse(username=username, is_guest=False)
+
+    if crud.verify_user(username, body.password):
+        set_session_cookie(response, username, is_guest=False)
+        return UserResponse(username=username, is_guest=False)
+
+    # First-time login with website credentials, from inside the desktop
+    # app: bootstrap a matching local account and pull that account's data
+    # in. Gated on the local username not already existing, so this only
+    # ever fires once per account - an existing local account (even one
+    # originally created this way) always just checks its own local
+    # password on every later login, so reopening the app doesn't keep
+    # re-importing duplicates of the same tasks. Later re-syncs are what the
+    # explicit "Sync now" button (POST /sync below) is for.
+    if is_desktop_build() and not crud.user_exists(username):
+        tasks = _fetch_from_website(username, body.password)
+        if tasks is not None:
+            crud.create_user(username, body.password)
+            crud.import_data(tasks, username)
+            set_session_cookie(response, username, is_guest=False)
+            return UserResponse(username=username, is_guest=False)
+
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+
+
+@router.post("/sync", response_model=ImportResponse)
+def sync_from_website(body: LoginRequest, current_user: CurrentUser = Depends(get_current_user)) -> ImportResponse:
+    if not is_desktop_build():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Sync is only available in the desktop app")
+
+    tasks = _fetch_from_website(body.username, body.password)
+    if tasks is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Those credentials don't match a website account")
+
+    imported_tasks, imported_subtasks = crud.import_data(tasks, current_user.username)
+    return ImportResponse(imported_tasks=imported_tasks, imported_subtasks=imported_subtasks)
 
 
 @router.post("/guest", response_model=UserResponse)

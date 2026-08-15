@@ -1,16 +1,18 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { toggleMarkdownFormat, type FormatKind } from '../utils/markdownFormat'
+
+export type FormatKind = 'bold' | 'italic' | 'underline'
+
+const COMMAND: Record<FormatKind, string> = { bold: 'bold', italic: 'italic', underline: 'underline' }
 
 interface ActiveEditor {
-  ref: RefObject<HTMLTextAreaElement | null>
-  setValue: (value: string) => void
+  ref: RefObject<HTMLDivElement | null>
 }
 
 interface FormattingContextValue {
   active: boolean
   applyFormat: (kind: FormatKind) => void
   registerFocus: (editor: ActiveEditor) => void
-  registerBlur: (ref: RefObject<HTMLTextAreaElement | null>) => void
+  registerBlur: (ref: RefObject<HTMLDivElement | null>) => void
 }
 
 const FormattingContext = createContext<FormattingContextValue | null>(null)
@@ -28,7 +30,7 @@ export function FormattingProvider({ children }: { children: ReactNode }) {
     setActive(true)
   }, [])
 
-  const registerBlur = useCallback((ref: RefObject<HTMLTextAreaElement | null>) => {
+  const registerBlur = useCallback((ref: RefObject<HTMLDivElement | null>) => {
     // Only clear if this blur came from whichever editor is still the
     // current one - otherwise a stale blur (e.g. from an editor that lost
     // focus a while ago) could clobber a newer editor's active state.
@@ -39,18 +41,16 @@ export function FormattingProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const applyFormat = useCallback((kind: FormatKind) => {
-    const editor = activeEditorRef.current
-    const el = editor?.ref.current
-    if (!editor || !el) return
-    const result = toggleMarkdownFormat(el, kind)
-    editor.setValue(result.value)
-    // The textarea is a controlled component, so writing el.value directly
-    // would just get overwritten by the re-render triggered above - restore
-    // the selection after that render lands instead of before it.
-    requestAnimationFrame(() => {
-      el.focus()
-      el.setSelectionRange(result.selectionStart, result.selectionEnd)
-    })
+    const el = activeEditorRef.current?.ref.current
+    if (!el) return
+    el.focus()
+    // The browser's own selection-aware toggle - genuinely renders bold/
+    // italic/underline (unlike the old <textarea>-based version, which could
+    // only ever insert literal **markdown** characters around plain text,
+    // since a <textarea> has no way to render styled text at all).
+    // execCommand is deprecated but has no shipping replacement for this;
+    // still universally supported, including inside WebView2/WKWebView.
+    document.execCommand(COMMAND[kind])
   }, [])
 
   return (
@@ -66,23 +66,43 @@ export function useFormattingContext() {
   return ctx
 }
 
-// Spread the returned handlers onto a <textarea>: it registers as the active
-// editor on focus, and Ctrl/Cmd+B/I/U format the current selection in place.
-export function useFormattableTextarea(setValue: (value: string) => void) {
-  const ref = useRef<HTMLTextAreaElement>(null)
+// Spread the returned handlers onto a contentEditable <div>: it registers as
+// the active editor on focus, Ctrl/Cmd+B/I/U format the current selection in
+// place, and its HTML content is reported out via onInput. Deliberately
+// one-way/uncontrolled - see useSyncEditableContent for the matching "write
+// content back in" half, used only for changes that didn't come from this
+// element's own typing.
+export function useFormattableEditable(onChange: (html: string) => void) {
+  const ref = useRef<HTMLDivElement>(null)
   const { registerFocus, registerBlur, applyFormat } = useFormattingContext()
 
-  const onFocus = () => registerFocus({ ref, setValue })
+  const onFocus = () => {
+    registerFocus({ ref })
+    // Makes Enter produce a plain <br> instead of Chrome's default of
+    // wrapping each line in its own nested <div> - simpler, more predictable
+    // stored HTML for what's meant to be a plain paragraph of notes, not
+    // richly structured content.
+    document.execCommand('defaultParagraphSeparator', false, 'br')
+  }
   const onBlur = () => registerBlur(ref)
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const onInput = (e: React.FormEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    // Backspacing everything can leave a stray <br> or empty nested element
+    // behind instead of a truly empty element, which would otherwise defeat
+    // the CSS :empty placeholder (see .rich-text-input:empty::before).
+    if (el.textContent === '') el.innerHTML = ''
+    onChange(el.innerHTML)
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!(e.ctrlKey || e.metaKey)) return
-    const kind: FormatKind | null =
-      e.key.toLowerCase() === 'b' ? 'bold' : e.key.toLowerCase() === 'i' ? 'italic' : e.key.toLowerCase() === 'u' ? 'underline' : null
+    const key = e.key.toLowerCase()
+    const kind: FormatKind | null = key === 'b' ? 'bold' : key === 'i' ? 'italic' : key === 'u' ? 'underline' : null
     if (!kind) return
     e.preventDefault()
     applyFormat(kind)
   }
 
-  return { ref, onFocus, onBlur, onKeyDown }
+  return { ref, onFocus, onBlur, onInput, onKeyDown }
 }

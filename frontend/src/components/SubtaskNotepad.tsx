@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { useSetSubtaskNotes } from '../hooks/useSubtasks'
-import { useFormattableTextarea } from '../context/FormattingContext'
+import { useFormattableEditable } from '../context/FormattingContext'
+import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
 import { isTypingElement } from '../utils/isTypingElement'
 import { ExpandOverlay } from './ExpandOverlay'
 import type { Subtask } from '../types'
@@ -24,8 +25,10 @@ export function SubtaskNotepad({ subtask }: Props) {
     setDraft(value)
   }
 
-  const compact = useFormattableTextarea(onChange)
-  const expandedField = useFormattableTextarea(onChange)
+  const compact = useFormattableEditable(onChange)
+  const expandedField = useFormattableEditable(onChange)
+
+  useSyncEditableContent(compact.ref, draft, () => dirty.current)
 
   // Only overwrite the draft from server state when we're not the source of
   // the change - see the matching comment on TaskCard's notes handling.
@@ -61,6 +64,20 @@ export function SubtaskNotepad({ subtask }: Props) {
     return () => document.removeEventListener('keydown', handler, true)
   }, [compact.ref])
 
+  // The expanded overlay only exists in the DOM while open, and nothing else
+  // can change `draft` while it's up (the compact copy behind the blur
+  // isn't reachable) - so it only ever needs its content set once, right as
+  // it mounts. autoFocus doesn't apply to a plain <div> the way it does a
+  // <textarea>, so this also replaces that.
+  useEffect(() => {
+    if (!expanded) return
+    const el = expandedField.ref.current
+    if (!el) return
+    el.innerHTML = draft
+    el.focus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded])
+
   return (
     <div className="subtask-notepad" data-focus-exempt>
       <div className="panel-header-row">
@@ -69,12 +86,13 @@ export function SubtaskNotepad({ subtask }: Props) {
           ⤢
         </button>
       </div>
-      <textarea
+      <div
         ref={compact.ref}
-        className="subtask-notepad-input"
-        placeholder="Notes for this subtask... (Press ` to focus)"
-        value={draft}
-        onChange={(e) => onChange(e.target.value)}
+        className="subtask-notepad-input rich-text-input"
+        contentEditable
+        suppressContentEditableWarning
+        data-placeholder="Notes for this subtask... (Press ` to focus)"
+        onInput={compact.onInput}
         onFocus={compact.onFocus}
         onBlur={compact.onBlur}
         onKeyDown={compact.onKeyDown}
@@ -82,13 +100,13 @@ export function SubtaskNotepad({ subtask }: Props) {
       <AnimatePresence>
         {expanded && (
           <ExpandOverlay label={subtask.text} onClose={() => setExpanded(false)} accent>
-            <textarea
+            <div
               ref={expandedField.ref}
-              className="expand-overlay-input"
-              placeholder="Notes for this subtask..."
-              autoFocus
-              value={draft}
-              onChange={(e) => onChange(e.target.value)}
+              className="expand-overlay-input rich-text-input"
+              contentEditable
+              suppressContentEditableWarning
+              data-placeholder="Notes for this subtask..."
+              onInput={expandedField.onInput}
               onFocus={expandedField.onFocus}
               onBlur={expandedField.onBlur}
               onKeyDown={expandedField.onKeyDown}

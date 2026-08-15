@@ -247,6 +247,29 @@ body[data-theme='dark'] {
   opacity: 1;
 }
 
+/* Shared by every rich-text field (scratchpad, subtask notepad, task notes,
+   and their expanded-overlay copies) - a contentEditable <div> standing in
+   for what used to be a plain <textarea>, so real bold/italic/underline can
+   actually render (see FormattingContext's useFormattableEditable). A div
+   has no native placeholder attribute, hence the :empty + data-placeholder
+   trick - onInput normalizes a fully-cleared field back to true emptiness
+   (see useFormattableEditable) so :empty reliably matches instead of being
+   defeated by a stray leftover <br>. */
+.rich-text-input {
+  cursor: text;
+  overflow-wrap: break-word;
+}
+
+.rich-text-input:empty::before {
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.rich-text-input b,
+.rich-text-input strong {
+  font-weight: 700;
+}
+
 /* ----------------------------- Assessments ----------------------------- */
 .subtask-notepad {
   /* Same square footprint as .scratchpad - they sit side by side in
@@ -603,11 +626,6 @@ body[data-theme='dark'] .assessment-card.done {
   border: 0;
 }
 
-.sidebar-heading {
-  margin: 0;
-  font-size: 1.05rem;
-}
-
 .sidebar-subheading {
   margin: 0.7rem 0 0.4rem;
   font-size: 0.84rem;
@@ -674,6 +692,26 @@ body[data-theme='dark'] .assessment-card.done {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.sync-now {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.sync-now-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-data-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .btn-block {

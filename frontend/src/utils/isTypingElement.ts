@@ -11,5 +11,11 @@ export function isTypingElement(el: Element | null): boolean {
     const type = (el as HTMLInputElement).type
     return !NON_TEXT_INPUT_TYPES.has(type)
   }
+  // The scratchpad/subtask notepad/task notes rich-text fields (see
+  // useFormattableEditable) are contentEditable <div>s, not <textarea>s -
+  // without this, every global hotkey guarded by isTypingElement (the `,
+  // /, ?, and F11 handlers) would fire *while the user is typing a note*,
+  // since a <div>'s tagName never matches the checks above.
+  if (el instanceof HTMLElement && el.isContentEditable) return true
   return false
 }

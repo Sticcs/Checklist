@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { Task } from '../types'
 import { useSettings } from '../context/SettingsContext'
+import { useIsDesktopApp } from './useIsDesktopApp'
 import { daysUntil, toISODate } from '../utils/dueDatePresets'
 
 function notifiedKey(todayIso: string): string {
@@ -20,16 +21,21 @@ function saveNotified(todayIso: string, ids: Set<string>) {
   localStorage.setItem(notifiedKey(todayIso), JSON.stringify([...ids]))
 }
 
-// Browser-notification reminder for anything due tomorrow. This only fires
-// while the tab is open (no service worker / push infra behind it) - a
-// deliberate scope limit, not an oversight, since a real push-based reminder
-// system would need a server-side scheduler this app doesn't have.
+// A reminder for anything due tomorrow. This only fires while the app is
+// open (no service worker / push infra behind it) - a deliberate scope
+// limit, not an oversight, since a real push-based reminder system would
+// need a server-side scheduler this app doesn't have.
 export function useDueDateNotifications(tasks: Task[]) {
   const { notifyDayBefore } = useSettings()
+  const isDesktopApp = useIsDesktopApp()
 
   useEffect(() => {
     if (!notifyDayBefore) return
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    // The desktop app's native notify() (backend/desktop.py, via plyer)
+    // needs no permission grant - the Web Notification API the website
+    // falls back to does, and isn't reliably available inside an embedded
+    // webview at all (WKWebView in particular has no permission UI for it).
+    if (!isDesktopApp && (typeof Notification === 'undefined' || Notification.permission !== 'granted')) return
 
     const todayIso = toISODate(new Date())
     const notified = loadNotified(todayIso)
@@ -38,7 +44,11 @@ export function useDueDateNotifications(tasks: Task[]) {
     const maybeNotify = (id: string, text: string, dueDate: string | null, done: boolean) => {
       if (done || !dueDate || notified.has(id)) return
       if (daysUntil(dueDate, todayIso) !== 1) return
-      new Notification('Due tomorrow', { body: text })
+      if (isDesktopApp) {
+        void window.pywebview?.api?.notify?.('Due tomorrow', text)
+      } else {
+        new Notification('Due tomorrow', { body: text })
+      }
       notified.add(id)
       changed = true
     }
@@ -51,5 +61,5 @@ export function useDueDateNotifications(tasks: Task[]) {
     }
 
     if (changed) saveNotified(todayIso, notified)
-  }, [tasks, notifyDayBefore])
+  }, [tasks, notifyDayBefore, isDesktopApp])
 }

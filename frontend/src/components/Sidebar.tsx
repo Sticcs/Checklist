@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
@@ -7,12 +7,14 @@ import { useFormattingContext } from '../context/FormattingContext'
 import { useActivity } from '../hooks/useActivity'
 import { useClearAll, useClearCompleted, useMarkAllCompleted } from '../hooks/useTasks'
 import { useUndo, useRedo } from '../hooks/useUndoRedo'
-import { useImportData } from '../hooks/useData'
+import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useWallpaper } from '../hooks/useWallpaper'
 import { resizeImageToDataUrl } from '../utils/resizeImage'
 import { StatsPanel } from './StatsPanel'
 import { CollapsibleSection } from './CollapsibleSection'
 import { DownloadAppButton } from './DownloadAppButton'
+import { DataBackupButtons } from './DataBackupButtons'
+import { SyncNowButton } from './SyncNowButton'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -46,6 +48,7 @@ const ACTIVITY_META: Record<string, { icon: string; label: string }> = {
   cleared_completed: { icon: '🧹', label: 'Cleared completed' },
   cleared_all: { icon: '🗑️', label: 'Cleared all' },
   marked_all_completed: { icon: '✅', label: 'Marked all completed' },
+  imported: { icon: '📥', label: 'Imported' },
 }
 
 export function Sidebar({
@@ -68,15 +71,19 @@ export function Sidebar({
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { urgentWindowDays, setUrgentWindowDays, notifyDayBefore, setNotifyDayBefore } = useSettings()
+  const isDesktopApp = useIsDesktopApp()
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [wallpaper, setWallpaper] = useWallpaper(user?.username)
   const wallpaperInputRef = useRef<HTMLInputElement>(null)
-  const importFileInputRef = useRef<HTMLInputElement>(null)
 
   const handleNotifyToggle = async (checked: boolean) => {
-    if (checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    // The desktop app's native notifications (plyer, via backend/desktop.py)
+    // need no permission grant - only the website's Web Notification
+    // fallback does.
+    if (checked && !isDesktopApp && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') return
     }
@@ -89,18 +96,7 @@ export function Sidebar({
   const markAllCompleted = useMarkAllCompleted()
   const clearCompleted = useClearCompleted()
   const clearAll = useClearAll()
-  const importData = useImportData()
   const activity = useActivity(activityOpen)
-
-  const handleImportFile = async (file: File | undefined) => {
-    if (!file) return
-    try {
-      const payload = JSON.parse(await file.text())
-      importData.mutate(payload)
-    } catch {
-      toast.error("Couldn't read that file - make sure it's a Checklist export")
-    }
-  }
 
   const handleWallpaperFile = async (file: File | undefined) => {
     if (!file) return
@@ -162,61 +158,6 @@ export function Sidebar({
 
       <hr />
 
-      <div className="sidebar-filters">
-        <h3 className="sidebar-heading">Filters</h3>
-        <input
-          className="search-input"
-          placeholder="Search tasks..."
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-        />
-        <div className="status-filter-row">
-          {(['All', 'Active', 'Completed'] as const).map((s) => (
-            <label key={s} className="radio-label">
-              <input
-                type="radio"
-                name="status-filter"
-                checked={statusFilter === s}
-                onChange={() => onStatusFilterChange(s)}
-              />
-              {s}
-            </label>
-          ))}
-        </div>
-        <label className="checkbox-label">
-          <input type="checkbox" checked={pinnedOnly} onChange={(e) => onPinnedOnlyChange(e.target.checked)} />
-          📌 Pinned only
-        </label>
-
-        {availableCategories.length > 0 && (
-          <div className="category-filter">
-            <p className="sidebar-subheading">Category</p>
-            {availableCategories.map((cat) => (
-              <label key={cat} className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={categoryFilter.includes(cat)}
-                  onChange={() => toggleCategory(cat)}
-                />
-                {cat}
-              </label>
-            ))}
-          </div>
-        )}
-
-        <label className="sort-select">
-          Sort by
-          <select value={sortBy} onChange={(e) => onSortByChange(e.target.value as SortBy)}>
-            <option>Priority</option>
-            <option>Due date</option>
-            <option>Newest first</option>
-            <option>Manual</option>
-          </select>
-        </label>
-      </div>
-
-      <hr />
-
       <div className="sidebar-format-row">
         {(
           [
@@ -243,6 +184,15 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-undo-redo">
+        <button
+          type="button"
+          className={filtersOpen ? 'icon-btn btn-primary' : 'icon-btn'}
+          aria-expanded={filtersOpen}
+          title="Filters"
+          onClick={() => setFiltersOpen((v) => !v)}
+        >
+          🔍
+        </button>
         <button type="button" className="btn-secondary" disabled={!canUndo} onClick={() => undo.mutate()}>
           ↩️ Undo
         </button>
@@ -250,6 +200,71 @@ export function Sidebar({
           ↪️ Redo
         </button>
       </div>
+
+      <AnimatePresence initial={false}>
+        {filtersOpen && (
+          <motion.div
+            key="filters"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="sidebar-filters">
+              <input
+                className="search-input"
+                placeholder="Search tasks..."
+                value={search}
+                onChange={(e) => onSearchChange(e.target.value)}
+              />
+              <div className="status-filter-row">
+                {(['All', 'Active', 'Completed'] as const).map((s) => (
+                  <label key={s} className="radio-label">
+                    <input
+                      type="radio"
+                      name="status-filter"
+                      checked={statusFilter === s}
+                      onChange={() => onStatusFilterChange(s)}
+                    />
+                    {s}
+                  </label>
+                ))}
+              </div>
+              <label className="checkbox-label">
+                <input type="checkbox" checked={pinnedOnly} onChange={(e) => onPinnedOnlyChange(e.target.checked)} />
+                📌 Pinned only
+              </label>
+
+              {availableCategories.length > 0 && (
+                <div className="category-filter">
+                  <p className="sidebar-subheading">Category</p>
+                  {availableCategories.map((cat) => (
+                    <label key={cat} className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={categoryFilter.includes(cat)}
+                        onChange={() => toggleCategory(cat)}
+                      />
+                      {cat}
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              <label className="sort-select">
+                Sort by
+                <select value={sortBy} onChange={(e) => onSortByChange(e.target.value as SortBy)}>
+                  <option>Priority</option>
+                  <option>Due date</option>
+                  <option>Newest first</option>
+                  <option>Manual</option>
+                </select>
+              </label>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="sidebar-bulk-actions">
         <button type="button" className="btn-secondary btn-block" onClick={() => markAllCompleted.mutate()}>
@@ -267,59 +282,11 @@ export function Sidebar({
         </button>
       </div>
 
-      <div className="sidebar-bulk-actions">
-        <a
-          className="btn-secondary btn-block"
-          href="/api/export"
-          download
-          title="Download every task, subtask, and note as a JSON file"
-        >
-          💾 Export data
-        </a>
-        <button
-          type="button"
-          className="btn-secondary btn-block"
-          onClick={() => importFileInputRef.current?.click()}
-          disabled={importData.isPending}
-          title="Load tasks from a Checklist export file - adds to what's already here, doesn't replace it"
-        >
-          {importData.isPending ? 'Importing...' : '📤 Import data'}
-        </button>
-        <input
-          ref={importFileInputRef}
-          type="file"
-          accept="application/json,.json"
-          className="visually-hidden-input"
-          onChange={(e) => {
-            void handleImportFile(e.target.files?.[0])
-            e.target.value = ''
-          }}
-        />
-      </div>
+      <SyncNowButton />
 
       <hr />
 
       <StatsPanel open={statsOpen} onToggle={setStatsOpen} />
-
-      <CollapsibleSection title="Activity Logs" open={activityOpen} onToggle={setActivityOpen}>
-        <div className="activity-log">
-          {activity.data && activity.data.length === 0 && <p>No recent activity.</p>}
-          <ul>
-            {activity.data?.map((entry) => {
-              const meta = ACTIVITY_META[entry.action] ?? { icon: '•', label: entry.action }
-              const when = new Date(entry.created_at)
-              return (
-                <li key={entry.id} className="activity-log-entry">
-                  <span>
-                    {meta.icon} <b>{meta.label}:</b> {entry.detail}
-                  </span>
-                  <span className="activity-log-time">{when.toLocaleString()}</span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      </CollapsibleSection>
 
       <CollapsibleSection title="⚙️ Settings" open={settingsOpen} onToggle={setSettingsOpen}>
         <div className="settings-body">
@@ -343,6 +310,30 @@ export function Sidebar({
             />
             🔔 Notify me the day before something's due
           </label>
+        </div>
+
+        <CollapsibleSection title="Activity Logs" open={activityOpen} onToggle={setActivityOpen}>
+          <div className="activity-log">
+            {activity.data && activity.data.length === 0 && <p>No recent activity.</p>}
+            <ul>
+              {activity.data?.map((entry) => {
+                const meta = ACTIVITY_META[entry.action] ?? { icon: '•', label: entry.action }
+                const when = new Date(entry.created_at)
+                return (
+                  <li key={entry.id} className="activity-log-entry">
+                    <span>
+                      {meta.icon} <b>{meta.label}:</b> {entry.detail}
+                    </span>
+                    <span className="activity-log-time">{when.toLocaleString()}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </CollapsibleSection>
+
+        <div className="settings-data-buttons">
+          <DataBackupButtons />
         </div>
       </CollapsibleSection>
 

@@ -10,6 +10,15 @@ _FROZEN = getattr(sys, "frozen", False)
 _BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", "")) if _FROZEN else None
 
 
+def is_desktop_build() -> bool:
+    """True only inside the actual packaged desktop app (a frozen PyInstaller
+    build) - never in local dev, tests, or the real deployed server. This is
+    exactly the boundary the login-time web-account bootstrap and the
+    sidebar's "Sync now" button (app/routers/auth.py) need: syncing "from the
+    website into the app" is meaningless anywhere except the app itself."""
+    return _FROZEN
+
+
 def resource_path(*parts: str) -> Path:
     """A read-only bundled resource (e.g. the built frontend) - inside the
     PyInstaller bundle when frozen (see checklist.spec's `datas`), otherwise

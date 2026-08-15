@@ -9,3 +9,11 @@ pyobjc-framework-Cocoa; sys_platform == "darwin"
 pyobjc-framework-WebKit; sys_platform == "darwin"
 pyobjc-framework-Quartz; sys_platform == "darwin"
 pyinstaller
+# Native OS notifications (Windows toast / macOS Notification Center) - see
+# desktop.py's notify(). The Web Notification API the website uses isn't
+# reliably available inside an embedded webview.
+plyer
+# plyer's macOS notification backend bridges Objective-C via pyobjus (Kivy's
+# own bridge - a different package from the pyobjc-framework-* ones above,
+# which pywebview's Cocoa backend uses instead), so it isn't covered by those.
+pyobjus; sys_platform == "darwin"

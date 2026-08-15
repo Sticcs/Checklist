@@ -1,16 +1,6 @@
 import { useEffect } from 'react'
 import { useIsDesktopApp } from './useIsDesktopApp'
 
-declare global {
-  interface Window {
-    pywebview?: {
-      api?: {
-        toggle_fullscreen?: () => void
-      }
-    }
-  }
-}
-
 // A native pywebview window has no browser chrome to supply F11 fullscreen
 // the way a real browser tab does - backend/desktop.py exposes a
 // toggle_fullscreen() JS API for exactly this. No-ops outside the desktop

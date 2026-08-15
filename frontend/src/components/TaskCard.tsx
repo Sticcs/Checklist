@@ -3,7 +3,8 @@ import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
 import { useSettings } from '../context/SettingsContext'
-import { useFormattableTextarea } from '../context/FormattingContext'
+import { useFormattableEditable } from '../context/FormattingContext'
+import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
 import {
   useDeleteTask,
   useEditTask,
@@ -173,7 +174,8 @@ export function TaskCard({
     setNotesDraft(value)
   }
 
-  const notesField = useFormattableTextarea(handleNotesChange)
+  const notesField = useFormattableEditable(handleNotesChange)
+  useSyncEditableContent(notesField.ref, notesDraft, () => notesDirty.current)
 
   const startEditing = () => {
     setEditText(task.text)
@@ -491,12 +493,13 @@ export function TaskCard({
           {task.notes ? '📝 Notes' : '📝 Add notes'}
         </button>
         {notesOpen && (
-          <textarea
+          <div
             ref={notesField.ref}
-            className="notes-textarea"
-            placeholder="Notes..."
-            value={notesDraft}
-            onChange={(e) => handleNotesChange(e.target.value)}
+            className="notes-textarea rich-text-input"
+            contentEditable
+            suppressContentEditableWarning
+            data-placeholder="Notes..."
+            onInput={notesField.onInput}
             onFocus={notesField.onFocus}
             onBlur={notesField.onBlur}
             onKeyDown={notesField.onKeyDown}

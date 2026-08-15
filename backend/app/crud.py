@@ -35,6 +35,15 @@ def verify_user(username: str, password: str) -> bool:
     return row is not None and verify_password(password, row["password"])
 
 
+def user_exists(username: str) -> bool:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT 1 FROM users WHERE username = :username"), {"username": username.strip()}
+        ).fetchone()
+    return row is not None
+
+
 def get_or_create_google_user(google_sub: str, email: str | None) -> str:
     """Finds the account already linked to this Google account, or creates
     one - keyed by google_sub, not email (an email could theoretically be
