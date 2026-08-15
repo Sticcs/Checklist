@@ -707,6 +707,36 @@ body[data-theme='dark'] .assessment-card.done {
   margin-top: 0.5rem;
 }
 
+.sync-now-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sync-now-linked-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.sync-now-unlink {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  font-size: 0.72rem;
+  opacity: 0.75;
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.sync-now-unlink:hover {
+  opacity: 1;
+}
+
 .sync-now-form {
   display: flex;
   flex-direction: column;

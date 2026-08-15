@@ -78,6 +78,48 @@ def get_or_create_google_user(google_sub: str, email: str | None) -> str:
         return username
 
 
+def get_website_link(username: str) -> dict | None:
+    """The website account this local account was last linked to (see
+    set_website_link) - or None if it's never been linked. Desktop app only;
+    lets Pull/Push/autosave (routers/auth.py) reuse those credentials
+    without asking the user to re-enter them every time the app reopens."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT website_username, website_password FROM website_links WHERE username = :username"),
+            {"username": username},
+        ).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def set_website_link(username: str, website_username: str, website_password: str) -> None:
+    """Called after every successful Pull/Push (whichever credentials were
+    used, freshly entered or already-stored) so the link always reflects the
+    most recently *confirmed-working* website account - re-linking to a
+    different one just overwrites the previous row, there's no history."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM website_links WHERE username = :username"), {"username": username})
+        conn.execute(
+            text(
+                "INSERT INTO website_links (username, website_username, website_password, linked_at) "
+                "VALUES (:username, :website_username, :website_password, :linked_at)"
+            ),
+            {
+                "username": username,
+                "website_username": website_username,
+                "website_password": website_password,
+                "linked_at": datetime.now().isoformat(),
+            },
+        )
+
+
+def clear_website_link(username: str) -> None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM website_links WHERE username = :username"), {"username": username})
+
+
 # ----------------------------- Row -> dict helpers -----------------------------
 
 def _task_dict(row) -> dict:

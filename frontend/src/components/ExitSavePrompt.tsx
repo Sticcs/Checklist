@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useIsDirty } from '../hooks/saveState'
-import { getLinkedCredentials, useLinkedCredentials } from '../hooks/websiteLink'
+import { useLinked } from '../hooks/websiteLink'
 import { useExitPromptVisible, showExitPrompt, hideExitPrompt } from '../hooks/exitPrompt'
 import { usePushToWebsite } from '../hooks/useData'
 
@@ -18,21 +18,17 @@ import { usePushToWebsite } from '../hooks/useData'
 export function ExitSavePrompt() {
   const isDesktopApp = useIsDesktopApp()
   const dirty = useIsDirty()
-  const linked = useLinkedCredentials()
+  const linked = useLinked()
   const visible = useExitPromptVisible()
   const push = usePushToWebsite()
 
   const saveAndExit = useCallback(() => {
-    const creds = getLinkedCredentials()
-    if (!creds) {
+    if (!linked) {
       hideExitPrompt()
       return
     }
-    push.mutate(
-      { username: creds.username, password: creds.password },
-      { onSuccess: () => void window.pywebview?.api?.close_app?.() }
-    )
-  }, [push])
+    push.mutate(undefined, { onSuccess: () => void window.pywebview?.api?.close_app?.() })
+  }, [push, linked])
 
   const exitWithoutSaving = useCallback(() => {
     hideExitPrompt()

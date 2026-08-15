@@ -8,7 +8,15 @@ from fastapi.responses import RedirectResponse
 
 from app import crud
 from app.config import settings
-from app.models import ExportPayload, ImportResponse, LoginRequest, SignupRequest, UserResponse
+from app.models import (
+    ExportPayload,
+    ImportResponse,
+    LoginRequest,
+    SignupRequest,
+    SyncRequest,
+    UserResponse,
+    WebsiteLinkResponse,
+)
 from app.paths import is_desktop_build
 from app.security import (
     CurrentUser,
@@ -30,8 +38,12 @@ OAUTH_STATE_COOKIE = "google_oauth_state"
 # The desktop app's own server is otherwise fully local/offline (see
 # app/paths.py) - this is the one place it deliberately reaches out to the
 # real deployed site (settings.public_base_url), to either pull a website
-# account's data in or push its own data up, by re-authenticating against it
-# with credentials the user provides fresh each time (never stored).
+# account's data in or push its own data up, by re-authenticating against it.
+# Whichever credentials work get remembered (crud.set_website_link, keyed to
+# the local account) so this local account stays "linked" across app
+# restarts - Pull/Push/autosave don't need them re-entered until the user
+# deliberately links a different website account, which just overwrites the
+# old link.
 #
 # Only ever this one direction (app -> production, an ordinary outbound
 # request) - there's no way to go the other way, i.e. no "pull from the app"
@@ -39,6 +51,21 @@ OAUTH_STATE_COOKIE = "google_oauth_state"
 # 127.0.0.1:<random-port> on the user's own machine while it happens to be
 # open, which Render's servers have no route to (no fixed address, and
 # almost always behind a NAT/firewall besides).
+
+
+def _resolve_website_credentials(
+    current_user: CurrentUser, body: SyncRequest | None
+) -> tuple[str, str] | None:
+    """Explicit credentials in the request (the user (re)linking, from
+    WebsiteSyncButtons's form) always win and become the new link. Without
+    them (the autosave timer, Ctrl+S, or the exit-save prompt - see
+    AutosaveIndicator.tsx/ExitSavePrompt.tsx, which never handle the
+    password at all), falls back to whatever this local account is already
+    linked to. Returns None if there's nothing to fall back to."""
+    if body and body.username and body.password:
+        return body.username, body.password
+    link = crud.get_website_link(current_user.username)
+    return (link["website_username"], link["website_password"]) if link else None
 
 
 def _website_session_cookie(client: httpx.Client, username: str, password: str) -> str | None:
@@ -132,14 +159,22 @@ def login(body: LoginRequest, response: Response) -> UserResponse:
 
 
 @router.post("/sync", response_model=ImportResponse)
-def sync_from_website(body: LoginRequest, current_user: CurrentUser = Depends(get_current_user)) -> ImportResponse:
+def sync_from_website(
+    body: SyncRequest | None = None, current_user: CurrentUser = Depends(get_current_user)
+) -> ImportResponse:
     if not is_desktop_build():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Sync is only available in the desktop app")
 
-    tasks = _fetch_from_website(body.username, body.password)
+    creds = _resolve_website_credentials(current_user, body)
+    if creds is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No website account linked yet")
+    username, password = creds
+
+    tasks = _fetch_from_website(username, password)
     if tasks is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Those credentials don't match a website account")
 
+    crud.set_website_link(current_user.username, username, password)
     # replace=True: Pull is a mirror/copy, not a merge - the local account
     # ends up holding exactly the website's tasks, nothing more. See
     # crud.import_data's docstring.
@@ -148,19 +183,44 @@ def sync_from_website(body: LoginRequest, current_user: CurrentUser = Depends(ge
 
 
 @router.post("/push", response_model=ImportResponse)
-def push_to_website(body: LoginRequest, current_user: CurrentUser = Depends(get_current_user)) -> ImportResponse:
+def push_to_website(
+    body: SyncRequest | None = None, current_user: CurrentUser = Depends(get_current_user)
+) -> ImportResponse:
     if not is_desktop_build():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Push is only available in the desktop app")
+
+    creds = _resolve_website_credentials(current_user, body)
+    if creds is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No website account linked yet")
+    username, password = creds
 
     tasks = crud.get_tasks_with_subtasks(current_user.username)
     payload = ExportPayload(exported_at=datetime.now().isoformat(), tasks=tasks).model_dump()
 
-    result = _push_to_website(body.username, body.password, payload)
+    result = _push_to_website(username, password, payload)
     if result is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Those credentials don't match a website account")
 
+    crud.set_website_link(current_user.username, username, password)
     imported_tasks, imported_subtasks = result
     return ImportResponse(imported_tasks=imported_tasks, imported_subtasks=imported_subtasks)
+
+
+@router.get("/website-link", response_model=WebsiteLinkResponse)
+def website_link_status(current_user: CurrentUser = Depends(get_current_user)) -> WebsiteLinkResponse:
+    if not is_desktop_build():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Only available in the desktop app")
+    link = crud.get_website_link(current_user.username)
+    if link is None:
+        return WebsiteLinkResponse(linked=False)
+    return WebsiteLinkResponse(linked=True, username=link["website_username"])
+
+
+@router.post("/website-link/clear", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_website(current_user: CurrentUser = Depends(get_current_user)) -> None:
+    if not is_desktop_build():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Only available in the desktop app")
+    crud.clear_website_link(current_user.username)
 
 
 @router.post("/guest", response_model=UserResponse)

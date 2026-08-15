@@ -38,9 +38,11 @@ class _FakeWebsiteClient:
         if url.endswith("/api/auth/login"):
             if json.get("username") == "alice" and json.get("password") == "correct-password":
                 return _FakeResponse(200, cookies={settings.cookie_name: "fake-session-token"})
+            if json.get("username") == "carol" and json.get("password") == "other-password":
+                return _FakeResponse(200, cookies={settings.cookie_name: "fake-session-token-carol"})
             return _FakeResponse(401)
         if url.split("?")[0].endswith("/api/import"):
-            if (cookies or {}).get(settings.cookie_name) != "fake-session-token":
+            if (cookies or {}).get(settings.cookie_name) not in ("fake-session-token", "fake-session-token-carol"):
                 return _FakeResponse(401)
             _FakeWebsiteClient.imported_payloads.append(json)
             _FakeWebsiteClient.import_urls.append(url)
@@ -51,7 +53,8 @@ class _FakeWebsiteClient:
 
     def get(self, url, cookies=None):
         assert url.endswith("/api/export")
-        if (cookies or {}).get(settings.cookie_name) == "fake-session-token":
+        token = (cookies or {}).get(settings.cookie_name)
+        if token == "fake-session-token":
             return _FakeResponse(
                 200,
                 {
@@ -67,6 +70,8 @@ class _FakeWebsiteClient:
                     ],
                 },
             )
+        if token == "fake-session-token-carol":
+            return _FakeResponse(200, {"version": 1, "exported_at": "2026-01-01T00:00:00", "tasks": []})
         return _FakeResponse(401)
 
 
@@ -239,3 +244,128 @@ def test_push_does_not_touch_local_data(client, monkeypatch):
 
     tasks = client.get("/api/tasks").json()["tasks"]
     assert [t["text"] for t in tasks] == ["Stays local"]
+
+
+# ----------------------------- Persisted website link -----------------------------
+
+
+def test_website_link_status_requires_desktop_build(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: False)
+    client.post("/api/auth/guest")
+    r = client.get("/api/auth/website-link")
+    assert r.status_code == 503
+
+
+def test_website_link_status_starts_unlinked(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    client.post("/api/auth/guest")
+    r = client.get("/api/auth/website-link")
+    assert r.status_code == 200
+    assert r.json() == {"linked": False, "username": None}
+
+
+def test_pull_with_credentials_persists_the_link(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+    client.post("/api/auth/guest")
+
+    client.post("/api/auth/sync", json={"username": "alice", "password": "correct-password"})
+
+    r = client.get("/api/auth/website-link")
+    assert r.json() == {"linked": True, "username": "alice"}
+
+
+def test_push_with_credentials_persists_the_link(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+    client.post("/api/auth/guest")
+
+    client.post("/api/auth/push", json={"username": "alice", "password": "correct-password"})
+
+    r = client.get("/api/auth/website-link")
+    assert r.json() == {"linked": True, "username": "alice"}
+
+
+def test_sync_without_credentials_reuses_the_linked_account(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+    client.post("/api/auth/guest")
+
+    client.post("/api/auth/sync", json={"username": "alice", "password": "correct-password"})
+    # No body at all this time - same as a fresh app launch calling
+    # autosave/Ctrl+S without ever re-prompting for credentials.
+    r = client.post("/api/auth/sync")
+    assert r.status_code == 200
+    assert r.json() == {"imported_tasks": 1, "imported_subtasks": 0}
+
+
+def test_push_without_credentials_reuses_the_linked_account(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+    client.post("/api/auth/guest")
+    client.post("/api/tasks", json={"text": "Autosaved task", "priority": "Medium", "category": "General"})
+
+    client.post("/api/auth/push", json={"username": "alice", "password": "correct-password"})
+    r = client.post("/api/auth/push", json={})  # empty body, same as autosave's silent push
+    assert r.status_code == 200
+    assert len(_FakeWebsiteClient.imported_payloads) == 2
+
+
+def test_sync_without_credentials_and_no_link_fails(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    client.post("/api/auth/guest")
+    r = client.post("/api/auth/sync")
+    assert r.status_code == 400
+
+
+def test_relinking_overwrites_the_previous_link(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+    client.post("/api/auth/guest")
+
+    client.post("/api/auth/sync", json={"username": "alice", "password": "correct-password"})
+    client.post("/api/auth/sync", json={"username": "carol", "password": "other-password"})
+
+    r = client.get("/api/auth/website-link")
+    assert r.json() == {"linked": True, "username": "carol"}
+
+    # And a credential-less call now reuses carol, not alice.
+    r2 = client.post("/api/auth/sync")
+    assert r2.status_code == 200
+    assert r2.json() == {"imported_tasks": 0, "imported_subtasks": 0}  # carol's fake account has no tasks
+
+
+def test_unlink_clears_the_stored_link(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+    client.post("/api/auth/guest")
+    client.post("/api/auth/sync", json={"username": "alice", "password": "correct-password"})
+
+    r = client.post("/api/auth/website-link/clear")
+    assert r.status_code == 204
+
+    assert client.get("/api/auth/website-link").json() == {"linked": False, "username": None}
+    assert client.post("/api/auth/sync").status_code == 400
+
+
+def test_unlink_requires_desktop_build(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: False)
+    client.post("/api/auth/guest")
+    r = client.post("/api/auth/website-link/clear")
+    assert r.status_code == 503
+
+
+def test_website_link_is_per_local_account(client, monkeypatch):
+    """Two different local accounts linking to (the same or different)
+    website accounts don't clobber each other's link - it's keyed by the
+    local username, not global."""
+    monkeypatch.setattr("app.routers.auth.is_desktop_build", lambda: True)
+    monkeypatch.setattr("app.routers.auth.httpx.Client", _FakeWebsiteClient)
+
+    client.post("/api/auth/guest")
+    client.post("/api/auth/sync", json={"username": "alice", "password": "correct-password"})
+    client.post("/api/auth/logout")
+
+    client.post("/api/auth/guest")  # a second, different local guest account
+    r = client.get("/api/auth/website-link")
+    assert r.json() == {"linked": False, "username": None}

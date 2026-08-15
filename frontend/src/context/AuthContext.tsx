@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import { resetUndoRedoStacks } from '../hooks/undoRedoStack'
 import { markSaved } from '../hooks/saveState'
-import { clearLinkedCredentials } from '../hooks/websiteLink'
+import { clearLinked } from '../hooks/websiteLink'
 import type { User } from '../types'
 
 type AuthStatus = 'loading' | 'authed' | 'anonymous'
@@ -54,7 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryClient.clear()
     resetUndoRedoStacks()
     markSaved()
-    clearLinkedCredentials()
+    // Just resets this tab's own "linked" indicator so the next login (or a
+    // brand-new guest) doesn't show a stale one before useWebsiteLinkStatus
+    // re-fetches - the actual link this account has (if any) stays stored
+    // server-side (crud.website_links) and reappears if they log back in.
+    clearLinked()
   }
 
   return (

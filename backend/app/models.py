@@ -18,6 +18,22 @@ class UserResponse(BaseModel):
     is_guest: bool
 
 
+# ----------------------------- Desktop <-> website sync -----------------------------
+
+class SyncRequest(BaseModel):
+    # Both optional: present when the user is (re)linking with a website
+    # account's credentials, absent when the desktop app's autosave/Ctrl+S/
+    # exit-save prompt is reusing the account already linked from a previous
+    # call (see routers/auth.py's _resolve_website_credentials).
+    username: str | None = None
+    password: str | None = None
+
+
+class WebsiteLinkResponse(BaseModel):
+    linked: bool
+    username: str | None = None
+
+
 # ----------------------------- Subtasks -----------------------------
 
 class SubtaskCreate(BaseModel):

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
-import { useLinkedCredentials } from '../hooks/websiteLink'
+import { useLinked } from '../hooks/websiteLink'
 import { useIsDirty } from '../hooks/saveState'
 import { usePushToWebsite } from '../hooks/useData'
 
@@ -14,21 +14,21 @@ function formatCountdown(ms: number): string {
 }
 
 // Desktop app only, and only once a website account has been linked (via a
-// successful Pull or Push - see WebsiteSyncButtons/websiteLink.ts): Push
-// doubles as the app's save system from that point on, firing automatically
-// every 5 minutes (if anything's actually changed - see saveState.ts) or
-// immediately on Ctrl+S. This is purely the visible countdown; the same
-// linked-credentials gate also drives the exit-save prompt (see
-// ExitSavePrompt.tsx), which is what actually guarantees a save on the way
-// out rather than just on a timer.
+// successful Pull or Push, or restored from a previous run - see
+// WebsiteSyncButtons/websiteLink.ts): Push doubles as the app's save system
+// from that point on, firing automatically every 5 minutes (if anything's
+// actually changed - see saveState.ts) or immediately on Ctrl+S, with no
+// credentials to pass - the backend already has them stored
+// (crud.get_website_link) for whichever account this local one is linked
+// to. This is purely the visible countdown; the same linked gate also
+// drives the exit-save prompt (see ExitSavePrompt.tsx), which is what
+// actually guarantees a save on the way out rather than just on a timer.
 export function AutosaveIndicator() {
   const isDesktopApp = useIsDesktopApp()
-  const linked = useLinkedCredentials()
+  const linked = useLinked()
   const dirty = useIsDirty()
   const push = usePushToWebsite()
 
-  const linkedRef = useRef(linked)
-  linkedRef.current = linked
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
 
@@ -36,9 +36,7 @@ export function AutosaveIndicator() {
   const [remainingMs, setRemainingMs] = useState(SAVE_INTERVAL_MS)
 
   const save = useCallback(() => {
-    const creds = linkedRef.current
-    if (!creds) return
-    push.mutate({ username: creds.username, password: creds.password })
+    push.mutate(undefined)
     deadlineRef.current = Date.now() + SAVE_INTERVAL_MS
     setRemainingMs(SAVE_INTERVAL_MS)
   }, [push])

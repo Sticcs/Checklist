@@ -52,6 +52,23 @@ subtasks_table = Table(
     Column("notes", Text, nullable=True),
 )
 
+website_links_table = Table(
+    "website_links",
+    metadata,
+    # One link per local account (desktop app only - see routers/auth.py's
+    # /sync and /push) - re-linking the same local account to a website
+    # account just overwrites its row rather than growing a history.
+    # Password is stored in plain text: this is the same local SQLite file
+    # already holding every task, note, and the activity log unencrypted -
+    # anyone with filesystem access to this machine already has all of that,
+    # so encrypting only this one column wouldn't raise the actual trust
+    # boundary any further.
+    Column("username", String, primary_key=True),
+    Column("website_username", String, nullable=False),
+    Column("website_password", String, nullable=False),
+    Column("linked_at", String, nullable=False),
+)
+
 activity_log_table = Table(
     "activity_log",
     metadata,

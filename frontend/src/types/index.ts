@@ -103,6 +103,11 @@ export interface ImportResponse {
   imported_subtasks: number
 }
 
+export interface WebsiteLinkStatus {
+  linked: boolean
+  username: string | null
+}
+
 export interface ActivityEntry {
   id: number
   action: string

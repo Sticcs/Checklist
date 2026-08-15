@@ -1,36 +1,35 @@
 import { useSyncExternalStore } from 'react'
 
-// Remembers the website credentials used for the most recent successful
-// Pull or Push (see WebsiteSyncButtons), in memory only for the lifetime of
-// this run of the app - never written to disk, matching the existing "never
-// stored" guarantee in routers/auth.py. Once linked, the autosave timer and
-// Ctrl+S (AutosaveIndicator.tsx) and the exit-save prompt (ExitSavePrompt.tsx)
-// can push without asking again. Reset on logout (see AuthContext).
-export interface WebsiteCredentials {
-  username: string
-  password: string
-}
-
-let linked: WebsiteCredentials | null = null
+// Whether the current local account has a website account linked - the
+// actual credentials are never held here (or anywhere in the frontend)
+// beyond the single request that first sends them: the backend remembers
+// them itself, keyed to the local account (see crud.set_website_link /
+// GET|POST /api/auth/website-link), so relaunching the app stays linked
+// without asking again. This is just a client-side mirror of that - reading
+// its username for display, and its truthiness to gate the autosave timer/
+// Ctrl+S/exit-save prompt (AutosaveIndicator.tsx, ExitSavePrompt.tsx),
+// which push with no credentials and let the backend fill them in from what
+// it already has stored.
+let linkedUsername: string | null = null
 const listeners = new Set<() => void>()
 
 function notify(): void {
   for (const l of listeners) l()
 }
 
-export function setLinkedCredentials(username: string, password: string): void {
-  linked = { username, password }
+export function setLinked(username: string): void {
+  linkedUsername = username
   notify()
 }
 
-export function clearLinkedCredentials(): void {
-  if (!linked) return
-  linked = null
+export function clearLinked(): void {
+  if (linkedUsername === null) return
+  linkedUsername = null
   notify()
 }
 
-export function getLinkedCredentials(): WebsiteCredentials | null {
-  return linked
+export function getLinked(): string | null {
+  return linkedUsername
 }
 
 function subscribe(listener: () => void): () => void {
@@ -38,6 +37,6 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export function useLinkedCredentials(): WebsiteCredentials | null {
-  return useSyncExternalStore(subscribe, getLinkedCredentials)
+export function useLinked(): string | null {
+  return useSyncExternalStore(subscribe, getLinked)
 }

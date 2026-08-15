@@ -3,6 +3,7 @@ import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
+import { useWebsiteLinkStatus } from '../hooks/useData'
 import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
 import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
 import { AddTaskForm } from '../components/AddTaskForm'
@@ -25,6 +26,7 @@ export function TaskListPage() {
   const toggleSubtask = useToggleSubtask()
   const setPosition = useSetPosition()
   const isDesktopApp = useIsDesktopApp()
+  useWebsiteLinkStatus()
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
