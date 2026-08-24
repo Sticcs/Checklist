@@ -220,10 +220,12 @@ def test_push_sends_local_tasks_to_the_website(client, monkeypatch):
     assert len(sent_tasks) == 1
     assert sent_tasks[0]["text"] == "Local task to push"
     assert sent_tasks[0]["subtasks"][0]["text"] == "Local subtask"
-    # Portable fields only, matching /api/export's own shape - no id/
-    # username/created_at/position leaking into the pushed payload.
+    # Portable fields only, matching /api/export's own shape - no username/
+    # created_at/position leaking into the pushed payload. id is included
+    # (needed to remap assigned_task_id references on the receiving end).
     assert set(sent_tasks[0].keys()) == {
-        "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes", "subtasks",
+        "id", "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes",
+        "assigned_task_id", "subtasks",
     }
     # Push mirrors onto the website (see crud.import_data's replace mode) -
     # it must ask for that explicitly, not fall back to the regular

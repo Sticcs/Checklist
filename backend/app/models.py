@@ -166,6 +166,16 @@ class ExportedSubtask(BaseModel):
 
 
 class ExportedTask(BaseModel):
+    # id is the *original* database id - never reused as-is on import (which
+    # always inserts fresh rows), but needed to remap assigned_task_id
+    # references (an assessment "filed under" a task, see
+    # set_task_assignment) from old ids to whatever new ids that import
+    # generates. See crud.import_data. Optional (not just for a partial/
+    # hand-built import payload, but because export files captured before
+    # this field existed don't have it) - assigned_task_id references just
+    # can't be resolved without it, which import_data already handles by
+    # leaving them unset rather than failing the whole import.
+    id: int | None = None
     text: str
     priority: str
     category: str
@@ -174,6 +184,7 @@ class ExportedTask(BaseModel):
     pinned: bool = False
     urgent: bool = False
     notes: str | None = None
+    assigned_task_id: int | None = None
     subtasks: list[ExportedSubtask] = []
 
 

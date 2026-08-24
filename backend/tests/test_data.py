@@ -21,9 +21,12 @@ def test_export_includes_task_and_subtask_fields(guest_client):
     assert body["version"] == 1
     assert len(body["tasks"]) == 1
     exported = body["tasks"][0]
-    # Portable fields only - no id/username/created_at/position leaking out.
+    # Portable fields only - no username/created_at/position leaking out.
+    # id is included (needed to remap assigned_task_id references on
+    # import), but nothing else database-internal.
     assert set(exported.keys()) == {
-        "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes", "subtasks",
+        "id", "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes",
+        "assigned_task_id", "subtasks",
     }
     assert exported["text"] == "Plan trip"
     assert exported["pinned"] is True
@@ -105,6 +108,48 @@ def test_export_then_import_round_trip_preserves_data(guest_client):
     assert tasks[0]["text"] == "Round trip"
     assert tasks[0]["notes"] == "note text"
     assert tasks[0]["subtasks"][0]["notes"] == "sub note"
+
+
+def test_export_then_import_round_trip_preserves_assigned_task_id(guest_client):
+    client, _ = guest_client
+    parent = _add_task(client, text="Main task")
+    assessment = _add_task(client, text="Assessment", category="Assessment")
+    client.patch(f"/api/tasks/{assessment['id']}/assign", json={"assigned_task_id": parent["id"]})
+
+    exported = client.get("/api/export").json()
+    # The parent's original id must have round-tripped so import can remap
+    # the reference - not just guessed correctly by accident.
+    exported_parent = next(t for t in exported["tasks"] if t["text"] == "Main task")
+    exported_assessment = next(t for t in exported["tasks"] if t["text"] == "Assessment")
+    assert exported_assessment["assigned_task_id"] == exported_parent["id"]
+
+    client.post("/api/tasks/clear-all")
+    r = client.post("/api/import", json=exported)
+    assert r.status_code == 200
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    new_parent = next(t for t in tasks if t["text"] == "Main task")
+    new_assessment = next(t for t in tasks if t["text"] == "Assessment")
+    # clear-all + a fresh insert means the new parent id is guaranteed
+    # different from the original (auto-increment never reuses a deleted
+    # id) - so this also confirms the reference was actually *remapped*,
+    # not just coincidentally still correct.
+    assert new_parent["id"] != exported_parent["id"]
+    assert new_assessment["assigned_task_id"] == new_parent["id"]
+
+
+def test_import_without_id_field_still_works(guest_client):
+    # Backward compatibility: export files captured before assigned_task_id
+    # existed have no "id" key at all - must not fail validation.
+    client, _ = guest_client
+    payload = {
+        "version": 1,
+        "exported_at": "2026-01-01T00:00:00",
+        "tasks": [{"text": "Old export", "priority": "Medium", "category": "General", "subtasks": []}],
+    }
+    r = client.post("/api/import", json=payload)
+    assert r.status_code == 200
+    assert r.json() == {"imported_tasks": 1, "imported_subtasks": 0}
 
 
 def test_import_with_replace_wipes_existing_data_first(guest_client):

@@ -175,6 +175,32 @@ def test_undo_of_unrelated_action_preserves_subtask_notes(guest_client):
     assert task_a["subtasks"][0]["notes"] == "Remember to bring snacks"
 
 
+def test_undo_of_unrelated_action_preserves_assigned_task_id(guest_client):
+    """restore_state() deletes and reinserts every task on any undo/redo -
+    assigned_task_id (an assessment "filed under" a task, see
+    set_task_assignment) has no undo history of its own, so this only
+    round-trips correctly if the reinsert actually carries that column
+    along - same class of bug as the subtask-notes case above."""
+    client, _ = guest_client
+    main_task = client.post(
+        "/api/tasks", json={"text": "Main task", "priority": "Medium", "category": "General"}
+    ).json()
+    assessment = client.post(
+        "/api/tasks", json={"text": "Assessment", "priority": "Medium", "category": "Assessment"}
+    ).json()
+    client.patch(f"/api/tasks/{assessment['id']}/assign", json={"assigned_task_id": main_task["id"]})
+
+    # An unrelated mutation - its undo snapshot is what actually gets
+    # restored below, not anything to do with the assignment itself.
+    client.post("/api/tasks", json={"text": "Task B", "priority": "Medium", "category": "General"})
+    r = client.post("/api/undo")
+    assert r.status_code == 200
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    reloaded_assessment = next(t for t in tasks if t["text"] == "Assessment")
+    assert reloaded_assessment["assigned_task_id"] == main_task["id"]
+
+
 def test_undo_redo_isolated_per_user(client):
     from fastapi.testclient import TestClient
 

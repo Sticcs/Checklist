@@ -362,8 +362,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id)"
                 ),
                 {
                     "id": t["id"],
@@ -383,6 +383,12 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     # task any time an unrelated action got undone.
                     "notes": t.get("notes"),
                     "urgent": int(t.get("urgent", False)),
+                    # Same round-trip requirement as notes/urgent above - an
+                    # assessment's "filed under" link (see set_task_assignment)
+                    # otherwise silently vanishes the moment any unrelated
+                    # action gets undone, since this restore replaces every
+                    # task for the user wholesale.
+                    "assigned_task_id": t.get("assigned_task_id"),
                 },
             )
 
@@ -860,6 +866,19 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
         ).scalar_one()
         base_position = (min_position if min_position is not None else 0) - len(tasks)
 
+        # An assessment's "filed under" link (assigned_task_id, see
+        # set_task_assignment) points at another task's id - but import
+        # always gives every task a brand-new id, so the original id in the
+        # export is meaningless on its own. This tracks old id -> new id as
+        # each task is inserted, then a second pass (after every task in the
+        # batch has a new id, since an assessment can reference a task that
+        # appears later in the list) rewrites the references. A reference to
+        # a task id that isn't in this batch (shouldn't normally happen for a
+        # full-account export) is just left unset rather than pointed at
+        # some unrelated task.
+        id_map: dict[int, int] = {}
+        pending_assignments: list[tuple[int, int]] = []
+
         for i, t in enumerate(tasks):
             new_task_id = conn.execute(
                 text(
@@ -883,6 +902,13 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
             ).scalar_one()
             imported_tasks += 1
 
+            original_id = t.get("id")
+            if original_id is not None:
+                id_map[original_id] = new_task_id
+            assigned_task_id = t.get("assigned_task_id")
+            if assigned_task_id is not None:
+                pending_assignments.append((new_task_id, assigned_task_id))
+
             for s in t.get("subtasks") or []:
                 conn.execute(
                     text(
@@ -900,6 +926,14 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
                     },
                 )
                 imported_subtasks += 1
+
+        for new_task_id, original_assigned_task_id in pending_assignments:
+            mapped_id = id_map.get(original_assigned_task_id)
+            if mapped_id is not None:
+                conn.execute(
+                    text("UPDATE tasks SET assigned_task_id = :assigned_task_id WHERE id = :id AND username = :username"),
+                    {"assigned_task_id": mapped_id, "id": new_task_id, "username": username},
+                )
 
     log_activity(
         username,
