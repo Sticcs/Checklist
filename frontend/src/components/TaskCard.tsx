@@ -32,6 +32,8 @@ interface Props {
   focusedSubtaskId?: number | null
   notepadHidden?: boolean
   onToggleNotepad?: () => void
+  assignedCount?: number
+  onShowAssignments?: (taskId: number) => void
 }
 
 export function TaskCard({
@@ -44,6 +46,8 @@ export function TaskCard({
   focusedSubtaskId = null,
   notepadHidden = false,
   onToggleNotepad,
+  assignedCount = 0,
+  onShowAssignments,
 }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
@@ -290,7 +294,7 @@ export function TaskCard({
               >
                 {subtaskDueTally.map(([d, count]) => (
                   <span key={d} className="subtask-due-tally-badge" title="Subtask due dates">
-                    📅 {count} {subtaskDueTallyLabel(d)}
+                    📅 {count}, {subtaskDueTallyLabel(d)}
                   </span>
                 ))}
               </div>
@@ -303,6 +307,23 @@ export function TaskCard({
           </div>
           <div className="meta-tags">
             <span className="badge">{task.category}</span>
+            {assignedCount > 0 && (
+              <button
+                type="button"
+                className="badge assigned-count-badge"
+                title="Show the assessments assigned under this task"
+                onClick={(e) => {
+                  // Otherwise bubbles up to the document-level click
+                  // delegation (see TaskListPage) and also toggles this
+                  // task's focus - this button's click should only ever
+                  // trigger the highlight, nothing else.
+                  e.stopPropagation()
+                  onShowAssignments?.(task.id)
+                }}
+              >
+                🔗 {assignedCount} assignment{assignedCount === 1 ? '' : 's'}
+              </button>
+            )}
             {task.due_date && <span className={overdue ? 'badge overdue' : 'badge'}>{task.due_date}</span>}
           </div>
           {task.subtasks.length > 0 && (

@@ -37,6 +37,13 @@ tasks_table = Table(
     Column("position", Float, nullable=False, server_default=text("0")),
     Column("notes", Text, nullable=True),
     Column("urgent", Integer, nullable=False, server_default=text("0")),
+    # Alt+click-to-assign (see routers/tasks.py's /assign): set on an
+    # assessment task, pointing at the plain task it's filed under - never
+    # the other way around, and never chained (an assessment can't be
+    # assigned to another assessment). Self-referencing, so no ForeignKey
+    # object here, matching this file's existing no-FK-constraints
+    # convention (see google_sub's migration comment below).
+    Column("assigned_task_id", Integer, nullable=True),
 )
 
 subtasks_table = Table(
@@ -165,6 +172,10 @@ def init_db() -> None:
     if "urgent" not in existing_task_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0"))
+
+    if "assigned_task_id" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN assigned_task_id INTEGER"))
 
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:

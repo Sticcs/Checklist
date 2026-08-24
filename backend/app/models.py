@@ -11,6 +11,7 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+    remember_me: bool = True
 
 
 class UserResponse(BaseModel):
@@ -112,6 +113,12 @@ class TaskDueDateUpdate(BaseModel):
     due_date: str | None = None
 
 
+class TaskAssignUpdate(BaseModel):
+    # The id of the plain task this (assessment) task should be filed
+    # under, or None to unassign it - see routers/tasks.py's /assign.
+    assigned_task_id: int | None = None
+
+
 class Task(BaseModel):
     id: int
     text: str
@@ -125,6 +132,7 @@ class Task(BaseModel):
     position: float
     notes: str | None
     urgent: bool
+    assigned_task_id: int | None = None
     subtasks: list[Subtask] = []
 
 

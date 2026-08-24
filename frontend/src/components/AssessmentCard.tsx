@@ -8,8 +8,14 @@ import { DateInput } from './DateInput'
 
 interface Props {
   task: Task
+  // Doubles as "selected for Alt+click assignment" (see TaskListPage) - a
+  // plain click on an assessment already focuses it via the existing
+  // document-level click delegation (same mechanism as any other task
+  // card), so a focused assessment specifically just *is* the one that's
+  // selected. No separate selection state or click handler needed.
   focused: boolean
   todayIso: string
+  highlighted: boolean
 }
 
 // A trimmed-down sibling of TaskCard for the Assessments panel: same
@@ -17,7 +23,7 @@ interface Props {
 // undo/redo, and Clear completed all just work), but no subtasks, no
 // pinning, and a much smaller footprint - text, due date, priority color,
 // urgent toggle, edit, delete.
-export function AssessmentCard({ task, focused, todayIso }: Props) {
+export function AssessmentCard({ task, focused, todayIso, highlighted }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [editPriority, setEditPriority] = useState(task.priority)
@@ -62,7 +68,9 @@ export function AssessmentCard({ task, focused, todayIso }: Props) {
     })
   }
 
-  const className = `assessment-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}`
+  const className =
+    `assessment-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}` +
+    `${justCompleted ? ' just-completed' : ''}${highlighted ? ' highlighted' : ''}`
 
   return (
     <motion.li

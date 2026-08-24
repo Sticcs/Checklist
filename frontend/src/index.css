@@ -484,6 +484,34 @@ body[data-theme='dark'] .assessment-card.done {
   animation: focus-flash 0.6s ease-out 1;
 }
 
+.assessment-card.highlighted {
+  border-color: rgba(243, 156, 18, 0.7) !important;
+  box-shadow: 0 0 0 2px rgba(243, 156, 18, 0.35) !important;
+  animation: assignment-highlight-flash 1.6s ease-in-out 1;
+}
+
+@keyframes assignment-highlight-flash {
+  0%,
+  100% {
+    background: var(--card-bg);
+  }
+  25%,
+  75% {
+    background: rgba(243, 156, 18, 0.18);
+  }
+}
+
+.assign-hint {
+  font-size: 0.74rem;
+  opacity: 0.75;
+  background: rgba(243, 156, 18, 0.12);
+  border: 1px solid rgba(243, 156, 18, 0.3);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  margin: 0 0 0.5rem;
+  overflow: hidden;
+}
+
 .assessment-content {
   display: flex;
   align-items: center;
@@ -1126,6 +1154,11 @@ button:disabled {
   gap: 0.6rem;
 }
 
+.auth-remember-label {
+  margin: -0.2rem 0 0;
+  opacity: 0.85;
+}
+
 .google-signin-btn {
   margin-bottom: 0.6rem;
   /* Always white, matching Google's own button guidelines, regardless of
@@ -1486,6 +1519,17 @@ body[data-theme='dark'] .task-card.done {
   font-weight: 600;
 }
 
+.assigned-count-badge {
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.assigned-count-badge:hover {
+  background: rgba(128, 128, 128, 0.3);
+}
+
 .task-card.done .badge {
   background: rgba(255, 255, 255, 0.25);
   color: white;
@@ -1717,6 +1761,26 @@ body[data-theme='dark'] .subtask-panel {
 
   .task-list-column {
     height: auto;
+  }
+
+  /* On the website (not the desktop app - see the display:none block
+     below), the sidebar switches from a side-by-side column (animated by
+     width, on desktop) to a full-width panel that expands/collapses in
+     place above the task list (animated by height instead - see
+     TaskListPage's useIsMobileLayout branch). Without this, the sidebar
+     kept its fixed 300px width from the desktop layout even after the grid
+     collapsed to one column, so it sat squeezed at the top as an oddly
+     narrow, isolated box instead of using the full screen width. */
+  .sidebar-wrapper-mobile {
+    width: 100%;
+  }
+
+  .sidebar-wrapper-mobile .sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 80vh;
+    border-right: none;
+    border-bottom: 1px solid var(--glass-border);
   }
 
   /* The desktop app's window can't shrink narrower than 900px (see

@@ -12,7 +12,7 @@ interface AuthContextValue {
   status: AuthStatus
   user: User | null
   loginAsGuest: () => Promise<void>
-  login: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string, rememberMe: boolean) => Promise<void>
   signup: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
 }
@@ -40,7 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const loginAsGuest = async () => settle(await authApi.guest())
-  const login = async (username: string, password: string) => settle(await authApi.login(username, password))
+  const login = async (username: string, password: string, rememberMe: boolean) =>
+    settle(await authApi.login(username, password, rememberMe))
   const signup = async (username: string, password: string) => {
     await authApi.signup(username, password)
   }

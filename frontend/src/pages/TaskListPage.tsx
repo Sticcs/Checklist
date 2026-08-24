@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
-import { useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
+import { toast } from 'sonner'
+import { useAssignTask, useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
+import { useIsMobileLayout } from '../hooks/useIsMobileLayout'
 import { useWebsiteLinkStatus } from '../hooks/useData'
 import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
 import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
@@ -25,7 +27,9 @@ export function TaskListPage() {
   const toggleDone = useToggleDone()
   const toggleSubtask = useToggleSubtask()
   const setPosition = useSetPosition()
+  const assignTask = useAssignTask()
   const isDesktopApp = useIsDesktopApp()
+  const isMobileLayout = useIsMobileLayout() && !isDesktopApp
   useWebsiteLinkStatus()
 
   const [search, setSearch] = useState('')
@@ -82,6 +86,40 @@ export function TaskListPage() {
     () => Array.from(new Set(mainTasks.map((t) => t.category))).sort(),
     [mainTasks]
   )
+
+  // Alt+click-to-assign (see the click-delegation handler below): "select
+  // an assessment" is just a plain click on it, which is already the
+  // existing focus mechanism (see AssessmentCard's `focused` prop) - an
+  // assessment counts as "selected" for assignment purposes exactly when
+  // it's the currently-focused task. No separate selection state needed.
+  const selectedAssessmentId =
+    focusedTaskId !== null && tasksById.get(focusedTaskId)?.category === ASSESSMENT_CATEGORY
+      ? focusedTaskId
+      : null
+
+  // How many assessments are currently filed under each plain task (see
+  // TaskCard's "X assignments" badge, next to its category tag).
+  const assignedCounts = useMemo(() => {
+    const counts = new Map<number, number>()
+    for (const a of assessments) {
+      if (a.assigned_task_id === null) continue
+      counts.set(a.assigned_task_id, (counts.get(a.assigned_task_id) ?? 0) + 1)
+    }
+    return counts
+  }, [assessments])
+
+  const [highlightedAssessmentIds, setHighlightedAssessmentIds] = useState<Set<number>>(new Set())
+
+  // Clicking a task's "X assignments" badge briefly highlights every
+  // assessment filed under it, in the Assessments panel, and scrolls the
+  // first one into view (it may be off-screen, further down the panel).
+  const highlightAssignments = (mainTaskId: number) => {
+    const ids = assessments.filter((a) => a.assigned_task_id === mainTaskId).map((a) => a.id)
+    if (ids.length === 0) return
+    setHighlightedAssessmentIds(new Set(ids))
+    document.querySelector(`[data-task-id="${ids[0]}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.setTimeout(() => setHighlightedAssessmentIds(new Set()), 2000)
+  }
 
   // A category that disappears (e.g. after Clear all) shouldn't leave a
   // stale, invalid filter selection sitting around; and a category seen for
@@ -191,6 +229,22 @@ export function TaskListPage() {
       // is no longer relevant.
       setFocusedSubtaskId((prev) => (prev !== null ? null : prev))
 
+      // Alt+click-to-assign: with an assessment currently selected (see
+      // selectedAssessmentId above), Alt+clicking a *plain* task's content
+      // files that assessment under it. Never does anything else (no focus
+      // toggle, no Ctrl+click-done) - and does nothing at all if nothing's
+      // selected or the click landed back on the selected assessment itself.
+      if (e.altKey) {
+        if (selectedAssessmentId !== null && contentId !== selectedAssessmentId) {
+          const target = tasksById.get(contentId)
+          if (target && target.category !== ASSESSMENT_CATEGORY) {
+            assignTask.mutate({ id: selectedAssessmentId, assignedTaskId: contentId })
+            toast(`📎 Assigned under "${target.text}"`)
+          }
+        }
+        return
+      }
+
       if (e.ctrlKey || e.metaKey) {
         const task = tasksById.get(contentId)
         if (task) toggleDone.mutate({ id: contentId, done: !task.done })
@@ -201,7 +255,7 @@ export function TaskListPage() {
     }
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
-  }, [tasksById, toggleDone, subtasksById, toggleSubtask])
+  }, [tasksById, toggleDone, subtasksById, toggleSubtask, selectedAssessmentId, assignTask])
 
   useSubtaskFocusHotkey({
     focusedTaskId,
@@ -232,8 +286,8 @@ export function TaskListPage() {
       </AnimatePresence>
 
       <motion.div
-        className="sidebar-wrapper"
-        animate={{ width: sidebarOpen ? 300 : 0 }}
+        className={isMobileLayout ? 'sidebar-wrapper sidebar-wrapper-mobile' : 'sidebar-wrapper'}
+        animate={isMobileLayout ? { height: sidebarOpen ? 'auto' : 0 } : { width: sidebarOpen ? 300 : 0 }}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
       >
         <Sidebar
@@ -284,7 +338,13 @@ export function TaskListPage() {
               )}
             </AnimatePresence>
           </div>
-          <AssessmentsPanel assessments={assessments} focusedTaskId={focusedTaskId} todayIso={todayIso} />
+          <AssessmentsPanel
+            assessments={assessments}
+            focusedTaskId={focusedTaskId}
+            todayIso={todayIso}
+            selectedAssessmentId={selectedAssessmentId}
+            highlightedAssessmentIds={highlightedAssessmentIds}
+          />
         </div>
 
         <div className="task-list-column">
@@ -329,6 +389,8 @@ export function TaskListPage() {
                     focusedSubtaskId={focusedSubtaskId}
                     notepadHidden={notepadHidden}
                     onToggleNotepad={() => setNotepadHidden((h) => !h)}
+                    assignedCount={assignedCounts.get(task.id) ?? 0}
+                    onShowAssignments={highlightAssignments}
                   />
                 ))}
               </AnimatePresence>
@@ -346,6 +408,8 @@ export function TaskListPage() {
                     focusedSubtaskId={focusedSubtaskId}
                     notepadHidden={notepadHidden}
                     onToggleNotepad={() => setNotepadHidden((h) => !h)}
+                    assignedCount={assignedCounts.get(task.id) ?? 0}
+                    onShowAssignments={highlightAssignments}
                   />
                 ))}
               </AnimatePresence>

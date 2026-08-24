@@ -35,6 +35,10 @@ export interface Task {
   position: number
   notes: string | null
   urgent: boolean
+  // Set on an assessment (category === 'Assessment') that's been Alt+click
+  // assigned under this id (a plain task) - see TaskListPage's assignment
+  // selection state and useAssignTask. Always null on the plain task itself.
+  assigned_task_id: number | null
   subtasks: Subtask[]
   clientKey?: string
 }

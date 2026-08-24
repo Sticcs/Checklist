@@ -19,6 +19,7 @@ export function AuthPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [signupDone, setSignupDone] = useState(false)
   // Credentials genuinely have to be verified server-side before showing the
@@ -35,7 +36,7 @@ export function AuthPage() {
     setSubmitting(mode)
     try {
       if (mode === 'login') {
-        await login(username, password)
+        await login(username, password, rememberMe)
       } else {
         await signup(username, password)
         setSignupDone(true)
@@ -106,6 +107,17 @@ export function AuthPage() {
               onChange={(e) => setPassword(e.target.value)}
               disabled={submitting !== null}
             />
+            {mode === 'login' && (
+              <label className="checkbox-label auth-remember-label">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  disabled={submitting !== null}
+                />
+                Keep me logged in for 30 days
+              </label>
+            )}
             <button type="submit" className="btn-primary btn-block" disabled={submitting !== null}>
               {mode === 'login'
                 ? submitting === 'login'

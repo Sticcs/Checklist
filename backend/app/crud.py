@@ -518,6 +518,22 @@ def set_task_urgent(task_id: int, urgent: bool, username: str) -> dict | None:
     return get_task(task_id, username)
 
 
+def set_task_assignment(task_id: int, assigned_task_id: int | None, username: str) -> dict | None:
+    """`task_id` is the assessment being filed under `assigned_task_id` (a
+    plain task) - see the Alt+click flow in TaskListPage.tsx's assignment
+    selection state. assigned_task_id=None unassigns it. Caller (routers/
+    tasks.py's /assign) is responsible for confirming both ids already
+    belong to `username` before calling this."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET assigned_task_id = :assigned_task_id WHERE id = :id AND username = :username"),
+            {"assigned_task_id": assigned_task_id, "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
 def set_due_date(task_id: int, due_date: str | None, username: str) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()
@@ -583,6 +599,12 @@ def delete_task(task_id: int, username: str) -> None:
             text("DELETE FROM tasks WHERE id = :id AND username = :username"),
             {"id": task_id, "username": username},
         )
+        # Any assessment assigned under this task (see set_task_assignment)
+        # would otherwise be left pointing at an id that no longer exists.
+        conn.execute(
+            text("UPDATE tasks SET assigned_task_id = NULL WHERE assigned_task_id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        )
     log_activity(username, "deleted", task_text, task_id=task_id)
 
 
@@ -602,6 +624,12 @@ def clear_completed(username: str) -> int:
                 bindparam("task_ids", expanding=True)
             )
             conn.execute(stmt, {"task_ids": done_ids})
+            # Same dangling-reference cleanup as delete_task, for whichever
+            # of these completed tasks had assessments assigned under them.
+            unassign_stmt = text(
+                "UPDATE tasks SET assigned_task_id = NULL WHERE assigned_task_id IN :task_ids AND username = :username"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(unassign_stmt, {"task_ids": done_ids, "username": username})
         conn.execute(
             text("DELETE FROM tasks WHERE done = 1 AND username = :username"), {"username": username}
         )

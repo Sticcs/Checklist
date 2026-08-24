@@ -76,6 +76,7 @@ export function useAddTask() {
         position: (positions.length > 0 ? Math.min(...positions) : 0) - 1,
         notes: null,
         urgent: false,
+        assigned_task_id: null,
         subtasks: [],
         clientKey,
       }
@@ -241,6 +242,27 @@ export function useSetTaskUrgent() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update urgent flag')
+    },
+  })
+}
+
+export function useAssignTask() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, assignedTaskId }: { id: number; assignedTaskId: number | null }) =>
+      tasksApi.assign(id, assignedTaskId),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      setTasksData(queryClient, (old) => ({
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, assigned_task_id: vars.assignedTaskId } : t)),
+        can_undo: true,
+        can_redo: false,
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to assign task')
     },
   })
 }

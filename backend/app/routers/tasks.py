@@ -7,6 +7,7 @@ from app.models import (
     SubtaskCreate,
     SubtaskMutationResponse,
     Task,
+    TaskAssignUpdate,
     TaskCreate,
     TaskDoneUpdate,
     TaskDueDateUpdate,
@@ -114,6 +115,24 @@ def update_task_due_date(
 ) -> Task:
     _require_task(task_id, current_user.username)
     task = crud.set_due_date(task_id, body.due_date, current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/assign", response_model=Task)
+def assign_task(
+    task_id: int, body: TaskAssignUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    # task_id here is the assessment; body.assigned_task_id is the plain
+    # task it's being filed under (or None to unassign) - see
+    # crud.set_task_assignment's docstring. Both existence/ownership checks
+    # happen here (the same _require_task every other route in this file
+    # uses), so crud.set_task_assignment can just trust task_id and a
+    # non-None assigned_task_id both already belong to this user.
+    _require_task(task_id, current_user.username)
+    if body.assigned_task_id is not None:
+        _require_task(body.assigned_task_id, current_user.username)
+    task = crud.set_task_assignment(task_id, body.assigned_task_id, current_user.username)
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 

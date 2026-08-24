@@ -136,7 +136,7 @@ def login(body: LoginRequest, response: Response) -> UserResponse:
     username = body.username.strip()
 
     if crud.verify_user(username, body.password):
-        set_session_cookie(response, username, is_guest=False)
+        set_session_cookie(response, username, is_guest=False, remember=body.remember_me)
         return UserResponse(username=username, is_guest=False)
 
     # First-time login with website credentials, from inside the desktop
@@ -152,7 +152,7 @@ def login(body: LoginRequest, response: Response) -> UserResponse:
         if tasks is not None:
             crud.create_user(username, body.password)
             crud.import_data(tasks, username)
-            set_session_cookie(response, username, is_guest=False)
+            set_session_cookie(response, username, is_guest=False, remember=body.remember_me)
             return UserResponse(username=username, is_guest=False)
 
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")

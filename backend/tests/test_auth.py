@@ -8,6 +8,35 @@ def test_signup_then_login(client):
     assert "session" in r.cookies
 
 
+def test_login_remembers_by_default(client):
+    client.post("/api/auth/signup", json={"username": "remembered", "password": "pw12345"})
+    r = client.post("/api/auth/login", json={"username": "remembered", "password": "pw12345"})
+    # No max_age/expires in the request body at all - "keep me logged in" is
+    # opt-out, not opt-in, so an old client that's never heard of the field
+    # keeps getting today's actual default (a persistent cookie).
+    assert "max-age" in r.headers["set-cookie"].lower()
+
+
+def test_login_with_remember_me_false_is_a_session_cookie(client):
+    client.post("/api/auth/signup", json={"username": "notremembered", "password": "pw12345"})
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "notremembered", "password": "pw12345", "remember_me": False},
+    )
+    # No Max-Age/Expires attribute at all - the browser drops it once it's
+    # actually closed, rather than it persisting for 30 days regardless.
+    assert "max-age" not in r.headers["set-cookie"].lower()
+
+
+def test_login_with_remember_me_true_is_explicit(client):
+    client.post("/api/auth/signup", json={"username": "explicit", "password": "pw12345"})
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "explicit", "password": "pw12345", "remember_me": True},
+    )
+    assert "max-age" in r.headers["set-cookie"].lower()
+
+
 def test_signup_duplicate_username_rejected(client):
     client.post("/api/auth/signup", json={"username": "bob", "password": "pw12345"})
     r = client.post("/api/auth/signup", json={"username": "bob", "password": "different"})

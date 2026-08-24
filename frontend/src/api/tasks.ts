@@ -13,6 +13,8 @@ export const tasksApi = {
   setNotes: (id: number, notes: string) => api.patch<Task>(`/tasks/${id}/notes`, { notes }),
   setUrgent: (id: number, urgent: boolean) => api.patch<Task>(`/tasks/${id}/urgent`, { urgent }),
   setDueDate: (id: number, due_date: string | null) => api.patch<Task>(`/tasks/${id}/due-date`, { due_date }),
+  assign: (id: number, assigned_task_id: number | null) =>
+    api.patch<Task>(`/tasks/${id}/assign`, { assigned_task_id }),
   remove: (id: number) => api.delete<void>(`/tasks/${id}`),
   markAllCompleted: () => api.post<MarkAllCompletedResponse>('/tasks/mark-all-completed'),
   clearCompleted: () => api.post<ClearResponse>('/tasks/clear-completed'),

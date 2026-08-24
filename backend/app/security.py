@@ -29,12 +29,20 @@ def make_guest_username() -> str:
     return f"guest_{uuid.uuid4().hex[:12]}"
 
 
-def set_session_cookie(response: Response, username: str, is_guest: bool) -> None:
+def set_session_cookie(response: Response, username: str, is_guest: bool, remember: bool = True) -> None:
+    # remember=False (an unchecked "keep me logged in" box - see routers/
+    # auth.py's /login) sends max_age=None, which omits Max-Age/Expires
+    # entirely and makes it a plain session cookie: the browser drops it
+    # once it's actually closed, rather than it quietly lasting 30 days
+    # regardless. get_current_user's own signature-staleness check still
+    # uses the full cookie_max_age either way - that's just an upper bound
+    # on how old a *signature* can be, not what controls how long the
+    # browser holds onto the cookie.
     token = _serializer.dumps({"username": username, "is_guest": is_guest})
     response.set_cookie(
         key=settings.cookie_name,
         value=token,
-        max_age=settings.cookie_max_age,
+        max_age=settings.cookie_max_age if remember else None,
         httponly=True,
         samesite="lax",
         secure=settings.cookie_secure,
