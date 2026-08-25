@@ -51,6 +51,29 @@ def test_toggle_pin(guest_client):
     assert r.json()["pinned"] is True
 
 
+def test_toggle_in_progress(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    assert task["in_progress"] is False
+
+    r = client.patch(f"/api/tasks/{task['id']}/in-progress", json={"in_progress": True})
+    assert r.status_code == 200
+    assert r.json()["in_progress"] is True
+
+    r = client.patch(f"/api/tasks/{task['id']}/in-progress", json={"in_progress": False})
+    assert r.json()["in_progress"] is False
+
+
+def test_completing_a_task_clears_in_progress(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    client.patch(f"/api/tasks/{task['id']}/in-progress", json={"in_progress": True})
+
+    r = client.patch(f"/api/tasks/{task['id']}/done", json={"done": True})
+    assert r.status_code == 200
+    assert r.json()["in_progress"] is False
+
+
 def test_edit_task(guest_client):
     client, _ = guest_client
     task = _add_task(client, text="Old text")

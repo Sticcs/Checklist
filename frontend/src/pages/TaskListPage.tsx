@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { toast } from 'sonner'
-import { useAssignTask, useSetPosition, useTasks, useToggleDone } from '../hooks/useTasks'
+import { useAssignTask, useSetPosition, useSetTaskInProgress, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useIsMobileLayout } from '../hooks/useIsMobileLayout'
@@ -29,6 +29,7 @@ export function TaskListPage() {
   const toggleSubtask = useToggleSubtask()
   const setPosition = useSetPosition()
   const assignTask = useAssignTask()
+  const setTaskInProgress = useSetTaskInProgress()
   const isDesktopApp = useIsDesktopApp()
   const isMobileLayout = useIsMobileLayout() && !isDesktopApp
   useWebsiteLinkStatus()
@@ -46,6 +47,11 @@ export function TaskListPage() {
   const [lastExpandedTaskId, setLastExpandedTaskId] = useState<number | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeAssignmentId, setActiveAssignmentId] = useState<number | null>(null)
+
+  const handleStartAssignment = (taskId: number) => {
+    setActiveAssignmentId(taskId)
+    setTaskInProgress.mutate({ id: taskId, inProgress: true })
+  }
 
   const tasks = useMemo(() => data?.tasks ?? [], [data])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
@@ -378,7 +384,7 @@ export function TaskListPage() {
             todayIso={todayIso}
             selectedAssessmentId={selectedAssessmentId}
             highlightedAssessmentIds={highlightedAssessmentIds}
-            onStart={setActiveAssignmentId}
+            onStart={handleStartAssignment}
           />
         </div>
 

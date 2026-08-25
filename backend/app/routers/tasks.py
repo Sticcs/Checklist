@@ -11,6 +11,7 @@ from app.models import (
     TaskCreate,
     TaskDoneUpdate,
     TaskDueDateUpdate,
+    TaskInProgressUpdate,
     TaskNotesUpdate,
     TaskPinnedUpdate,
     TaskPositionUpdate,
@@ -105,6 +106,16 @@ def toggle_task_urgent(
 ) -> Task:
     _require_task(task_id, current_user.username)
     task = crud.set_task_urgent(task_id, body.urgent, current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/in-progress", response_model=Task)
+def toggle_task_in_progress(
+    task_id: int, body: TaskInProgressUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    _require_task(task_id, current_user.username)
+    task = crud.set_task_in_progress(task_id, body.in_progress, current_user.username)
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 

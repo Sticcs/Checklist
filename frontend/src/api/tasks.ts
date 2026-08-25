@@ -12,6 +12,8 @@ export const tasksApi = {
   setPosition: (id: number, position: number) => api.patch<Task>(`/tasks/${id}/position`, { position }),
   setNotes: (id: number, notes: string) => api.patch<Task>(`/tasks/${id}/notes`, { notes }),
   setUrgent: (id: number, urgent: boolean) => api.patch<Task>(`/tasks/${id}/urgent`, { urgent }),
+  setInProgress: (id: number, in_progress: boolean) =>
+    api.patch<Task>(`/tasks/${id}/in-progress`, { in_progress }),
   setDueDate: (id: number, due_date: string | null) => api.patch<Task>(`/tasks/${id}/due-date`, { due_date }),
   assign: (id: number, assigned_task_id: number | null) =>
     api.patch<Task>(`/tasks/${id}/assign`, { assigned_task_id }),

@@ -135,6 +135,9 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }
               </span>
             )}
             {task.urgent && <span className="urgent-badge">🚨 Urgent</span>}
+            {task.in_progress && !task.done && (
+              <span className="in-progress-badge">🚧 In progress</span>
+            )}
           </div>
           <div className="assessment-actions">
             {focused && (

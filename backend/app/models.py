@@ -109,6 +109,10 @@ class TaskUrgentUpdate(BaseModel):
     urgent: bool
 
 
+class TaskInProgressUpdate(BaseModel):
+    in_progress: bool
+
+
 class TaskDueDateUpdate(BaseModel):
     due_date: str | None = None
 
@@ -133,6 +137,10 @@ class Task(BaseModel):
     notes: str | None
     urgent: bool
     assigned_task_id: int | None = None
+    # Set once the user clicks "Start" on this assessment (see the
+    # frontend's AssignmentWorkspace) - cleared again on completion, see
+    # crud.set_done.
+    in_progress: bool = False
     subtasks: list[Subtask] = []
 
 
@@ -185,6 +193,7 @@ class ExportedTask(BaseModel):
     urgent: bool = False
     notes: str | None = None
     assigned_task_id: int | None = None
+    in_progress: bool = False
     subtasks: list[ExportedSubtask] = []
 
 

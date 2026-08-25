@@ -1475,6 +1475,16 @@ body[data-theme='dark'] .task-card.done {
   animation: pulse-urgent 1.5s infinite;
 }
 
+.in-progress-badge {
+  color: #2ecc71;
+  font-weight: bold;
+  font-size: 0.72rem;
+  border: 1px solid #2ecc71;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
 .urgent-subtask-badge {
   color: #e67e22;
   font-weight: bold;
@@ -1993,32 +2003,65 @@ kbd {
 
 /* ----------------------------- Assignment workspace ----------------------------- */
 .assignment-workspace {
+  position: relative;
   min-height: 100vh;
   box-sizing: border-box;
   padding: 2.5rem clamp(1.5rem, 8vw, 6rem);
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
-.assignment-workspace-back-btn {
-  align-self: flex-start;
+/* A large, otherwise-invisible tap/click target spanning the full height of
+   the left edge - much easier to hit (especially on a touch screen) than a
+   small icon-only button, without visually competing with the page's own
+   content. The arrow glyph inside is the only visible part, and brightens
+   on hover/focus so the zone isn't *completely* undiscoverable with a
+   mouse. */
+.assignment-workspace-back-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: clamp(56px, 6vw, 96px);
   background: none;
   border: none;
-  font-size: 1.6rem;
-  line-height: 1;
-  padding: 0.4rem 0.6rem;
-  border-radius: 10px;
-  color: var(--text-primary);
-  opacity: 0.7;
-  transition:
-    opacity 0.15s ease,
-    background-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
-.assignment-workspace-back-btn:hover {
-  opacity: 1;
-  background: rgba(128, 128, 128, 0.15);
+.assignment-workspace-back-icon {
+  /* A small frosted-glass pill (same look as .sidebar-toggle-btn) behind
+     the glyph itself - the hit zone around it stays large and invisible,
+     but the glyph needs a background of its own to actually read against a
+     busy photo wallpaper, which plain low-opacity text over the page
+     background did not. */
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: transform 0.15s ease;
+}
+
+.assignment-workspace-back-zone:hover .assignment-workspace-back-icon,
+.assignment-workspace-back-zone:focus-visible .assignment-workspace-back-icon {
+  transform: translateX(-3px) scale(1.06);
+}
+
+.assignment-workspace-back-zone:active .assignment-workspace-back-icon {
+  transform: translateX(-4px) scale(0.94);
 }
 
 .assignment-workspace-header {
@@ -2050,6 +2093,19 @@ kbd {
 .assignment-countdown.no-due-date {
   opacity: 0.5;
   font-style: italic;
+}
+
+.assignment-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.assignment-toolbar-group {
+  display: flex;
+  gap: 0.4rem;
 }
 
 .assignment-workspace-textbox {

@@ -39,6 +39,9 @@ export interface Task {
   // assigned under this id (a plain task) - see TaskListPage's assignment
   // selection state and useAssignTask. Always null on the plain task itself.
   assigned_task_id: number | null
+  // Set once "Start" has been clicked on this assessment (see
+  // AssignmentWorkspace) - cleared again on completion.
+  in_progress: boolean
   subtasks: Subtask[]
   clientKey?: string
 }
@@ -93,6 +96,7 @@ export interface ExportedTask {
   pinned: boolean
   urgent: boolean
   notes: string | null
+  in_progress: boolean
   subtasks: ExportedSubtask[]
 }
 

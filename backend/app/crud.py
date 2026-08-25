@@ -127,6 +127,7 @@ def _task_dict(row) -> dict:
     d["done"] = bool(d["done"])
     d["pinned"] = bool(d["pinned"])
     d["urgent"] = bool(d["urgent"])
+    d["in_progress"] = bool(d["in_progress"])
     return d
 
 
@@ -362,8 +363,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress)"
                 ),
                 {
                     "id": t["id"],
@@ -389,6 +390,11 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     # action gets undone, since this restore replaces every
                     # task for the user wholesale.
                     "assigned_task_id": t.get("assigned_task_id"),
+                    # Same round-trip requirement as urgent/assigned_task_id
+                    # above - "In progress" (see set_task_in_progress) would
+                    # otherwise silently vanish the moment any unrelated
+                    # action gets undone.
+                    "in_progress": int(t.get("in_progress", False)),
                 },
             )
 
@@ -468,8 +474,16 @@ def set_done(task_id: int, done: bool, username: str) -> dict | None:
     engine = get_engine()
     with engine.begin() as conn:
         task_text = _get_task_text(conn, task_id)
+        # Completing a task also clears its own in_progress flag (see the
+        # "Start" workspace) - there's no more reason to show "In progress"
+        # once it's done. Un-completing deliberately leaves in_progress
+        # alone rather than guessing it back to true.
         conn.execute(
-            text("UPDATE tasks SET done = :done WHERE id = :id AND username = :username"),
+            text(
+                "UPDATE tasks SET done = :done, "
+                "in_progress = CASE WHEN :done = 1 THEN 0 ELSE in_progress END "
+                "WHERE id = :id AND username = :username"
+            ),
             {"done": int(done), "id": task_id, "username": username},
         )
         # Finishing a subtask (whether individually or via its parent task
@@ -520,6 +534,17 @@ def set_task_urgent(task_id: int, urgent: bool, username: str) -> dict | None:
         conn.execute(
             text("UPDATE tasks SET urgent = :urgent WHERE id = :id AND username = :username"),
             {"urgent": int(urgent), "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
+def set_task_in_progress(task_id: int, in_progress: bool, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET in_progress = :in_progress WHERE id = :id AND username = :username"),
+            {"in_progress": int(in_progress), "id": task_id, "username": username},
         )
     return get_task(task_id, username)
 
@@ -669,7 +694,10 @@ def mark_all_completed(username: str) -> int:
             text("SELECT COUNT(*) FROM tasks WHERE username = :username AND done = 0"),
             {"username": username},
         ).scalar_one()
-        conn.execute(text("UPDATE tasks SET done = 1 WHERE username = :username"), {"username": username})
+        conn.execute(
+            text("UPDATE tasks SET done = 1, in_progress = 0 WHERE username = :username"),
+            {"username": username},
+        )
         conn.execute(
             text(
                 "UPDATE subtasks SET done = 1, urgent = 0 "
@@ -882,8 +910,8 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
         for i, t in enumerate(tasks):
             new_task_id = conn.execute(
                 text(
-                    "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent) "
-                    "VALUES (:text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent) "
+                    "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, in_progress) "
+                    "VALUES (:text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :in_progress) "
                     "RETURNING id"
                 ),
                 {
@@ -898,6 +926,7 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
                     "position": base_position + i,
                     "notes": t.get("notes"),
                     "urgent": int(t.get("urgent", False)),
+                    "in_progress": int(t.get("in_progress", False)),
                 },
             ).scalar_one()
             imported_tasks += 1

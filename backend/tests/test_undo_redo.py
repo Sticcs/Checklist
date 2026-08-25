@@ -201,6 +201,28 @@ def test_undo_of_unrelated_action_preserves_assigned_task_id(guest_client):
     assert reloaded_assessment["assigned_task_id"] == main_task["id"]
 
 
+def test_undo_of_unrelated_action_preserves_in_progress(guest_client):
+    """restore_state() deletes and reinserts every task on any undo/redo -
+    in_progress (see set_task_in_progress) has no undo history of its own,
+    so this only round-trips correctly if the reinsert actually carries that
+    column along - same class of bug as the assigned_task_id case above."""
+    client, _ = guest_client
+    task = client.post(
+        "/api/tasks", json={"text": "Essay", "priority": "Medium", "category": "Assessment"}
+    ).json()
+    client.patch(f"/api/tasks/{task['id']}/in-progress", json={"in_progress": True})
+
+    # An unrelated mutation - its undo snapshot is what actually gets
+    # restored below, not anything to do with in_progress itself.
+    client.post("/api/tasks", json={"text": "Task B", "priority": "Medium", "category": "General"})
+    r = client.post("/api/undo")
+    assert r.status_code == 200
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    reloaded = next(t for t in tasks if t["text"] == "Essay")
+    assert reloaded["in_progress"] is True
+
+
 def test_undo_redo_isolated_per_user(client):
     from fastapi.testclient import TestClient
 

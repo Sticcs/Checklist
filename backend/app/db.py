@@ -44,6 +44,12 @@ tasks_table = Table(
     # object here, matching this file's existing no-FK-constraints
     # convention (see google_sub's migration comment below).
     Column("assigned_task_id", Integer, nullable=True),
+    # Set when the user clicks "Start" on an assessment (see the frontend's
+    # AssignmentWorkspace) - cleared again once the task is marked done (see
+    # set_done). Purely a "have I opened this and begun working on it" flag,
+    # not a workflow state machine - there's no in-progress -> not-started
+    # transition other than completing or un-completing the task itself.
+    Column("in_progress", Integer, nullable=False, server_default=text("0")),
 )
 
 subtasks_table = Table(
@@ -176,6 +182,10 @@ def init_db() -> None:
     if "assigned_task_id" not in existing_task_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN assigned_task_id INTEGER"))
+
+    if "in_progress" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN in_progress INTEGER NOT NULL DEFAULT 0"))
 
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:

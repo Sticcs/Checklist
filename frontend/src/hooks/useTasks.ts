@@ -77,6 +77,7 @@ export function useAddTask() {
         notes: null,
         urgent: false,
         assigned_task_id: null,
+        in_progress: false,
         subtasks: [],
         clientKey,
       }
@@ -158,6 +159,11 @@ export function useToggleDone() {
             ? {
                 ...t,
                 done: vars.done,
+                // Mirrors the backend's set_done: completing a task also
+                // clears its own "In progress" flag, since there's nothing
+                // left to show as in-progress once it's done. Un-completing
+                // leaves it alone rather than guessing it back to true.
+                in_progress: vars.done ? false : t.in_progress,
                 subtasks: t.subtasks.map((s) => ({
                   ...s,
                   done: vars.done,
@@ -242,6 +248,27 @@ export function useSetTaskUrgent() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update urgent flag')
+    },
+  })
+}
+
+export function useSetTaskInProgress() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, inProgress }: { id: number; inProgress: boolean }) =>
+      tasksApi.setInProgress(id, inProgress),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      setTasksData(queryClient, (old) => ({
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, in_progress: vars.inProgress } : t)),
+        can_undo: true,
+        can_redo: false,
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to update progress status')
     },
   })
 }
@@ -347,6 +374,7 @@ export function useMarkAllCompleted() {
         tasks: old.tasks.map((t) => ({
           ...t,
           done: true,
+          in_progress: false,
           subtasks: t.subtasks.map((s) => ({ ...s, done: true, urgent: false })),
         })),
         can_undo: true,
