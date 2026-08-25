@@ -2008,6 +2008,16 @@ kbd {
   box-sizing: border-box;
   padding: 2.5rem clamp(1.5rem, 8vw, 6rem);
   display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+/* The header/toolbar/textbox column - its own flex column, separate from
+   the links side panel, so links never affect this column's layout. */
+.assignment-workspace-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   gap: 1.25rem;
 }
@@ -2134,11 +2144,33 @@ body[data-theme='dark'] .assignment-fontsize-select {
 }
 
 /* ----------------------------- Assignment links ----------------------------- */
+/* Fixed to the top-right corner, entirely out of the header/toolbar/textbox's
+   own vertical stack - it used to sit inline right under the header, so
+   every added link pushed the writing area down and shrank it. A frosted-
+   glass card (same look as .sidebar/.subtask-notepad) reads clearly as its
+   own separate panel rather than part of the page's main column. */
 .assignment-links-panel {
+  /* A real column (flex-shrink: 0 sibling of .assignment-workspace-main),
+     not an overlay - sticky just keeps it visible near the top as the
+     writing area scrolls, it never floats on top of other content. */
+  position: sticky;
+  top: 1.5rem;
+  flex-shrink: 0;
+  width: clamp(160px, 16vw, 220px);
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 0.6rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 0.75rem;
+  box-sizing: border-box;
 }
 
 .assignment-add-link-btn {
@@ -2158,14 +2190,15 @@ body[data-theme='dark'] .assignment-add-link-btn {
 
 .assignment-add-link-form {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
+  gap: 0.4rem;
   overflow: hidden;
 }
 
 .assignment-add-link-form input {
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .assignment-links-list {
@@ -2173,33 +2206,33 @@ body[data-theme='dark'] .assignment-add-link-btn {
   margin: 0;
   padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-  max-width: 100%;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .assignment-links-list li {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.35rem;
   background: var(--card-bg);
   border: 1px solid rgba(128, 128, 128, 0.2);
-  border-radius: 20px;
-  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
-  font-size: 0.82rem;
+  border-radius: 10px;
+  padding: 0.3rem 0.4rem 0.3rem 0.6rem;
+  font-size: 0.8rem;
 }
 
 .assignment-links-list a {
   color: var(--text-primary);
   text-decoration: underline;
-  max-width: 16rem;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .assignment-links-list .icon-btn {
+  flex-shrink: 0;
   padding: 0.15rem 0.35rem;
   font-size: 0.7rem;
 }

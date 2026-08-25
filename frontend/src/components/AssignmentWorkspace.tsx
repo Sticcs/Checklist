@@ -197,17 +197,106 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
         <span className="assignment-workspace-back-icon">←</span>
       </button>
 
-      <div className="assignment-workspace-header">
-        <h1 className="assignment-workspace-title">{task.text}</h1>
-        {remainingMs !== null ? (
-          <p className={remainingMs < 0 ? 'assignment-countdown overdue' : 'assignment-countdown'}>
-            {formatRemaining(remainingMs)}
-          </p>
-        ) : (
-          <p className="assignment-countdown no-due-date">No due date set</p>
-        )}
+      <div className="assignment-workspace-main">
+        <div className="assignment-workspace-header">
+          <h1 className="assignment-workspace-title">{task.text}</h1>
+          {remainingMs !== null ? (
+            <p className={remainingMs < 0 ? 'assignment-countdown overdue' : 'assignment-countdown'}>
+              {formatRemaining(remainingMs)}
+            </p>
+          ) : (
+            <p className="assignment-countdown no-due-date">No due date set</p>
+          )}
+        </div>
+
+        <div className="assignment-toolbar" data-focus-exempt>
+          <div className="assignment-toolbar-group">
+            {FORMAT_BUTTONS.map(({ kind, title, glyph }) => (
+              <button
+                key={kind}
+                type="button"
+                className={formattingActive ? 'icon-btn btn-primary' : 'icon-btn'}
+                disabled={!formattingActive}
+                title={title}
+                // Keeps focus (and the selection) inside the textbox instead
+                // of moving it to this button, which is what a plain click
+                // would do - applyFormat needs that selection intact.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => applyFormat(kind)}
+              >
+                {glyph}
+              </button>
+            ))}
+          </div>
+          <div className="assignment-toolbar-group">
+            <select
+              className="assignment-fontsize-select"
+              disabled={!hasSelection}
+              title={hasSelection ? 'Font size (applies to the highlighted text)' : 'Highlight text to change its size'}
+              value=""
+              onChange={(e) => {
+                const val = e.target.value
+                if (val === 'custom') setCustomSizeOpen(true)
+                else if (val) applyFontSizeToSelection(Number(val))
+              }}
+            >
+              <option value="" disabled>
+                Font size
+              </option>
+              {FONT_SIZE_PRESETS_PX.map((px) => (
+                <option key={px} value={px}>
+                  {px}px
+                </option>
+              ))}
+              <option value="custom">Custom…</option>
+            </select>
+            {customSizeOpen && (
+              <form
+                className="assignment-fontsize-custom-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  applyFontSizeToSelection(Number(customSizeValue))
+                  setCustomSizeOpen(false)
+                  setCustomSizeValue('')
+                }}
+              >
+                <input
+                  type="number"
+                  min={1}
+                  max={300}
+                  placeholder="px"
+                  autoFocus
+                  value={customSizeValue}
+                  onChange={(e) => setCustomSizeValue(e.target.value)}
+                  onBlur={() => {
+                    if (!customSizeValue) setCustomSizeOpen(false)
+                  }}
+                />
+                <button type="submit" className="btn-primary">
+                  Apply
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        <div
+          ref={notesField.ref}
+          className="assignment-workspace-textbox rich-text-input"
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder="Start writing..."
+          onInput={notesField.onInput}
+          onFocus={notesField.onFocus}
+          onBlur={notesField.onBlur}
+          onKeyDown={notesField.onKeyDown}
+        />
       </div>
 
+      {/* A real side column (not an overlay on top of the textbox) so
+          adding links never overlaps or shifts the writing area - it used
+          to sit inline right under the header, where every added link
+          pushed the whole column down and shrank the textbox. */}
       <div className="assignment-links-panel" data-focus-exempt>
         <button
           type="button"
@@ -258,89 +347,6 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
           </ul>
         )}
       </div>
-
-      <div className="assignment-toolbar" data-focus-exempt>
-        <div className="assignment-toolbar-group">
-          {FORMAT_BUTTONS.map(({ kind, title, glyph }) => (
-            <button
-              key={kind}
-              type="button"
-              className={formattingActive ? 'icon-btn btn-primary' : 'icon-btn'}
-              disabled={!formattingActive}
-              title={title}
-              // Keeps focus (and the selection) inside the textbox instead
-              // of moving it to this button, which is what a plain click
-              // would do - applyFormat needs that selection intact.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => applyFormat(kind)}
-            >
-              {glyph}
-            </button>
-          ))}
-        </div>
-        <div className="assignment-toolbar-group">
-          <select
-            className="assignment-fontsize-select"
-            disabled={!hasSelection}
-            title={hasSelection ? 'Font size (applies to the highlighted text)' : 'Highlight text to change its size'}
-            value=""
-            onChange={(e) => {
-              const val = e.target.value
-              if (val === 'custom') setCustomSizeOpen(true)
-              else if (val) applyFontSizeToSelection(Number(val))
-            }}
-          >
-            <option value="" disabled>
-              Font size
-            </option>
-            {FONT_SIZE_PRESETS_PX.map((px) => (
-              <option key={px} value={px}>
-                {px}px
-              </option>
-            ))}
-            <option value="custom">Custom…</option>
-          </select>
-          {customSizeOpen && (
-            <form
-              className="assignment-fontsize-custom-form"
-              onSubmit={(e) => {
-                e.preventDefault()
-                applyFontSizeToSelection(Number(customSizeValue))
-                setCustomSizeOpen(false)
-                setCustomSizeValue('')
-              }}
-            >
-              <input
-                type="number"
-                min={1}
-                max={300}
-                placeholder="px"
-                autoFocus
-                value={customSizeValue}
-                onChange={(e) => setCustomSizeValue(e.target.value)}
-                onBlur={() => {
-                  if (!customSizeValue) setCustomSizeOpen(false)
-                }}
-              />
-              <button type="submit" className="btn-primary">
-                Apply
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
-
-      <div
-        ref={notesField.ref}
-        className="assignment-workspace-textbox rich-text-input"
-        contentEditable
-        suppressContentEditableWarning
-        data-placeholder="Start writing..."
-        onInput={notesField.onInput}
-        onFocus={notesField.onFocus}
-        onBlur={notesField.onBlur}
-        onKeyDown={notesField.onKeyDown}
-      />
     </motion.div>
   )
 }
