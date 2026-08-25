@@ -2006,20 +2006,37 @@ kbd {
   position: relative;
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 2.5rem clamp(1.5rem, 8vw, 6rem);
+  /* Left padding alone has to clear .assignment-workspace-back-zone's own
+     width (clamp(56px, 6vw, 96px)) - the right side has nothing to clear
+     any more (the links panel moved into the header row below), so it can
+     run much tighter and let the textbox actually reach toward the edge. */
+  padding: 2rem clamp(1.25rem, 5vw, 3.5rem) 2.5rem clamp(4.5rem, 9vw, 7rem);
   display: flex;
   align-items: flex-start;
-  gap: 1.5rem;
 }
 
-/* The header/toolbar/textbox column - its own flex column, separate from
-   the links side panel, so links never affect this column's layout. */
+/* The one remaining column here (the back-zone is its own absolutely-
+   positioned sibling) - full width, so the textbox inside it gets to use
+   nearly the entire page rather than sharing it with a side rail. */
 .assignment-workspace-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+.assignment-workspace-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.assignment-workspace-header-row .assignment-workspace-header {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
 }
 
 /* A large, otherwise-invisible tap/click target spanning the full height of
@@ -2105,6 +2122,16 @@ kbd {
   font-style: italic;
 }
 
+.assignment-save-status {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.55;
+}
+
+.assignment-save-status.saving {
+  opacity: 0.75;
+}
+
 .assignment-toolbar {
   display: flex;
   align-items: center;
@@ -2144,21 +2171,16 @@ body[data-theme='dark'] .assignment-fontsize-select {
 }
 
 /* ----------------------------- Assignment links ----------------------------- */
-/* Fixed to the top-right corner, entirely out of the header/toolbar/textbox's
-   own vertical stack - it used to sit inline right under the header, so
-   every added link pushed the writing area down and shrank it. A frosted-
-   glass card (same look as .sidebar/.subtask-notepad) reads clearly as its
-   own separate panel rather than part of the page's main column. */
+/* A compact tile sharing the header row with the title/countdown (see
+   .assignment-workspace-header-row) instead of its own full-height side
+   column - that used to tax the textbox's width for the entire page just
+   to hold a handful of links. It only ever grows to fit its own content
+   (the "Add link" button, the open form, the list); a long list scrolls
+   internally (see .assignment-links-list) rather than growing this tile -
+   and therefore the header row - indefinitely. */
 .assignment-links-panel {
-  /* A real column (flex-shrink: 0 sibling of .assignment-workspace-main),
-     not an overlay - sticky just keeps it visible near the top as the
-     writing area scrolls, it never floats on top of other content. */
-  position: sticky;
-  top: 1.5rem;
   flex-shrink: 0;
-  width: clamp(160px, 16vw, 220px);
-  max-height: calc(100vh - 3rem);
-  overflow-y: auto;
+  width: clamp(180px, 22vw, 260px);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -2208,6 +2230,8 @@ body[data-theme='dark'] .assignment-add-link-btn {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .assignment-links-list li {
@@ -2235,6 +2259,16 @@ body[data-theme='dark'] .assignment-add-link-btn {
   flex-shrink: 0;
   padding: 0.15rem 0.35rem;
   font-size: 0.7rem;
+}
+
+@media (max-width: 700px) {
+  .assignment-workspace-header-row {
+    flex-direction: column;
+  }
+
+  .assignment-links-panel {
+    width: 100%;
+  }
 }
 
 .assignment-workspace-textbox {

@@ -97,12 +97,17 @@ export function TaskCard({
     }
     return [...counts.entries()].sort((a, b) => a[0] - b[0])
   })()
-  const subtaskDueTallyLabel = (d: number): string =>
+  // Includes the leading count itself (not just appended by the caller) so
+  // the comma can be placed exactly where two numbers actually collide -
+  // "1 13 days overdue" needs it ("1, 13 days overdue"), but "1 due today"
+  // and "1 due in 3 days" never had two adjacent numbers to begin with, and
+  // a comma before "due" there just reads oddly.
+  const subtaskDueTallyText = (count: number, d: number): string =>
     d < 0
-      ? `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue`
+      ? `${count}, ${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue`
       : d === 0
-        ? 'due today'
-        : `due in ${d} day${d === 1 ? '' : 's'}`
+        ? `${count} due today`
+        : `${count} due in ${d} day${d === 1 ? '' : 's'}`
 
   // The tally row's fade-to-transparent mask should only show up when a
   // badge is actually being clipped at the right edge - measured directly
@@ -294,7 +299,7 @@ export function TaskCard({
               >
                 {subtaskDueTally.map(([d, count]) => (
                   <span key={d} className="subtask-due-tally-badge" title="Subtask due dates">
-                    📅 {count}, {subtaskDueTallyLabel(d)}
+                    📅 {subtaskDueTallyText(count, d)}
                   </span>
                 ))}
               </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { toast } from 'sonner'
 import type { Task } from '../types'
 import { useSetTaskLinks, useSetTaskNotes } from '../hooks/useTasks'
 import { useFormattableEditable, useFormattingContext, type FormatKind } from '../context/FormattingContext'
@@ -157,6 +158,19 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
     setTaskLinks.mutate({ id: task.id, links: task.links.filter((_, i) => i !== index) })
   }
 
+  // innerText (not innerHTML/textContent) so the copied text keeps its line
+  // breaks matching what's actually visible in the box - textContent would
+  // flatten every <div>/<br> the rich-text editing produces onto one line.
+  const copyAsText = async () => {
+    const text = notesField.ref.current?.innerText ?? ''
+    try {
+      await navigator.clipboard.writeText(text)
+      toast('📋 Copied as plain text')
+    } catch {
+      toast.error("Couldn't copy - try selecting the text and copying manually")
+    }
+  }
+
   useEffect(() => {
     if (!dirty.current) setDraft(task.notes ?? '')
   }, [task.notes])
@@ -173,6 +187,13 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
   }, [draft])
 
   const remainingMs = task.due_date ? deadlineFor(task.due_date).getTime() - now.getTime() : null
+  // dirty is a plain ref (not state) since the debounce logic above already
+  // needs it to read as current-not-stale inside effects/timeouts - reading
+  // it here during render is safe because every actual transition (typing,
+  // the debounce firing into setTaskNotes.mutate) already triggers a
+  // re-render of its own (setDraft, or react-query's isPending flipping),
+  // so this never needs its own state to stay in sync.
+  const isSaving = dirty.current || setTaskNotes.isPending
 
   return (
     <motion.div
@@ -198,15 +219,77 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
       </button>
 
       <div className="assignment-workspace-main">
-        <div className="assignment-workspace-header">
-          <h1 className="assignment-workspace-title">{task.text}</h1>
-          {remainingMs !== null ? (
-            <p className={remainingMs < 0 ? 'assignment-countdown overdue' : 'assignment-countdown'}>
-              {formatRemaining(remainingMs)}
+        <div className="assignment-workspace-header-row">
+          <div className="assignment-workspace-header">
+            <h1 className="assignment-workspace-title">{task.text}</h1>
+            {remainingMs !== null ? (
+              <p className={remainingMs < 0 ? 'assignment-countdown overdue' : 'assignment-countdown'}>
+                {formatRemaining(remainingMs)}
+              </p>
+            ) : (
+              <p className="assignment-countdown no-due-date">No due date set</p>
+            )}
+            <p className={isSaving ? 'assignment-save-status saving' : 'assignment-save-status'}>
+              {isSaving ? '💾 Saving…' : '✅ Saved'}
             </p>
-          ) : (
-            <p className="assignment-countdown no-due-date">No due date set</p>
-          )}
+          </div>
+
+          {/* Shares the header row with the title/countdown tile instead of
+              its own full-height side column - that used to tax the
+              textbox's width for the entire page just to hold a handful of
+              links. A long list still gets its own internal scroll (see
+              .assignment-links-list) rather than growing the header
+              indefinitely. */}
+          <div className="assignment-links-panel" data-focus-exempt>
+            <button
+              type="button"
+              className="assignment-add-link-btn"
+              onClick={() => setLinksOpen((open) => !open)}
+            >
+              🔗 Add link
+            </button>
+            <AnimatePresence>
+              {linksOpen && (
+                <motion.form
+                  className="assignment-add-link-form"
+                  onSubmit={submitLink}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <input
+                    placeholder="Website name"
+                    value={linkName}
+                    onChange={(e) => setLinkName(e.target.value)}
+                    autoFocus
+                  />
+                  <input
+                    placeholder="https://..."
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                  />
+                  <button type="submit" className="btn-primary">
+                    Add
+                  </button>
+                </motion.form>
+              )}
+            </AnimatePresence>
+            {task.links.length > 0 && (
+              <ul className="assignment-links-list">
+                {task.links.map((link, i) => (
+                  <li key={`${link.url}-${i}`}>
+                    <a href={link.url} target="_blank" rel="noreferrer">
+                      {link.name}
+                    </a>
+                    <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         <div className="assignment-toolbar" data-focus-exempt>
@@ -278,6 +361,16 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
               </form>
             )}
           </div>
+          <div className="assignment-toolbar-group">
+            <button
+              type="button"
+              className="icon-btn"
+              title="Copy the write-up as plain text - to paste it in wherever it actually needs to be submitted"
+              onClick={() => void copyAsText()}
+            >
+              📋 Copy as text
+            </button>
+          </div>
         </div>
 
         <div
@@ -291,61 +384,6 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
           onBlur={notesField.onBlur}
           onKeyDown={notesField.onKeyDown}
         />
-      </div>
-
-      {/* A real side column (not an overlay on top of the textbox) so
-          adding links never overlaps or shifts the writing area - it used
-          to sit inline right under the header, where every added link
-          pushed the whole column down and shrank the textbox. */}
-      <div className="assignment-links-panel" data-focus-exempt>
-        <button
-          type="button"
-          className="assignment-add-link-btn"
-          onClick={() => setLinksOpen((open) => !open)}
-        >
-          🔗 Add link
-        </button>
-        <AnimatePresence>
-          {linksOpen && (
-            <motion.form
-              className="assignment-add-link-form"
-              onSubmit={submitLink}
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <input
-                placeholder="Website name"
-                value={linkName}
-                onChange={(e) => setLinkName(e.target.value)}
-                autoFocus
-              />
-              <input
-                placeholder="https://..."
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-              />
-              <button type="submit" className="btn-primary">
-                Add
-              </button>
-            </motion.form>
-          )}
-        </AnimatePresence>
-        {task.links.length > 0 && (
-          <ul className="assignment-links-list">
-            {task.links.map((link, i) => (
-              <li key={`${link.url}-${i}`}>
-                <a href={link.url} target="_blank" rel="noreferrer">
-                  {link.name}
-                </a>
-                <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     </motion.div>
   )
