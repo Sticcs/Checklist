@@ -15,6 +15,7 @@ import { QuoteHeader } from '../components/QuoteHeader'
 import { Scratchpad } from '../components/Scratchpad'
 import { SubtaskNotepad } from '../components/SubtaskNotepad'
 import { AssessmentsPanel } from '../components/AssessmentsPanel'
+import { AssignmentWorkspace } from '../components/AssignmentWorkspace'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
@@ -44,6 +45,7 @@ export function TaskListPage() {
   const [latestTaskId, setLatestTaskId] = useState<number | null>(null)
   const [lastExpandedTaskId, setLastExpandedTaskId] = useState<number | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [activeAssignmentId, setActiveAssignmentId] = useState<number | null>(null)
 
   const tasks = useMemo(() => data?.tasks ?? [], [data])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
@@ -257,6 +259,16 @@ export function TaskListPage() {
     return () => document.removeEventListener('click', handler)
   }, [tasksById, toggleDone, subtasksById, toggleSubtask, selectedAssessmentId, assignTask])
 
+  // The workspace is opened by id, not by holding onto the task object
+  // itself - if it vanishes out from under an open workspace (deleted from
+  // another session, Clear all, undo), fall back to the normal view instead
+  // of rendering a workspace for a task that no longer exists.
+  useEffect(() => {
+    if (activeAssignmentId !== null && !tasksById.has(activeAssignmentId)) {
+      setActiveAssignmentId(null)
+    }
+  }, [activeAssignmentId, tasksById])
+
   useSubtaskFocusHotkey({
     focusedTaskId,
     latestTaskId,
@@ -266,8 +278,30 @@ export function TaskListPage() {
   useUndoRedoHotkeys()
   useDueDateNotifications(tasks)
 
+  const activeAssignmentTask = activeAssignmentId !== null ? (tasksById.get(activeAssignmentId) ?? null) : null
+
+  // A single AnimatePresence wraps both the workspace and the normal layout
+  // (rather than each having its own) so switching between them - in either
+  // direction - actually plays an exit animation instead of an instant swap:
+  // AnimatePresence can only animate an element out if it stays mounted
+  // itself across the transition.
   return (
-    <div className={isDesktopApp ? 'app-layout desktop-app' : 'app-layout'}>
+    <AnimatePresence mode="wait">
+      {activeAssignmentTask ? (
+        <AssignmentWorkspace
+          key="workspace"
+          task={activeAssignmentTask}
+          onBack={() => setActiveAssignmentId(null)}
+        />
+      ) : (
+        <motion.div
+          key="main"
+          className={isDesktopApp ? 'app-layout desktop-app' : 'app-layout'}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
       <AnimatePresence>
         {!sidebarOpen && (
           <motion.button
@@ -344,6 +378,7 @@ export function TaskListPage() {
             todayIso={todayIso}
             selectedAssessmentId={selectedAssessmentId}
             highlightedAssessmentIds={highlightedAssessmentIds}
+            onStart={setActiveAssignmentId}
           />
         </div>
 
@@ -421,6 +456,8 @@ export function TaskListPage() {
       </div>
 
       <KeyboardShortcutsHelp />
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }

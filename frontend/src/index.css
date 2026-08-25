@@ -545,6 +545,29 @@ body[data-theme='dark'] .assessment-card.done {
   font-size: 0.8rem;
 }
 
+.btn-start {
+  display: inline-block;
+  border-radius: 8px;
+  border: 1px solid #27ae60;
+  background: #2ecc71;
+  color: white;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.btn-start:hover {
+  background: #27ae60;
+}
+
+.btn-start:active {
+  background: #219150;
+}
+
 .task-list-column {
   height: calc(100vh - 3rem);
   overflow-y: auto;
@@ -1966,4 +1989,78 @@ kbd {
 
 .exit-save-discard:hover {
   opacity: 0.85;
+}
+
+/* ----------------------------- Assignment workspace ----------------------------- */
+.assignment-workspace {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 2.5rem clamp(1.5rem, 8vw, 6rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.assignment-workspace-back-btn {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  color: var(--text-primary);
+  opacity: 0.7;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.assignment-workspace-back-btn:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.assignment-workspace-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.assignment-workspace-title {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-weight: 700;
+}
+
+.assignment-countdown {
+  margin: 0;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.assignment-countdown.overdue {
+  color: #e74c3c;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.assignment-countdown.no-due-date {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.assignment-workspace-textbox {
+  flex: 1;
+  width: 100%;
+  min-height: 50vh;
+  border-radius: 24px;
+  padding: 1.75rem 2rem;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  font-size: 1.05rem;
+  line-height: 1.6;
 }

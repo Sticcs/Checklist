@@ -16,6 +16,7 @@ interface Props {
   focused: boolean
   todayIso: string
   highlighted: boolean
+  onStart: (taskId: number) => void
 }
 
 // A trimmed-down sibling of TaskCard for the Assessments panel: same
@@ -23,7 +24,7 @@ interface Props {
 // undo/redo, and Clear completed all just work), but no subtasks, no
 // pinning, and a much smaller footprint - text, due date, priority color,
 // urgent toggle, edit, delete.
-export function AssessmentCard({ task, focused, todayIso, highlighted }: Props) {
+export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [editPriority, setEditPriority] = useState(task.priority)
@@ -136,6 +137,23 @@ export function AssessmentCard({ task, focused, todayIso, highlighted }: Props) 
             {task.urgent && <span className="urgent-badge">🚨 Urgent</span>}
           </div>
           <div className="assessment-actions">
+            {focused && (
+              <button
+                type="button"
+                className="btn-start"
+                title="Start working on this assessment"
+                onClick={(e) => {
+                  // Otherwise bubbles up to the document-level click
+                  // delegation (see TaskListPage) and toggles this card's
+                  // focus off in the same click that's meant to open the
+                  // workspace.
+                  e.stopPropagation()
+                  onStart(task.id)
+                }}
+              >
+                ▶ Start
+              </button>
+            )}
             <button
               type="button"
               className={task.urgent ? 'icon-btn btn-primary' : 'icon-btn'}

@@ -8,6 +8,7 @@ interface Props {
   todayIso: string
   selectedAssessmentId: number | null
   highlightedAssessmentIds: Set<number>
+  onStart: (taskId: number) => void
 }
 
 export function AssessmentsPanel({
@@ -16,6 +17,7 @@ export function AssessmentsPanel({
   todayIso,
   selectedAssessmentId,
   highlightedAssessmentIds,
+  onStart,
 }: Props) {
   return (
     <div className="assessments-panel">
@@ -42,6 +44,7 @@ export function AssessmentsPanel({
               focused={focusedTaskId === task.id}
               todayIso={todayIso}
               highlighted={highlightedAssessmentIds.has(task.id)}
+              onStart={onStart}
             />
           ))}
         </AnimatePresence>
