@@ -37,6 +37,10 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
   const daysToDue = task.due_date ? daysUntil(task.due_date, todayIso) : null
+  // The assignment workspace's textbox writes back to this same notes
+  // field - non-empty means the user has already put something down there,
+  // so the button should read "Continue" rather than "Start" over it.
+  const hasStarted = Boolean(task.notes && task.notes.trim().length > 0)
 
   const [justCompleted, setJustCompleted] = useState(false)
   const wasDone = useRef(task.done)
@@ -144,7 +148,7 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }
               <button
                 type="button"
                 className="btn-start"
-                title="Start working on this assessment"
+                title={hasStarted ? 'Continue working on this assessment' : 'Start working on this assessment'}
                 onClick={(e) => {
                   // Otherwise bubbles up to the document-level click
                   // delegation (see TaskListPage) and toggles this card's
@@ -154,7 +158,7 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }
                   onStart(task.id)
                 }}
               >
-                ▶ Start
+                {hasStarted ? '⏵ Continue' : '▶ Start'}
               </button>
             )}
             <button

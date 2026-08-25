@@ -113,6 +113,18 @@ class TaskInProgressUpdate(BaseModel):
     in_progress: bool
 
 
+class LinkItem(BaseModel):
+    name: str
+    url: str
+
+
+class TaskLinksUpdate(BaseModel):
+    # Whole-list replacement (like TaskNotesUpdate) rather than separate
+    # add/remove endpoints - the frontend's "Add link"/remove-link buttons
+    # both just compute the next full list client-side and PATCH it.
+    links: list[LinkItem]
+
+
 class TaskDueDateUpdate(BaseModel):
     due_date: str | None = None
 
@@ -141,6 +153,7 @@ class Task(BaseModel):
     # frontend's AssignmentWorkspace) - cleared again on completion, see
     # crud.set_done.
     in_progress: bool = False
+    links: list[LinkItem] = []
     subtasks: list[Subtask] = []
 
 
@@ -194,6 +207,7 @@ class ExportedTask(BaseModel):
     notes: str | None = None
     assigned_task_id: int | None = None
     in_progress: bool = False
+    links: list[LinkItem] = []
     subtasks: list[ExportedSubtask] = []
 
 

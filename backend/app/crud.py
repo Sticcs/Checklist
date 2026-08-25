@@ -1,3 +1,4 @@
+import json
 import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -128,6 +129,7 @@ def _task_dict(row) -> dict:
     d["pinned"] = bool(d["pinned"])
     d["urgent"] = bool(d["urgent"])
     d["in_progress"] = bool(d["in_progress"])
+    d["links"] = json.loads(d["links"]) if d.get("links") else []
     return d
 
 
@@ -363,8 +365,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress, links) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress, :links)"
                 ),
                 {
                     "id": t["id"],
@@ -395,6 +397,12 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     # otherwise silently vanish the moment any unrelated
                     # action gets undone.
                     "in_progress": int(t.get("in_progress", False)),
+                    # Same round-trip requirement as the fields above - t["links"]
+                    # here is already a parsed list (this snapshot came from
+                    # crud.get_tasks, which parses the JSON column via
+                    # _task_dict), so it needs re-encoding to go back into the
+                    # TEXT column.
+                    "links": json.dumps(t["links"]) if t.get("links") else None,
                 },
             )
 
@@ -545,6 +553,17 @@ def set_task_in_progress(task_id: int, in_progress: bool, username: str) -> dict
         conn.execute(
             text("UPDATE tasks SET in_progress = :in_progress WHERE id = :id AND username = :username"),
             {"in_progress": int(in_progress), "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
+def set_task_links(task_id: int, links: list[dict], username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET links = :links WHERE id = :id AND username = :username"),
+            {"links": json.dumps(links) if links else None, "id": task_id, "username": username},
         )
     return get_task(task_id, username)
 
@@ -910,8 +929,8 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
         for i, t in enumerate(tasks):
             new_task_id = conn.execute(
                 text(
-                    "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, in_progress) "
-                    "VALUES (:text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :in_progress) "
+                    "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, in_progress, links) "
+                    "VALUES (:text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :in_progress, :links) "
                     "RETURNING id"
                 ),
                 {
@@ -927,6 +946,7 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
                     "notes": t.get("notes"),
                     "urgent": int(t.get("urgent", False)),
                     "in_progress": int(t.get("in_progress", False)),
+                    "links": json.dumps(t["links"]) if t.get("links") else None,
                 },
             ).scalar_one()
             imported_tasks += 1

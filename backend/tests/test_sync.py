@@ -225,7 +225,7 @@ def test_push_sends_local_tasks_to_the_website(client, monkeypatch):
     # (needed to remap assigned_task_id references on the receiving end).
     assert set(sent_tasks[0].keys()) == {
         "id", "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes",
-        "assigned_task_id", "in_progress", "subtasks",
+        "assigned_task_id", "in_progress", "links", "subtasks",
     }
     # Push mirrors onto the website (see crud.import_data's replace mode) -
     # it must ask for that explicitly, not fall back to the regular

@@ -223,6 +223,30 @@ def test_undo_of_unrelated_action_preserves_in_progress(guest_client):
     assert reloaded["in_progress"] is True
 
 
+def test_undo_of_unrelated_action_preserves_links(guest_client):
+    """Same class of bug as the assigned_task_id/in_progress cases above:
+    restore_state() deletes and reinserts every task on any undo/redo, so
+    links (see set_task_links) must round-trip through that reinsert too."""
+    client, _ = guest_client
+    task = client.post(
+        "/api/tasks", json={"text": "Essay", "priority": "Medium", "category": "Assessment"}
+    ).json()
+    client.patch(
+        f"/api/tasks/{task['id']}/links",
+        json={"links": [{"name": "Rubric", "url": "https://example.edu/rubric"}]},
+    )
+
+    # An unrelated mutation - its undo snapshot is what actually gets
+    # restored below, not anything to do with links themselves.
+    client.post("/api/tasks", json={"text": "Task B", "priority": "Medium", "category": "General"})
+    r = client.post("/api/undo")
+    assert r.status_code == 200
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    reloaded = next(t for t in tasks if t["text"] == "Essay")
+    assert reloaded["links"] == [{"name": "Rubric", "url": "https://example.edu/rubric"}]
+
+
 def test_undo_redo_isolated_per_user(client):
     from fastapi.testclient import TestClient
 

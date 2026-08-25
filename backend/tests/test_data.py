@@ -26,7 +26,7 @@ def test_export_includes_task_and_subtask_fields(guest_client):
     # import), but nothing else database-internal.
     assert set(exported.keys()) == {
         "id", "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes",
-        "assigned_task_id", "in_progress", "subtasks",
+        "assigned_task_id", "in_progress", "links", "subtasks",
     }
     assert exported["text"] == "Plan trip"
     assert exported["pinned"] is True
@@ -152,6 +152,25 @@ def test_export_then_import_round_trip_preserves_in_progress(guest_client):
 
     tasks = client.get("/api/tasks").json()["tasks"]
     assert tasks[0]["in_progress"] is True
+
+
+def test_export_then_import_round_trip_preserves_links(guest_client):
+    client, _ = guest_client
+    task = _add_task(client, text="Essay")
+    client.patch(
+        f"/api/tasks/{task['id']}/links",
+        json={"links": [{"name": "Rubric", "url": "https://example.edu/rubric"}]},
+    )
+
+    exported = client.get("/api/export").json()
+    assert exported["tasks"][0]["links"] == [{"name": "Rubric", "url": "https://example.edu/rubric"}]
+
+    client.post("/api/tasks/clear-all")
+    r = client.post("/api/import", json=exported)
+    assert r.status_code == 200
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    assert tasks[0]["links"] == [{"name": "Rubric", "url": "https://example.edu/rubric"}]
 
 
 def test_import_without_id_field_still_works(guest_client):

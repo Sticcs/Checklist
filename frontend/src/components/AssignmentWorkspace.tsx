@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import type { Task } from '../types'
-import { useSetTaskNotes } from '../hooks/useTasks'
+import { useSetTaskLinks, useSetTaskNotes } from '../hooks/useTasks'
 import { useFormattableEditable, useFormattingContext, type FormatKind } from '../context/FormattingContext'
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
 
@@ -33,20 +33,9 @@ function formatRemaining(ms: number): string {
   return overdue ? `Overdue by ${parts.join(' ')}` : `${parts.join(' ')} remaining`
 }
 
-// Persisted across sessions (same convention as theme/settings, see
-// SettingsContext) rather than reset every time the workspace opens - a
-// comfortable reading/writing size, once set, is a standing preference, not
-// a per-assignment one.
-const FONT_SIZE_KEY = 'checklist-assignment-font-size'
-const MIN_FONT_REM = 0.8
-const MAX_FONT_REM = 2.4
-const FONT_STEP_REM = 0.1
-const DEFAULT_FONT_REM = 1.05
-
-function loadFontSize(): number {
-  const raw = localStorage.getItem(FONT_SIZE_KEY)
-  const parsed = raw ? Number.parseFloat(raw) : NaN
-  return Number.isFinite(parsed) ? Math.min(MAX_FONT_REM, Math.max(MIN_FONT_REM, parsed)) : DEFAULT_FONT_REM
+function normalizeUrl(raw: string): string {
+  const trimmed = raw.trim()
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
 }
 
 const FORMAT_BUTTONS: Array<{ kind: FormatKind; title: string; glyph: React.ReactNode }> = [
@@ -54,6 +43,8 @@ const FORMAT_BUTTONS: Array<{ kind: FormatKind; title: string; glyph: React.Reac
   { kind: 'italic', title: 'Italic (Ctrl/Cmd+I)', glyph: <i>I</i> },
   { kind: 'underline', title: 'Underline (Ctrl/Cmd+U)', glyph: <u>U</u> },
 ]
+
+const FONT_SIZE_PRESETS_PX = [12, 14, 16, 18, 20, 24, 28, 32, 40]
 
 // Full-page focused writing space for a single assessment - deliberately
 // shows nothing else from the main app (no task list, entry form, sidebar,
@@ -70,11 +61,7 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
   const [draft, setDraft] = useState(task.notes ?? '')
   const dirty = useRef(false)
   const setTaskNotes = useSetTaskNotes()
-  const [fontSize, setFontSize] = useState(loadFontSize)
-
-  useEffect(() => {
-    localStorage.setItem(FONT_SIZE_KEY, String(fontSize))
-  }, [fontSize])
+  const setTaskLinks = useSetTaskLinks()
 
   const onChange = (value: string) => {
     dirty.current = true
@@ -89,6 +76,86 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
   // fields, needed here too since this page has no sidebar to borrow them
   // from, and touch devices (iPad) have no Ctrl/Cmd+B-style shortcut.
   const { active: formattingActive, applyFormat } = useFormattingContext()
+
+  // Font size only ever applies to highlighted text (like a word processor's
+  // size dropdown), never the whole box - so unlike bold/italic/underline
+  // (which act on "whichever editor is focused"), this needs its own record
+  // of the last real *selection* made inside the textbox specifically, kept
+  // alive even after focus moves to the dropdown/custom-size input (both of
+  // which must steal focus to be usable/accessible at all, unlike the
+  // mousedown-preventDefault trick the format buttons use).
+  const [hasSelection, setHasSelection] = useState(false)
+  const savedRangeRef = useRef<Range | null>(null)
+  const [customSizeOpen, setCustomSizeOpen] = useState(false)
+  const [customSizeValue, setCustomSizeValue] = useState('')
+
+  useEffect(() => {
+    const handler = () => {
+      const el = notesField.ref.current
+      const sel = window.getSelection()
+      if (!el || !sel || sel.rangeCount === 0) return
+      const range = sel.getRangeAt(0)
+      // A selection change caused by focusing the size dropdown/input isn't
+      // inside the textbox at all - ignore it and keep whatever was last
+      // highlighted there, rather than treating it as "selection cleared".
+      if (!el.contains(range.commonAncestorContainer)) return
+      if (sel.isCollapsed) {
+        setHasSelection(false)
+        savedRangeRef.current = null
+      } else {
+        savedRangeRef.current = range.cloneRange()
+        setHasSelection(true)
+      }
+    }
+    document.addEventListener('selectionchange', handler)
+    return () => document.removeEventListener('selectionchange', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const applyFontSizeToSelection = (px: number) => {
+    const el = notesField.ref.current
+    const range = savedRangeRef.current
+    const sel = window.getSelection()
+    if (!el || !range || !sel || !Number.isFinite(px) || px <= 0) return
+    el.focus()
+    sel.removeAllRanges()
+    sel.addRange(range)
+    // execCommand('fontSize') only accepts the legacy 1-7 scale, so 7 (the
+    // largest) is used purely as a unique marker to find the element(s) it
+    // just wrapped the selection in, which are then restyled with the exact
+    // px value requested instead of whatever "7" would otherwise mean.
+    document.execCommand('fontSize', false, '7')
+    el.querySelectorAll('font[size="7"]').forEach((node) => {
+      const f = node as HTMLElement
+      f.removeAttribute('size')
+      f.style.fontSize = `${px}px`
+    })
+    // execCommand mutates the DOM directly - it fires the 'input' event that
+    // onInput normally relies on, but the *subsequent* manual restyling above
+    // does not, so the draft state needs an explicit refresh to pick up the
+    // corrected markup (otherwise the debounced autosave would persist the
+    // pre-restyle <font size="7"> instead of the actual chosen size).
+    onChange(el.innerHTML)
+  }
+
+  const [linksOpen, setLinksOpen] = useState(false)
+  const [linkName, setLinkName] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
+
+  const submitLink = (e: React.FormEvent) => {
+    e.preventDefault()
+    const name = linkName.trim()
+    const url = linkUrl.trim()
+    if (!name || !url) return
+    setTaskLinks.mutate({ id: task.id, links: [...task.links, { name, url: normalizeUrl(url) }] })
+    setLinkName('')
+    setLinkUrl('')
+    setLinksOpen(false)
+  }
+
+  const removeLink = (index: number) => {
+    setTaskLinks.mutate({ id: task.id, links: task.links.filter((_, i) => i !== index) })
+  }
 
   useEffect(() => {
     if (!dirty.current) setDraft(task.notes ?? '')
@@ -141,6 +208,57 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
         )}
       </div>
 
+      <div className="assignment-links-panel" data-focus-exempt>
+        <button
+          type="button"
+          className="assignment-add-link-btn"
+          onClick={() => setLinksOpen((open) => !open)}
+        >
+          🔗 Add link
+        </button>
+        <AnimatePresence>
+          {linksOpen && (
+            <motion.form
+              className="assignment-add-link-form"
+              onSubmit={submitLink}
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <input
+                placeholder="Website name"
+                value={linkName}
+                onChange={(e) => setLinkName(e.target.value)}
+                autoFocus
+              />
+              <input
+                placeholder="https://..."
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+              />
+              <button type="submit" className="btn-primary">
+                Add
+              </button>
+            </motion.form>
+          )}
+        </AnimatePresence>
+        {task.links.length > 0 && (
+          <ul className="assignment-links-list">
+            {task.links.map((link, i) => (
+              <li key={`${link.url}-${i}`}>
+                <a href={link.url} target="_blank" rel="noreferrer">
+                  {link.name}
+                </a>
+                <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="assignment-toolbar" data-focus-exempt>
         <div className="assignment-toolbar-group">
           {FORMAT_BUTTONS.map(({ kind, title, glyph }) => (
@@ -161,31 +279,60 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
           ))}
         </div>
         <div className="assignment-toolbar-group">
-          <button
-            type="button"
-            className="icon-btn"
-            title="Decrease font size"
-            disabled={fontSize <= MIN_FONT_REM}
-            onClick={() => setFontSize((f) => Math.max(MIN_FONT_REM, +(f - FONT_STEP_REM).toFixed(2)))}
+          <select
+            className="assignment-fontsize-select"
+            disabled={!hasSelection}
+            title={hasSelection ? 'Font size (applies to the highlighted text)' : 'Highlight text to change its size'}
+            value=""
+            onChange={(e) => {
+              const val = e.target.value
+              if (val === 'custom') setCustomSizeOpen(true)
+              else if (val) applyFontSizeToSelection(Number(val))
+            }}
           >
-            A−
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            title="Increase font size"
-            disabled={fontSize >= MAX_FONT_REM}
-            onClick={() => setFontSize((f) => Math.min(MAX_FONT_REM, +(f + FONT_STEP_REM).toFixed(2)))}
-          >
-            A+
-          </button>
+            <option value="" disabled>
+              Font size
+            </option>
+            {FONT_SIZE_PRESETS_PX.map((px) => (
+              <option key={px} value={px}>
+                {px}px
+              </option>
+            ))}
+            <option value="custom">Custom…</option>
+          </select>
+          {customSizeOpen && (
+            <form
+              className="assignment-fontsize-custom-form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                applyFontSizeToSelection(Number(customSizeValue))
+                setCustomSizeOpen(false)
+                setCustomSizeValue('')
+              }}
+            >
+              <input
+                type="number"
+                min={1}
+                max={300}
+                placeholder="px"
+                autoFocus
+                value={customSizeValue}
+                onChange={(e) => setCustomSizeValue(e.target.value)}
+                onBlur={() => {
+                  if (!customSizeValue) setCustomSizeOpen(false)
+                }}
+              />
+              <button type="submit" className="btn-primary">
+                Apply
+              </button>
+            </form>
+          )}
         </div>
       </div>
 
       <div
         ref={notesField.ref}
         className="assignment-workspace-textbox rich-text-input"
-        style={{ fontSize: `${fontSize}rem` }}
         contentEditable
         suppressContentEditableWarning
         data-placeholder="Start writing..."

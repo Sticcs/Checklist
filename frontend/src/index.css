@@ -2105,7 +2105,103 @@ kbd {
 
 .assignment-toolbar-group {
   display: flex;
+  align-items: center;
   gap: 0.4rem;
+}
+
+.assignment-fontsize-select {
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+body[data-theme='dark'] .assignment-fontsize-select {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.assignment-fontsize-custom-form {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.assignment-fontsize-custom-form input {
+  width: 4.5rem;
+  padding: 0.4rem 0.5rem;
+}
+
+/* ----------------------------- Assignment links ----------------------------- */
+.assignment-links-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.assignment-add-link-btn {
+  display: inline-block;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+body[data-theme='dark'] .assignment-add-link-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.assignment-add-link-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.assignment-add-link-form input {
+  min-width: 0;
+}
+
+.assignment-links-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.assignment-links-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--card-bg);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 20px;
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.assignment-links-list a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignment-links-list .icon-btn {
+  padding: 0.15rem 0.35rem;
+  font-size: 0.7rem;
 }
 
 .assignment-workspace-textbox {

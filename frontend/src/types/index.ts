@@ -22,6 +22,11 @@ export interface Subtask {
   clientKey?: string
 }
 
+export interface LinkItem {
+  name: string
+  url: string
+}
+
 export interface Task {
   id: number
   text: string
@@ -42,6 +47,7 @@ export interface Task {
   // Set once "Start" has been clicked on this assessment (see
   // AssignmentWorkspace) - cleared again on completion.
   in_progress: boolean
+  links: LinkItem[]
   subtasks: Subtask[]
   clientKey?: string
 }
@@ -97,6 +103,7 @@ export interface ExportedTask {
   urgent: boolean
   notes: string | null
   in_progress: boolean
+  links: LinkItem[]
   subtasks: ExportedSubtask[]
 }
 

@@ -50,6 +50,11 @@ tasks_table = Table(
     # not a workflow state machine - there's no in-progress -> not-started
     # transition other than completing or un-completing the task itself.
     Column("in_progress", Integer, nullable=False, server_default=text("0")),
+    # JSON-encoded list of {"name", "url"} objects (see the frontend's
+    # AssignmentWorkspace "Add link" panel) - stored as a single TEXT blob
+    # rather than a separate table since links are always read/written as
+    # one whole list for a task, never queried or joined on individually.
+    Column("links", Text, nullable=True),
 )
 
 subtasks_table = Table(
@@ -186,6 +191,10 @@ def init_db() -> None:
     if "in_progress" not in existing_task_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN in_progress INTEGER NOT NULL DEFAULT 0"))
+
+    if "links" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN links TEXT"))
 
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:

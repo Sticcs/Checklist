@@ -74,6 +74,23 @@ def test_completing_a_task_clears_in_progress(guest_client):
     assert r.json()["in_progress"] is False
 
 
+def test_set_links(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    assert task["links"] == []
+
+    r = client.patch(
+        f"/api/tasks/{task['id']}/links",
+        json={"links": [{"name": "Course site", "url": "https://example.edu/course"}]},
+    )
+    assert r.status_code == 200
+    assert r.json()["links"] == [{"name": "Course site", "url": "https://example.edu/course"}]
+
+    # Whole-list replacement - removing a link means PATCHing without it.
+    r = client.patch(f"/api/tasks/{task['id']}/links", json={"links": []})
+    assert r.json()["links"] == []
+
+
 def test_edit_task(guest_client):
     client, _ = guest_client
     task = _add_task(client, text="Old text")

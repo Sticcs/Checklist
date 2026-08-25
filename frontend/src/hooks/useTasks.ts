@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { tasksApi } from '../api/tasks'
-import type { Task, TasksResponse } from '../types'
+import type { LinkItem, Task, TasksResponse } from '../types'
 import { pushUndoSnapshot } from './undoRedoStack'
 import { markDirty } from './saveState'
 import { STATS_KEY } from './useStats'
@@ -78,6 +78,7 @@ export function useAddTask() {
         urgent: false,
         assigned_task_id: null,
         in_progress: false,
+        links: [],
         subtasks: [],
         clientKey,
       }
@@ -269,6 +270,26 @@ export function useSetTaskInProgress() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update progress status')
+    },
+  })
+}
+
+export function useSetTaskLinks() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, links }: { id: number; links: LinkItem[] }) => tasksApi.setLinks(id, links),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      setTasksData(queryClient, (old) => ({
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, links: vars.links } : t)),
+        can_undo: true,
+        can_redo: false,
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to update links')
     },
   })
 }
