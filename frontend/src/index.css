@@ -2170,6 +2170,46 @@ body[data-theme='dark'] .assignment-fontsize-select {
   padding: 0.4rem 0.5rem;
 }
 
+.assignment-toolbar-color {
+  position: relative;
+}
+
+.assignment-color-popover {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.assignment-color-swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.assignment-color-swatch.default {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
 /* ----------------------------- Assignment links ----------------------------- */
 /* A compact tile sharing the header row with the title/countdown (see
    .assignment-workspace-header-row) instead of its own full-height side
@@ -2282,4 +2322,133 @@ body[data-theme='dark'] .assignment-add-link-btn {
   border: 1px solid rgba(128, 128, 128, 0.2);
   font-size: 1.05rem;
   line-height: 1.6;
+}
+
+/* ----------------------------- Compact view ----------------------------- */
+/* A plain, table-like row instead of the fuller card look - overrides the
+   card's own border/shadow/padding/radius rather than replacing the class
+   entirely, so priority-color and done/focused/highlighted states (set via
+   the same .task-card/.assessment-card classes) still apply underneath. */
+.task-card.compact,
+.assessment-card.compact {
+  background: transparent;
+  border: none;
+  border-left: none;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.task-card.compact.focused,
+.assessment-card.compact.focused {
+  background: rgba(46, 204, 113, 0.08);
+  box-shadow: none;
+  animation: none;
+}
+
+.task-card.compact.highlighted {
+  background: rgba(243, 156, 18, 0.12);
+  box-shadow: none;
+  animation: none;
+}
+
+.compact-row {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr 6rem 2rem 3.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.3rem;
+}
+
+.compact-header-row {
+  font-weight: 600;
+  font-size: 0.78rem;
+  opacity: 0.6;
+  padding: 0.3rem 0.3rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.compact-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+
+.compact-row-title.done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.compact-row-due {
+  font-size: 0.78rem;
+  opacity: 0.75;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.compact-star-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.compact-star-btn.pinned {
+  color: #f1c40f;
+}
+
+.compact-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.compact-row:hover .compact-row-actions,
+.compact-row:focus-within .compact-row-actions {
+  opacity: 1;
+}
+
+.compact-row-actions .btn-start {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.compact-subtask-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.3rem 0.4rem 2.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.compact-subtask-row {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr 6rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.compact-subtask-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-subtask-row.done .compact-subtask-title {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.task-done-checkbox.small {
+  width: 0.9rem;
+  height: 0.9rem;
 }

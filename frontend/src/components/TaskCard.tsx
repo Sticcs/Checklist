@@ -34,6 +34,7 @@ interface Props {
   onToggleNotepad?: () => void
   assignedCount?: number
   onShowAssignments?: (taskId: number) => void
+  compact?: boolean
 }
 
 export function TaskCard({
@@ -48,6 +49,7 @@ export function TaskCard({
   onToggleNotepad,
   assignedCount = 0,
   onShowAssignments,
+  compact = false,
 }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
@@ -265,6 +267,35 @@ export function TaskCard({
             </button>
           </div>
         </form>
+      ) : compact ? (
+        <div data-task-content-id={task.id} className="compact-row">
+          <input
+            type="checkbox"
+            className="task-done-checkbox"
+            checked={task.done}
+            title="Mark complete"
+            onChange={() => toggleDone.mutate({ id: task.id, done: !task.done })}
+          />
+          <span className={task.done ? 'compact-row-title done' : 'compact-row-title'}>{task.text}</span>
+          <span className="compact-row-due">{task.due_date ?? ''}</span>
+          <button
+            type="button"
+            className={task.pinned ? 'compact-star-btn pinned' : 'compact-star-btn'}
+            aria-pressed={task.pinned}
+            title={task.pinned ? 'Unpin' : 'Pin (mark important)'}
+            onClick={() => setPinned.mutate({ id: task.id, pinned: !task.pinned })}
+          >
+            {task.pinned ? '★' : '☆'}
+          </button>
+          <div className="compact-row-actions">
+            <button type="button" className="icon-btn" onClick={startEditing}>
+              ✏️
+            </button>
+            <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
+              🗑️
+            </button>
+          </div>
+        </div>
       ) : (
         <div data-task-content-id={task.id} className="task-content">
           <div className="task-title">
@@ -349,35 +380,61 @@ export function TaskCard({
         </div>
       )}
 
-      <div className="task-actions">
-        {!editing && (
-          <input
-            type="checkbox"
-            className="task-done-checkbox"
-            checked={task.done}
-            title="Mark complete"
-            onChange={() => toggleDone.mutate({ id: task.id, done: !task.done })}
-          />
-        )}
-        <button
-          type="button"
-          className={task.pinned ? 'icon-btn btn-primary' : 'icon-btn'}
-          aria-pressed={task.pinned}
-          onClick={() => setPinned.mutate({ id: task.id, pinned: !task.pinned })}
-        >
-          📌
-        </button>
-        {!editing && (
-          <button type="button" className="icon-btn" onClick={startEditing}>
-            ✏️
+      {!compact && (
+        <div className="task-actions">
+          {!editing && (
+            <input
+              type="checkbox"
+              className="task-done-checkbox"
+              checked={task.done}
+              title="Mark complete"
+              onChange={() => toggleDone.mutate({ id: task.id, done: !task.done })}
+            />
+          )}
+          <button
+            type="button"
+            className={task.pinned ? 'icon-btn btn-primary' : 'icon-btn'}
+            aria-pressed={task.pinned}
+            onClick={() => setPinned.mutate({ id: task.id, pinned: !task.pinned })}
+          >
+            📌
           </button>
-        )}
-        <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
-          🗑️
-        </button>
-      </div>
+          {!editing && (
+            <button type="button" className="icon-btn" onClick={startEditing}>
+              ✏️
+            </button>
+          )}
+          <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
+            🗑️
+          </button>
+        </div>
+      )}
 
-      <div className="subtask-section">
+      {/* Streamlined stand-in for the full subtask panel above - just a
+          checkbox, text, and due date per row, matching the compact row
+          it sits under (see the compact-view Sidebar toggle). Not shown
+          while editing (the edit form only covers the task's own text/
+          priority/category/date; switch back to the full view for deeper
+          subtask management). */}
+      {compact && !editing && task.subtasks.length > 0 && (
+        <ul className="compact-subtask-list">
+          {task.subtasks.map((s) => (
+            <li key={s.clientKey ?? s.id} className={s.done ? 'compact-subtask-row done' : 'compact-subtask-row'}>
+              <input
+                type="checkbox"
+                className="task-done-checkbox small"
+                checked={s.done}
+                title="Mark complete"
+                onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+              />
+              <span className="compact-subtask-title">{s.text}</span>
+              <span className="compact-row-due">{s.due_date ?? ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!compact && <div className="subtask-section">
         <button type="button" className="subtask-toggle-btn" onClick={toggleSubtasksOpen}>
           {task.subtasks.length > 0
             ? `📋 Subtasks (${subDone}/${task.subtasks.length})`
@@ -508,34 +565,36 @@ export function TaskCard({
             </form>
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="notes-section">
-        <button
-          type="button"
-          className="subtask-toggle-btn"
-          onClick={() => setNotesOpen((prev) => !prev)}
-        >
-          {task.notes ? '📝 Notes' : '📝 Add notes'}
-        </button>
-        {notesOpen && (
-          <div
-            ref={notesField.ref}
-            className="notes-textarea rich-text-input"
-            contentEditable
-            suppressContentEditableWarning
-            data-placeholder="Notes..."
-            onInput={notesField.onInput}
-            onFocus={notesField.onFocus}
-            onBlur={notesField.onBlur}
-            onKeyDown={notesField.onKeyDown}
-          />
-        )}
-      </div>
+      {!compact && (
+        <div className="notes-section">
+          <button
+            type="button"
+            className="subtask-toggle-btn"
+            onClick={() => setNotesOpen((prev) => !prev)}
+          >
+            {task.notes ? '📝 Notes' : '📝 Add notes'}
+          </button>
+          {notesOpen && (
+            <div
+              ref={notesField.ref}
+              className="notes-textarea rich-text-input"
+              contentEditable
+              suppressContentEditableWarning
+              data-placeholder="Notes..."
+              onInput={notesField.onInput}
+              onFocus={notesField.onFocus}
+              onBlur={notesField.onBlur}
+              onKeyDown={notesField.onKeyDown}
+            />
+          )}
+        </div>
+      )}
     </>
   )
 
-  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}`
+  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}${compact ? ' compact' : ''}`
 
   if (draggable) {
     return (

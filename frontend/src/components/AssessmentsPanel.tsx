@@ -9,6 +9,7 @@ interface Props {
   selectedAssessmentId: number | null
   highlightedAssessmentIds: Set<number>
   onStart: (taskId: number) => void
+  compact?: boolean
 }
 
 export function AssessmentsPanel({
@@ -18,6 +19,7 @@ export function AssessmentsPanel({
   selectedAssessmentId,
   highlightedAssessmentIds,
   onStart,
+  compact = false,
 }: Props) {
   return (
     <div className="assessments-panel">
@@ -35,6 +37,15 @@ export function AssessmentsPanel({
           </motion.p>
         )}
       </AnimatePresence>
+      {compact && assessments.length > 0 && (
+        <div className="compact-row compact-header-row">
+          <span />
+          <span>Title</span>
+          <span>Due Date</span>
+          <span>Importance</span>
+          <span />
+        </div>
+      )}
       <ul className="assessments-list">
         <AnimatePresence>
           {assessments.map((task) => (
@@ -45,6 +56,7 @@ export function AssessmentsPanel({
               todayIso={todayIso}
               highlighted={highlightedAssessmentIds.has(task.id)}
               onStart={onStart}
+              compact={compact}
             />
           ))}
         </AnimatePresence>

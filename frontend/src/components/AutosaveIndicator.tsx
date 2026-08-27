@@ -4,7 +4,7 @@ import { useLinked } from '../hooks/websiteLink'
 import { useIsDirty } from '../hooks/saveState'
 import { usePushToWebsite } from '../hooks/useData'
 
-const SAVE_INTERVAL_MS = 5 * 60 * 1000
+const SAVE_INTERVAL_MS = 30 * 1000
 
 function formatCountdown(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
@@ -16,7 +16,7 @@ function formatCountdown(ms: number): string {
 // Desktop app only, and only once a website account has been linked (via a
 // successful Pull or Push, or restored from a previous run - see
 // WebsiteSyncButtons/websiteLink.ts): Push doubles as the app's save system
-// from that point on, firing automatically every 5 minutes (if anything's
+// from that point on, firing automatically every 30 seconds (if anything's
 // actually changed - see saveState.ts) or immediately on Ctrl+S, with no
 // credentials to pass - the backend already has them stored
 // (crud.get_website_link) for whichever account this local one is linked
@@ -41,7 +41,7 @@ export function AutosaveIndicator() {
     setRemainingMs(SAVE_INTERVAL_MS)
   }, [push])
 
-  // The 5-minute cycle: re-armed only when linking status changes, not on
+  // The 30-second cycle: re-armed only when linking status changes, not on
   // every dirty/deadline change - dirtyRef/deadlineRef are read fresh inside
   // the tick instead, so the interval itself never needs to restart.
   useEffect(() => {
@@ -79,7 +79,7 @@ export function AutosaveIndicator() {
   if (!isDesktopApp || !linked) return null
 
   return (
-    <p className="autosave-indicator" title="Autosaves to the website every 5 minutes - or press Ctrl+S to save now">
+    <p className="autosave-indicator" title="Autosaves to the website every 30 seconds - or press Ctrl+S to save now">
       {push.isPending
         ? '💾 Saving…'
         : `💾 ${formatCountdown(remainingMs)} till save or press Ctrl+S`}

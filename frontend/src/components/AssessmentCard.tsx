@@ -17,6 +17,7 @@ interface Props {
   todayIso: string
   highlighted: boolean
   onStart: (taskId: number) => void
+  compact?: boolean
 }
 
 // A trimmed-down sibling of TaskCard for the Assessments panel: same
@@ -24,7 +25,7 @@ interface Props {
 // undo/redo, and Clear completed all just work), but no subtasks, no
 // pinning, and a much smaller footprint - text, due date, priority color,
 // urgent toggle, edit, delete.
-export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }: Props) {
+export function AssessmentCard({ task, focused, todayIso, highlighted, onStart, compact = false }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [editPriority, setEditPriority] = useState(task.priority)
@@ -75,7 +76,7 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }
 
   const className =
     `assessment-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}` +
-    `${justCompleted ? ' just-completed' : ''}${highlighted ? ' highlighted' : ''}`
+    `${justCompleted ? ' just-completed' : ''}${highlighted ? ' highlighted' : ''}${compact ? ' compact' : ''}`
 
   return (
     <motion.li
@@ -110,6 +111,48 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart }
             </button>
           </div>
         </form>
+      ) : compact ? (
+        <div data-task-content-id={task.id} className="compact-row">
+          <input
+            type="checkbox"
+            className="task-done-checkbox"
+            checked={task.done}
+            title="Mark complete"
+            onChange={() => toggleDone.mutate({ id: task.id, done: !task.done })}
+          />
+          <span className={task.done ? 'compact-row-title done' : 'compact-row-title'}>{task.text}</span>
+          <span className="compact-row-due">{task.due_date ?? ''}</span>
+          <button
+            type="button"
+            className={task.urgent ? 'compact-star-btn pinned' : 'compact-star-btn'}
+            aria-pressed={task.urgent}
+            title={task.urgent ? 'Unmark urgent' : 'Mark urgent (important)'}
+            onClick={() => setTaskUrgent.mutate({ id: task.id, urgent: !task.urgent })}
+          >
+            {task.urgent ? '★' : '☆'}
+          </button>
+          <div className="compact-row-actions">
+            {focused && (
+              <button
+                type="button"
+                className="btn-start"
+                title={hasStarted ? 'Continue working on this assessment' : 'Start working on this assessment'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onStart(task.id)
+                }}
+              >
+                {hasStarted ? '⏵' : '▶'}
+              </button>
+            )}
+            <button type="button" className="icon-btn" onClick={startEditing}>
+              ✏️
+            </button>
+            <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
+              🗑️
+            </button>
+          </div>
+        </div>
       ) : (
         <div data-task-content-id={task.id} className="assessment-content">
           <input

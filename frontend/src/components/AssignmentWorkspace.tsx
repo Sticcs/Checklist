@@ -46,6 +46,44 @@ const FORMAT_BUTTONS: Array<{ kind: FormatKind; title: string; glyph: React.Reac
 ]
 
 const FONT_SIZE_PRESETS_PX = [12, 14, 16, 18, 20, 24, 28, 32, 40]
+const FONT_SIZE_STEP_PX = 2
+const MIN_FONT_SIZE_PX = 8
+const MAX_FONT_SIZE_PX = 120
+
+const FONT_COLOR_PRESETS = [
+  { label: 'Red', value: '#e74c3c' },
+  { label: 'Orange', value: '#e67e22' },
+  { label: 'Yellow', value: '#f1c40f' },
+  { label: 'Green', value: '#2ecc71' },
+  { label: 'Blue', value: '#3498db' },
+  { label: 'Purple', value: '#9b59b6' },
+  { label: 'Gray', value: '#7f8c8d' },
+]
+
+// Any inline style/attribute that could hardcode a color the current theme
+// can't override - pasted content (e.g. from Word or a webpage) routinely
+// carries an explicit black (or otherwise theme-clashing) text color, which
+// then renders unreadable against a dark background since an inline style
+// always wins over this page's own `color: var(--text-primary)`. Stripped
+// on every paste (not just Ctrl+Shift+V's plain-text paste) so this can't
+// recur; structural formatting (bold/italic/lists/font-size) is left alone.
+function stripForcedColors(html: string): string {
+  const container = document.createElement('div')
+  container.innerHTML = html
+  const strip = (el: Element) => {
+    if (el instanceof HTMLElement) {
+      el.style.removeProperty('color')
+      el.style.removeProperty('background')
+      el.style.removeProperty('background-color')
+      el.style.removeProperty('font-family')
+      if (el.getAttribute('style') === '') el.removeAttribute('style')
+      if (el.tagName === 'FONT') el.removeAttribute('color')
+    }
+    for (const child of Array.from(el.children)) strip(child)
+  }
+  strip(container)
+  return container.innerHTML
+}
 
 // Full-page focused writing space for a single assessment - deliberately
 // shows nothing else from the main app (no task list, entry form, sidebar,
@@ -76,7 +114,7 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
   // mechanism the sidebar's own B/I/U buttons use for the scratchpad/notes
   // fields, needed here too since this page has no sidebar to borrow them
   // from, and touch devices (iPad) have no Ctrl/Cmd+B-style shortcut.
-  const { active: formattingActive, applyFormat } = useFormattingContext()
+  const { active: formattingActive, applyFormat, applyForeColor } = useFormattingContext()
 
   // Font size only ever applies to highlighted text (like a word processor's
   // size dropdown), never the whole box - so unlike bold/italic/underline
@@ -137,6 +175,86 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
     // corrected markup (otherwise the debounced autosave would persist the
     // pre-restyle <font size="7"> instead of the actual chosen size).
     onChange(el.innerHTML)
+  }
+
+  // Ctrl/Cmd+Shift+. / Ctrl/Cmd+Shift+, - reads the size off the selection's
+  // own start element (not a fixed default) so repeated presses actually
+  // step up/down from wherever that text already is, matching how a word
+  // processor's own size-step shortcuts behave.
+  const stepFontSize = (direction: 1 | -1) => {
+    const range = savedRangeRef.current
+    if (!range) return
+    const startNode = range.startContainer
+    const el = startNode.nodeType === Node.ELEMENT_NODE ? (startNode as Element) : startNode.parentElement
+    const current = el ? Number.parseFloat(getComputedStyle(el).fontSize) || 16 : 16
+    const next = Math.min(MAX_FONT_SIZE_PX, Math.max(MIN_FONT_SIZE_PX, current + direction * FONT_SIZE_STEP_PX))
+    applyFontSizeToSelection(next)
+  }
+
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+
+  useEffect(() => {
+    if (!colorPickerOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.assignment-toolbar-color')) setColorPickerOpen(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [colorPickerOpen])
+
+  const applyForeColorToSelection = (color: string) => {
+    const el = notesField.ref.current
+    const range = savedRangeRef.current
+    const sel = window.getSelection()
+    if (!el || !range || !sel) return
+    el.focus()
+    sel.removeAllRanges()
+    sel.addRange(range)
+    applyForeColor(color)
+    setColorPickerOpen(false)
+  }
+
+  // Ctrl/Cmd+Shift+V: reads the clipboard directly (a custom shortcut like
+  // this never fires a native 'paste' event the way Ctrl/Cmd+V does) and
+  // inserts it via insertText, which - unlike insertHTML - can't carry any
+  // formatting/color along even if the source had some.
+  const pasteAsPlainText = async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      notesField.ref.current?.focus()
+      document.execCommand('insertText', false, text)
+    } catch {
+      toast.error("Couldn't read the clipboard - your browser may need permission")
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const withMod = e.ctrlKey || e.metaKey
+    if (withMod && e.shiftKey && (e.code === 'Period' || e.code === 'Comma')) {
+      e.preventDefault()
+      stepFontSize(e.code === 'Period' ? 1 : -1)
+      return
+    }
+    if (withMod && e.shiftKey && e.key.toLowerCase() === 'v') {
+      e.preventDefault()
+      void pasteAsPlainText()
+      return
+    }
+    notesField.onKeyDown(e)
+  }
+
+  // The default (Ctrl/Cmd+V) paste path - unlike Ctrl+Shift+V, this keeps
+  // structural formatting (bold/italic/lists/font-size) from the source,
+  // but strips any hardcoded color so pasted text can't silently render
+  // unreadable against the current theme (see stripForcedColors).
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const html = e.clipboardData.getData('text/html')
+    if (html) {
+      document.execCommand('insertHTML', false, stripForcedColors(html))
+    } else {
+      document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
+    }
   }
 
   const [linksOpen, setLinksOpen] = useState(false)
@@ -310,6 +428,54 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
                 {glyph}
               </button>
             ))}
+            <button
+              type="button"
+              className={formattingActive ? 'icon-btn btn-primary' : 'icon-btn'}
+              disabled={!formattingActive}
+              title="Bullet list"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => applyFormat('insertUnorderedList')}
+            >
+              ☰•
+            </button>
+            <div className="assignment-toolbar-color">
+              <button
+                type="button"
+                className="icon-btn"
+                disabled={!hasSelection}
+                title={hasSelection ? 'Text color (applies to the highlighted text)' : 'Highlight text to change its color'}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setColorPickerOpen((open) => !open)}
+              >
+                🎨
+              </button>
+              {colorPickerOpen && (
+                <div className="assignment-color-popover" data-focus-exempt>
+                  <button
+                    type="button"
+                    className="assignment-color-swatch default"
+                    title="Default (current theme color)"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() =>
+                      applyForeColorToSelection(getComputedStyle(document.body).getPropertyValue('--text-primary').trim())
+                    }
+                  >
+                    A
+                  </button>
+                  {FONT_COLOR_PRESETS.map(({ label, value }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className="assignment-color-swatch"
+                      style={{ background: value }}
+                      title={label}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applyForeColorToSelection(value)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div className="assignment-toolbar-group">
             <select
@@ -382,7 +548,8 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
           onInput={notesField.onInput}
           onFocus={notesField.onFocus}
           onBlur={notesField.onBlur}
-          onKeyDown={notesField.onKeyDown}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
         />
       </div>
     </motion.div>

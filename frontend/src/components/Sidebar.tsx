@@ -71,7 +71,8 @@ export function Sidebar({
 }: Props) {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const { urgentWindowDays, setUrgentWindowDays, notifyDayBefore, setNotifyDayBefore } = useSettings()
+  const { urgentWindowDays, setUrgentWindowDays, notifyDayBefore, setNotifyDayBefore, compactView, setCompactView } =
+    useSettings()
   const isDesktopApp = useIsDesktopApp()
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
@@ -269,6 +270,13 @@ export function Sidebar({
       </AnimatePresence>
 
       <div className="sidebar-bulk-actions">
+        <button
+          type="button"
+          className="btn-secondary btn-block"
+          onClick={() => setCompactView(!compactView)}
+        >
+          {compactView ? '↩️ Revert to original view' : '🗜️ Compact view'}
+        </button>
         <button type="button" className="btn-secondary btn-block" onClick={() => markAllCompleted.mutate()}>
           Mark all completed
         </button>

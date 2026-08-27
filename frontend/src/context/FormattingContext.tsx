@@ -1,8 +1,13 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode, type RefObject } from 'react'
 
-export type FormatKind = 'bold' | 'italic' | 'underline'
+export type FormatKind = 'bold' | 'italic' | 'underline' | 'insertUnorderedList'
 
-const COMMAND: Record<FormatKind, string> = { bold: 'bold', italic: 'italic', underline: 'underline' }
+const COMMAND: Record<FormatKind, string> = {
+  bold: 'bold',
+  italic: 'italic',
+  underline: 'underline',
+  insertUnorderedList: 'insertUnorderedList',
+}
 
 interface ActiveEditor {
   ref: RefObject<HTMLDivElement | null>
@@ -11,6 +16,7 @@ interface ActiveEditor {
 interface FormattingContextValue {
   active: boolean
   applyFormat: (kind: FormatKind) => void
+  applyForeColor: (color: string) => void
   registerFocus: (editor: ActiveEditor) => void
   registerBlur: (ref: RefObject<HTMLDivElement | null>) => void
 }
@@ -53,8 +59,19 @@ export function FormattingProvider({ children }: { children: ReactNode }) {
     document.execCommand(COMMAND[kind])
   }, [])
 
+  // Separate from applyFormat since foreColor takes a value (unlike bold/
+  // italic/underline/insertUnorderedList, which are plain toggles) - same
+  // "act on whichever editor is currently registered as focused" mechanism
+  // otherwise.
+  const applyForeColor = useCallback((color: string) => {
+    const el = activeEditorRef.current?.ref.current
+    if (!el) return
+    el.focus()
+    document.execCommand('foreColor', false, color)
+  }, [])
+
   return (
-    <FormattingContext.Provider value={{ active, applyFormat, registerFocus, registerBlur }}>
+    <FormattingContext.Provider value={{ active, applyFormat, applyForeColor, registerFocus, registerBlur }}>
       {children}
     </FormattingContext.Provider>
   )

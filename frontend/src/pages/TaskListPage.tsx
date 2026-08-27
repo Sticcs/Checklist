@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { toast } from 'sonner'
 import { useAssignTask, useSetPosition, useSetTaskInProgress, useTasks, useToggleDone } from '../hooks/useTasks'
+import { useSettings } from '../context/SettingsContext'
 import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useIsMobileLayout } from '../hooks/useIsMobileLayout'
@@ -30,6 +31,7 @@ export function TaskListPage() {
   const setPosition = useSetPosition()
   const assignTask = useAssignTask()
   const setTaskInProgress = useSetTaskInProgress()
+  const { compactView } = useSettings()
   const isDesktopApp = useIsDesktopApp()
   const isMobileLayout = useIsMobileLayout() && !isDesktopApp
   useWebsiteLinkStatus()
@@ -385,6 +387,7 @@ export function TaskListPage() {
             selectedAssessmentId={selectedAssessmentId}
             highlightedAssessmentIds={highlightedAssessmentIds}
             onStart={handleStartAssignment}
+            compact={compactView}
           />
         </div>
 
@@ -400,6 +403,16 @@ export function TaskListPage() {
 
           {mainTasks.length > 0 && (
             <p className="complete-hint">💡 Ctrl/Cmd+click a task to mark it complete</p>
+          )}
+
+          {compactView && filtered.length > 0 && (
+            <div className="compact-row compact-header-row">
+              <span />
+              <span>Title</span>
+              <span>Due Date</span>
+              <span>Importance</span>
+              <span />
+            </div>
           )}
 
           {/* The list container (and its AnimatePresence) stays mounted even
@@ -432,6 +445,7 @@ export function TaskListPage() {
                     onToggleNotepad={() => setNotepadHidden((h) => !h)}
                     assignedCount={assignedCounts.get(task.id) ?? 0}
                     onShowAssignments={highlightAssignments}
+                    compact={compactView}
                   />
                 ))}
               </AnimatePresence>
@@ -451,6 +465,7 @@ export function TaskListPage() {
                     onToggleNotepad={() => setNotepadHidden((h) => !h)}
                     assignedCount={assignedCounts.get(task.id) ?? 0}
                     onShowAssignments={highlightAssignments}
+                    compact={compactView}
                   />
                 ))}
               </AnimatePresence>
