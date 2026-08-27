@@ -407,11 +407,11 @@ export function TaskListPage() {
 
           {compactView && filtered.length > 0 && (
             <div className="compact-row compact-header-row">
-              <span />
-              <span>Title</span>
-              <span>Due Date</span>
-              <span>Importance</span>
-              <span />
+              <span className="compact-header-checkbox-spacer" />
+              <span className="compact-row-title">Title</span>
+              <span className="compact-row-due">Due Date</span>
+              <span className="compact-star-btn">Importance</span>
+              <span className="compact-row-actions" />
             </div>
           )}
 

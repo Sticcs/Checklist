@@ -1601,6 +1601,7 @@ body[data-theme='dark'] .task-card.done {
      no touchscreen equivalent, so this is the tap-friendly alternative. */
   width: 1.3rem;
   height: 1.3rem;
+  flex-shrink: 0;
   margin: 0;
   accent-color: #ff4b4b;
   cursor: pointer;
@@ -2132,32 +2133,79 @@ kbd {
   opacity: 0.75;
 }
 
+/* One continuous bar (like Google Docs/Word's own toolbar) - a single
+   framed strip everything sits flush inside, rather than a row of
+   individually-bordered pill buttons with visible gaps between them. */
 .assignment-toolbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.25rem;
+  gap: 0.15rem;
   flex-wrap: wrap;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: var(--glass-shadow);
+  padding: 0.3rem 0.5rem;
 }
 
 .assignment-toolbar-group {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.1rem;
+}
+
+.assignment-toolbar-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 0.2rem 0.4rem;
+  background: rgba(128, 128, 128, 0.3);
+}
+
+/* Flush toolbar buttons - no border/pill background of their own (unlike
+   .icon-btn, used everywhere else in the app), just a plain glyph that
+   highlights on hover and stays highlighted while its formatting state is
+   active - the "integrated into one bar" look the individually-boxed
+   .icon-btn buttons didn't have. */
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  padding: 0;
+  transition: background-color 0.12s ease;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.toolbar-btn.active {
+  background: rgba(52, 152, 219, 0.22);
+  color: #3498db;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.35;
 }
 
 .assignment-fontsize-select {
-  border-radius: 8px;
-  border: 1px solid rgba(128, 128, 128, 0.3);
-  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  background: transparent;
   color: var(--text-primary);
-  padding: 0.4rem 0.6rem;
+  padding: 0.4rem 0.5rem;
   font-size: 0.85rem;
+  border-radius: 6px;
 }
 
-body[data-theme='dark'] .assignment-fontsize-select {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+.assignment-fontsize-select:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.15);
 }
 
 .assignment-fontsize-custom-form {
@@ -2325,51 +2373,87 @@ body[data-theme='dark'] .assignment-add-link-btn {
 }
 
 /* ----------------------------- Compact view ----------------------------- */
-/* A plain, table-like row instead of the fuller card look - overrides the
-   card's own border/shadow/padding/radius rather than replacing the class
-   entirely, so priority-color and done/focused/highlighted states (set via
-   the same .task-card/.assessment-card classes) still apply underneath. */
+/* Overrides the fuller card's own border/shadow/padding/radius (rather than
+   replacing the class entirely) so priority-color/done/highlighted states,
+   set via these same .task-card/.assessment-card classes, still apply
+   underneath - just without the padded card chrome. */
 .task-card.compact,
 .assessment-card.compact {
   background: transparent;
   border: none;
   border-left: none;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
   border-radius: 0;
   box-shadow: none;
   padding: 0;
 }
 
+/* Compact rows deliberately don't get the full view's green click-to-focus
+   ring (see .compact-row below, which supplies its own plain hover shadow
+   instead) - .task-card.focused/.assessment-card.focused set border-color/
+   box-shadow with !important, so beating it back to nothing needs the same
+   specificity+importance, not just a plain override. */
 .task-card.compact.focused,
 .assessment-card.compact.focused {
-  background: rgba(46, 204, 113, 0.08);
-  box-shadow: none;
+  border-color: transparent !important;
+  box-shadow: none !important;
   animation: none;
 }
 
-.task-card.compact.highlighted {
-  background: rgba(243, 156, 18, 0.12);
-  box-shadow: none;
-  animation: none;
+/* Every list/panel a compact row can sit in needs overflow-x left alone -
+   overflow-y: auto/hidden on a container otherwise forces the x-axis to
+   clip too (a browser default for the shorthand), which is what was
+   cutting off the edit/delete buttons at the right edge of narrower
+   containers (the Assessments side panel especially) instead of just
+   letting the row's own flex layout negotiate the space. */
+.task-list,
+.assessments-list,
+.assessments-panel {
+  overflow-x: visible;
 }
 
 .compact-row {
-  display: grid;
-  grid-template-columns: 1.6rem 1fr 6rem 2rem 3.5rem;
+  display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.45rem 0.3rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: var(--card-bg);
+  box-shadow: none;
+  transition: box-shadow 0.15s ease;
+}
+
+.task-list .compact-row,
+.assessments-list .compact-row {
+  margin-bottom: 0.4rem;
+}
+
+/* Minimalistic hover feedback - a soft drop shadow, not a color change (see
+   the comment above about deliberately not re-adding a focus highlight). */
+.compact-row:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+body[data-theme='dark'] .compact-row:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
 .compact-header-row {
+  background: transparent;
   font-weight: 600;
   font-size: 0.78rem;
   opacity: 0.6;
-  padding: 0.3rem 0.3rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0;
   border-bottom: 1px solid rgba(128, 128, 128, 0.25);
 }
 
+.compact-header-row:hover {
+  box-shadow: none;
+}
+
 .compact-row-title {
+  flex: 1 1 auto;
+  min-width: 3rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2382,13 +2466,38 @@ body[data-theme='dark'] .assignment-add-link-btn {
 }
 
 .compact-row-due {
+  flex: 0 1 6rem;
+  min-width: 0;
   font-size: 0.78rem;
   opacity: 0.75;
-  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.compact-header-row .compact-row-due {
+  flex-basis: 6rem;
+}
+
+.compact-header-checkbox-spacer {
+  flex: 0 0 auto;
+  width: 1.3rem;
+}
+
+/* "Importance" is wider than the actual star glyph beneath it - let the
+   header label take whatever width it needs instead of the row's fixed
+   1.8rem star column, so the word isn't clipped. */
+.compact-header-row .compact-star-btn {
+  width: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: inherit;
+  cursor: default;
+}
+
 .compact-star-btn {
+  flex: 0 0 auto;
+  width: 1.8rem;
   background: none;
   border: none;
   padding: 0;
@@ -2396,6 +2505,7 @@ body[data-theme='dark'] .assignment-add-link-btn {
   line-height: 1;
   color: var(--text-secondary);
   cursor: pointer;
+  text-align: center;
 }
 
 .compact-star-btn.pinned {
@@ -2403,6 +2513,7 @@ body[data-theme='dark'] .assignment-add-link-btn {
 }
 
 .compact-row-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 0.2rem;
@@ -2418,6 +2529,7 @@ body[data-theme='dark'] .assignment-add-link-btn {
 .compact-row-actions .btn-start {
   padding: 0.2rem 0.4rem;
   font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .compact-subtask-list {
@@ -2426,21 +2538,29 @@ body[data-theme='dark'] .assignment-add-link-btn {
   padding: 0 0.3rem 0.4rem 2.2rem;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.3rem;
 }
 
 .compact-subtask-row {
-  display: grid;
-  grid-template-columns: 1.4rem 1fr 6rem;
+  display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  background: var(--card-bg);
 }
 
 .compact-subtask-title {
+  flex: 1 1 auto;
+  min-width: 3rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.compact-subtask-row .compact-row-due {
+  flex: 0 0 auto;
 }
 
 .compact-subtask-row.done .compact-subtask-title {

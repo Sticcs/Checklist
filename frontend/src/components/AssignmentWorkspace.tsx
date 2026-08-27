@@ -410,13 +410,17 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
           </div>
         </div>
 
+        {/* One continuous bar (Google Docs/Word style) - every control is a
+            flush toolbar-btn with no individual pill border, separated into
+            logical groups by a thin divider rather than by visible gaps
+            between separately-styled buttons. */}
         <div className="assignment-toolbar" data-focus-exempt>
           <div className="assignment-toolbar-group">
             {FORMAT_BUTTONS.map(({ kind, title, glyph }) => (
               <button
                 key={kind}
                 type="button"
-                className={formattingActive ? 'icon-btn btn-primary' : 'icon-btn'}
+                className={formattingActive ? 'toolbar-btn active' : 'toolbar-btn'}
                 disabled={!formattingActive}
                 title={title}
                 // Keeps focus (and the selection) inside the textbox instead
@@ -428,9 +432,14 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
                 {glyph}
               </button>
             ))}
+          </div>
+
+          <span className="assignment-toolbar-divider" />
+
+          <div className="assignment-toolbar-group">
             <button
               type="button"
-              className={formattingActive ? 'icon-btn btn-primary' : 'icon-btn'}
+              className={formattingActive ? 'toolbar-btn active' : 'toolbar-btn'}
               disabled={!formattingActive}
               title="Bullet list"
               onMouseDown={(e) => e.preventDefault()}
@@ -441,7 +450,7 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
             <div className="assignment-toolbar-color">
               <button
                 type="button"
-                className="icon-btn"
+                className="toolbar-btn"
                 disabled={!hasSelection}
                 title={hasSelection ? 'Text color (applies to the highlighted text)' : 'Highlight text to change its color'}
                 onMouseDown={(e) => e.preventDefault()}
@@ -477,6 +486,9 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
               )}
             </div>
           </div>
+
+          <span className="assignment-toolbar-divider" />
+
           <div className="assignment-toolbar-group">
             <select
               className="assignment-fontsize-select"
@@ -527,14 +539,17 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
               </form>
             )}
           </div>
+
+          <span className="assignment-toolbar-divider" />
+
           <div className="assignment-toolbar-group">
             <button
               type="button"
-              className="icon-btn"
+              className="toolbar-btn"
               title="Copy the write-up as plain text - to paste it in wherever it actually needs to be submitted"
               onClick={() => void copyAsText()}
             >
-              📋 Copy as text
+              📋
             </button>
           </div>
         </div>
