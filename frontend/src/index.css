@@ -2218,8 +2218,19 @@ kbd {
   padding: 0.4rem 0.5rem;
 }
 
-.assignment-toolbar-color {
+.assignment-toolbar-color,
+.assignment-toolbar-highlight {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* The chevron half of the highlight split-button - narrower than a regular
+   toolbar-btn, sitting flush against the main highlighter icon so the pair
+   reads as one control (icon = apply last color, chevron = choose one). */
+.toolbar-caret-btn {
+  width: 1.1rem;
+  font-size: 0.7rem;
 }
 
 .assignment-color-popover {
@@ -2373,18 +2384,42 @@ body[data-theme='dark'] .assignment-add-link-btn {
 }
 
 /* ----------------------------- Compact view ----------------------------- */
-/* Overrides the fuller card's own border/shadow/padding/radius (rather than
-   replacing the class entirely) so priority-color/done/highlighted states,
-   set via these same .task-card/.assessment-card classes, still apply
-   underneath - just without the padded card chrome. */
+/* Overrides the fuller card's own border/padding (rather than replacing the
+   class entirely) so priority-color/done/highlighted states, set via these
+   same .task-card/.assessment-card classes, still apply underneath - just
+   without the padded card chrome. The background/radius/shadow live here
+   (not on .compact-row) specifically so a task and its hover-revealed
+   subtasks read as one continuous box instead of separate stacked
+   rectangles - .compact-row and .compact-subtask-row below are transparent,
+   letting this one background show through both. */
 .task-card.compact,
 .assessment-card.compact {
-  background: transparent;
+  background: var(--card-bg);
   border: none;
   border-left: none;
-  border-radius: 0;
+  border-radius: 8px;
   box-shadow: none;
   padding: 0;
+  transition: box-shadow 0.15s ease;
+}
+
+.task-list .task-card.compact,
+.assessments-list .assessment-card.compact {
+  margin-bottom: 0.4rem;
+}
+
+/* Minimalistic hover feedback - a soft drop shadow, not a color change (see
+   the comment above about deliberately not re-adding a focus highlight) -
+   covers the whole card, including a hover-expanded subtask list, since
+   it's one shared box now rather than the row animating its own shadow. */
+.task-card.compact:hover,
+.assessment-card.compact:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+body[data-theme='dark'] .task-card.compact:hover,
+body[data-theme='dark'] .assessment-card.compact:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
 /* Compact rows deliberately don't get the full view's green click-to-focus
@@ -2416,25 +2451,7 @@ body[data-theme='dark'] .assignment-add-link-btn {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.65rem;
-  border-radius: 8px;
-  background: var(--card-bg);
-  box-shadow: none;
-  transition: box-shadow 0.15s ease;
-}
-
-.task-list .compact-row,
-.assessments-list .compact-row {
-  margin-bottom: 0.4rem;
-}
-
-/* Minimalistic hover feedback - a soft drop shadow, not a color change (see
-   the comment above about deliberately not re-adding a focus highlight). */
-.compact-row:hover {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-}
-
-body[data-theme='dark'] .compact-row:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  background: transparent;
 }
 
 .compact-header-row {
@@ -2585,22 +2602,20 @@ body[data-theme='dark'] .compact-row:hover {
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Subtasks are hidden until the row is hovered/focused (see
-   .task-card.compact:hover below) - compact mode shows only the parent
-   task by default, revealing its subtasks as a dropdown rather than
-   always taking up vertical space for every task that has any. */
+/* Subtasks mount/unmount on hover (see TaskCard's AnimatePresence, driven by
+   onMouseEnter/onMouseLeave on the card) rather than a CSS-only display
+   toggle, so the reveal is an actual animated height/opacity transition
+   instead of an instant snap. overflow: hidden here clips the content
+   during that transition; it isn't set on the whole card (which would also
+   clip the "⋮" menu's popover). */
 .compact-subtask-list {
-  display: none;
   list-style: none;
   margin: 0;
   padding: 0 0.3rem 0.4rem 2.2rem;
+  display: flex;
   flex-direction: column;
   gap: 0.3rem;
-}
-
-.task-card.compact:hover .compact-subtask-list,
-.task-card.compact:focus-within .compact-subtask-list {
-  display: flex;
+  overflow: hidden;
 }
 
 .compact-subtask-row {
@@ -2608,9 +2623,9 @@ body[data-theme='dark'] .compact-row:hover {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.82rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 6px;
-  background: var(--card-bg);
+  padding: 0.3rem 0.5rem 0.3rem 0;
+  background: transparent;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
 }
 
 .compact-subtask-title {

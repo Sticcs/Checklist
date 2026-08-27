@@ -60,12 +60,17 @@ const FONT_COLOR_PRESETS = [
   { label: 'Gray', value: '#7f8c8d' },
 ]
 
+// Semi-transparent (not solid) so whatever's underneath - the card
+// background, and critically the text itself - still shows through. A fully
+// opaque highlight behind dark mode's near-white default text color made
+// the text unreadable; blending with the existing background instead of
+// replacing it keeps the page's own contrast mostly intact.
 const HIGHLIGHT_COLOR_PRESETS = [
-  { label: 'Yellow', value: '#fff59d' },
-  { label: 'Green', value: '#b9f6ca' },
-  { label: 'Blue', value: '#b3e5fc' },
-  { label: 'Pink', value: '#f8bbd0' },
-  { label: 'Orange', value: '#ffe0b2' },
+  { label: 'Yellow', value: 'rgba(255, 235, 59, 0.45)' },
+  { label: 'Green', value: 'rgba(105, 240, 174, 0.45)' },
+  { label: 'Blue', value: 'rgba(100, 181, 246, 0.4)' },
+  { label: 'Pink', value: 'rgba(244, 143, 177, 0.4)' },
+  { label: 'Orange', value: 'rgba(255, 183, 77, 0.4)' },
 ]
 
 // Any inline style/attribute that could hardcode a color the current theme
@@ -223,6 +228,10 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
   }
 
   const [highlightPickerOpen, setHighlightPickerOpen] = useState(false)
+  // The main 🖍️ button applies this directly (no picker needed) - clicking
+  // a swatch in the dropdown both applies it and remembers it as the new
+  // one-click default, the same "highlighter" behavior Docs/Word use.
+  const [lastHighlightColor, setLastHighlightColor] = useState(HIGHLIGHT_COLOR_PRESETS[0].value)
 
   useEffect(() => {
     if (!highlightPickerOpen) return
@@ -244,6 +253,7 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
     sel.removeAllRanges()
     sel.addRange(range)
     document.execCommand('backColor', false, color)
+    setLastHighlightColor(color)
     setHighlightPickerOpen(false)
   }
 
@@ -520,11 +530,21 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
                 type="button"
                 className="toolbar-btn"
                 disabled={!hasSelection}
-                title={hasSelection ? 'Highlight color (applies to the highlighted text)' : 'Highlight text to add a highlight color'}
+                title={hasSelection ? 'Highlight (last used color)' : 'Highlight text to use this'}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => applyHighlightToSelection(lastHighlightColor)}
+              >
+                🖍️
+              </button>
+              <button
+                type="button"
+                className="toolbar-btn toolbar-caret-btn"
+                disabled={!hasSelection}
+                title="Choose highlight color"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setHighlightPickerOpen((open) => !open)}
               >
-                🖍️
+                ▾
               </button>
               {highlightPickerOpen && (
                 <div className="assignment-color-popover" data-focus-exempt>

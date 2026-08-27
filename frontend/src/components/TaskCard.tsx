@@ -65,6 +65,11 @@ export function TaskCard({
   const notesDirty = useRef(false)
 
   const [dueDatePickerSubtaskId, setDueDatePickerSubtaskId] = useState<number | null>(null)
+  // Drives the compact-view subtask dropdown's animated reveal (see the
+  // AnimatePresence around .compact-subtask-list below) - a plain CSS
+  // :hover toggle can't animate an instant display:none/flex swap, so this
+  // tracks hover as real state instead.
+  const [hovered, setHovered] = useState(false)
   const [compactMenuOpen, setCompactMenuOpen] = useState(false)
   const compactMenuRef = useRef<HTMLDivElement>(null)
 
@@ -453,24 +458,34 @@ export function TaskCard({
           it sits under (see the compact-view Sidebar toggle). Not shown
           while editing (the edit form only covers the task's own text/
           priority/category/date; switch back to the full view for deeper
-          subtask management). */}
-      {compact && !editing && task.subtasks.length > 0 && (
-        <ul className="compact-subtask-list">
-          {task.subtasks.map((s) => (
-            <li key={s.clientKey ?? s.id} className={s.done ? 'compact-subtask-row done' : 'compact-subtask-row'}>
-              <input
-                type="checkbox"
-                className="task-done-checkbox small"
-                checked={s.done}
-                title="Mark complete"
-                onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
-              />
-              <span className="compact-subtask-title">{s.text}</span>
-              <span className="compact-row-due">{s.due_date ?? ''}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+          subtask management). Mounts/unmounts on hover (see `hovered`)
+          rather than a plain CSS display toggle, so AnimatePresence can
+          actually animate the reveal instead of snapping it open/closed. */}
+      <AnimatePresence initial={false}>
+        {compact && !editing && hovered && task.subtasks.length > 0 && (
+          <motion.ul
+            className="compact-subtask-list"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+          >
+            {task.subtasks.map((s) => (
+              <li key={s.clientKey ?? s.id} className={s.done ? 'compact-subtask-row done' : 'compact-subtask-row'}>
+                <input
+                  type="checkbox"
+                  className="task-done-checkbox small"
+                  checked={s.done}
+                  title="Mark complete"
+                  onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                />
+                <span className="compact-subtask-title">{s.text}</span>
+                <span className="compact-row-due">{s.due_date ?? ''}</span>
+              </li>
+            ))}
+          </motion.ul>
+        )}
+      </AnimatePresence>
 
       {!compact && <div className="subtask-section">
         <button type="button" className="subtask-toggle-btn" onClick={toggleSubtasksOpen}>
@@ -649,6 +664,8 @@ export function TaskCard({
         data-priority={task.priority}
         className={className}
         onDragEnd={() => onDragEnd?.(task.id)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
         {content}
       </Reorder.Item>
@@ -662,6 +679,8 @@ export function TaskCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, overflow: 'hidden' }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       data-task-id={task.id}
       data-priority={task.priority}
       className={className}
