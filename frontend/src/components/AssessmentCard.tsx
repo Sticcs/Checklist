@@ -43,6 +43,20 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart, 
   // so the button should read "Continue" rather than "Start" over it.
   const hasStarted = Boolean(task.notes && task.notes.trim().length > 0)
 
+  const [compactMenuOpen, setCompactMenuOpen] = useState(false)
+  const compactMenuRef = useRef<HTMLDivElement>(null)
+
+  // Closes the compact-row's "⋮" menu on any click outside it - same pattern
+  // as the assignment workspace's color popover.
+  useEffect(() => {
+    if (!compactMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!compactMenuRef.current?.contains(e.target as Node)) setCompactMenuOpen(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [compactMenuOpen])
+
   const [justCompleted, setJustCompleted] = useState(false)
   const wasDone = useRef(task.done)
   useEffect(() => {
@@ -131,26 +145,51 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart, 
           >
             {task.urgent ? '★' : '☆'}
           </button>
-          <div className="compact-row-actions">
-            {focused && (
-              <button
-                type="button"
-                className="btn-start"
-                title={hasStarted ? 'Continue working on this assessment' : 'Start working on this assessment'}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onStart(task.id)
-                }}
-              >
-                {hasStarted ? '⏵' : '▶'}
-              </button>
+          <div className="compact-row-actions" ref={compactMenuRef}>
+            <button
+              type="button"
+              className="compact-menu-btn"
+              aria-expanded={compactMenuOpen}
+              title="More actions"
+              onClick={(e) => {
+                e.stopPropagation()
+                setCompactMenuOpen((open) => !open)
+              }}
+            >
+              ⋮
+            </button>
+            {compactMenuOpen && (
+              <div className="compact-menu-popover" data-focus-exempt>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setCompactMenuOpen(false)
+                    onStart(task.id)
+                  }}
+                >
+                  {hasStarted ? '⏵ Continue' : '▶ Start'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompactMenuOpen(false)
+                    startEditing()
+                  }}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompactMenuOpen(false)
+                    deleteTask.mutate(task.id)
+                  }}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
             )}
-            <button type="button" className="icon-btn" onClick={startEditing}>
-              ✏️
-            </button>
-            <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
-              🗑️
-            </button>
           </div>
         </div>
       ) : (

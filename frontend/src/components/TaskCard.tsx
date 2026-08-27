@@ -65,6 +65,19 @@ export function TaskCard({
   const notesDirty = useRef(false)
 
   const [dueDatePickerSubtaskId, setDueDatePickerSubtaskId] = useState<number | null>(null)
+  const [compactMenuOpen, setCompactMenuOpen] = useState(false)
+  const compactMenuRef = useRef<HTMLDivElement>(null)
+
+  // Closes the compact-row's "⋮" menu on any click outside it - same pattern
+  // as the assignment workspace's color popover.
+  useEffect(() => {
+    if (!compactMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!compactMenuRef.current?.contains(e.target as Node)) setCompactMenuOpen(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [compactMenuOpen])
 
   const { urgentWindowDays } = useSettings()
 
@@ -287,13 +300,38 @@ export function TaskCard({
           >
             {task.pinned ? '★' : '☆'}
           </button>
-          <div className="compact-row-actions">
-            <button type="button" className="icon-btn" onClick={startEditing}>
-              ✏️
+          <div className="compact-row-actions" ref={compactMenuRef}>
+            <button
+              type="button"
+              className="compact-menu-btn"
+              aria-expanded={compactMenuOpen}
+              title="More actions"
+              onClick={() => setCompactMenuOpen((open) => !open)}
+            >
+              ⋮
             </button>
-            <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
-              🗑️
-            </button>
+            {compactMenuOpen && (
+              <div className="compact-menu-popover" data-focus-exempt>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompactMenuOpen(false)
+                    startEditing()
+                  }}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompactMenuOpen(false)
+                    deleteTask.mutate(task.id)
+                  }}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : (

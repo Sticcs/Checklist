@@ -2465,18 +2465,27 @@ body[data-theme='dark'] .compact-row:hover {
   opacity: 0.6;
 }
 
+/* Same reasoning as the header's Importance/star cell above - reset back to
+   the header's own plain 0.78rem instead of the data row's larger 0.92rem
+   title font, so every header label reads at one consistent size. */
+.compact-header-row .compact-row-title {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* Due/Importance are fixed-width columns (not content-sized) specifically
+   so the header label and the actual row's icon/value land at the exact
+   same x position - matching widths is what "aligns" them, not a shared
+   text-align alone. */
 .compact-row-due {
-  flex: 0 1 6rem;
+  flex: 0 0 6rem;
   min-width: 0;
   font-size: 0.78rem;
   opacity: 0.75;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.compact-header-row .compact-row-due {
-  flex-basis: 6rem;
 }
 
 .compact-header-checkbox-spacer {
@@ -2484,20 +2493,9 @@ body[data-theme='dark'] .compact-row:hover {
   width: 1.3rem;
 }
 
-/* "Importance" is wider than the actual star glyph beneath it - let the
-   header label take whatever width it needs instead of the row's fixed
-   1.8rem star column, so the word isn't clipped. */
-.compact-header-row .compact-star-btn {
-  width: auto;
-  flex: 0 0 auto;
-  white-space: nowrap;
-  color: inherit;
-  cursor: default;
-}
-
 .compact-star-btn {
-  flex: 0 0 auto;
-  width: 1.8rem;
+  flex: 0 0 5.5rem;
+  text-align: left;
   background: none;
   border: none;
   padding: 0;
@@ -2505,40 +2503,104 @@ body[data-theme='dark'] .compact-row:hover {
   line-height: 1;
   color: var(--text-secondary);
   cursor: pointer;
-  text-align: center;
 }
 
 .compact-star-btn.pinned {
   color: #f1c40f;
 }
 
+/* The header's "Importance" label reuses the same fixed-width column (see
+   above) - reset the font/color/cursor back to the plain header look
+   rather than the star icon's own styling, which is what made the header
+   row's text sizes inconsistent (Title/Due Date at the header's own
+   0.78rem, but "Importance" jumping up to the star's 1.15rem). */
+.compact-header-row .compact-star-btn {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  cursor: default;
+}
+
+/* A single "⋮" menu trigger instead of separate always-reserved edit/
+   delete (previously hover-revealed) buttons - fixed width, so it aligns
+   consistently with the header's own trailing spacer and no longer shifts
+   the star/Importance column next to it depending on how many action
+   buttons a given row happened to have. */
 .compact-row-actions {
-  flex: 0 0 auto;
+  position: relative;
+  flex: 0 0 1.8rem;
   display: flex;
   align-items: center;
-  gap: 0.2rem;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  justify-content: center;
 }
 
-.compact-row:hover .compact-row-actions,
-.compact-row:focus-within .compact-row-actions {
-  opacity: 1;
+.compact-menu-btn {
+  width: 1.8rem;
+  height: 1.8rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
 }
 
-.compact-row-actions .btn-start {
-  padding: 0.2rem 0.4rem;
-  font-size: 0.75rem;
-  flex-shrink: 0;
+.compact-menu-btn:hover {
+  background: rgba(128, 128, 128, 0.15);
 }
 
+.compact-menu-popover {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 8rem;
+  padding: 0.3rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.compact-menu-popover button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.compact-menu-popover button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+/* Subtasks are hidden until the row is hovered/focused (see
+   .task-card.compact:hover below) - compact mode shows only the parent
+   task by default, revealing its subtasks as a dropdown rather than
+   always taking up vertical space for every task that has any. */
 .compact-subtask-list {
+  display: none;
   list-style: none;
   margin: 0;
   padding: 0 0.3rem 0.4rem 2.2rem;
-  display: flex;
   flex-direction: column;
   gap: 0.3rem;
+}
+
+.task-card.compact:hover .compact-subtask-list,
+.task-card.compact:focus-within .compact-subtask-list {
+  display: flex;
 }
 
 .compact-subtask-row {

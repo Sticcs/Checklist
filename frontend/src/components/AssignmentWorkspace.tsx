@@ -60,6 +60,14 @@ const FONT_COLOR_PRESETS = [
   { label: 'Gray', value: '#7f8c8d' },
 ]
 
+const HIGHLIGHT_COLOR_PRESETS = [
+  { label: 'Yellow', value: '#fff59d' },
+  { label: 'Green', value: '#b9f6ca' },
+  { label: 'Blue', value: '#b3e5fc' },
+  { label: 'Pink', value: '#f8bbd0' },
+  { label: 'Orange', value: '#ffe0b2' },
+]
+
 // Any inline style/attribute that could hardcode a color the current theme
 // can't override - pasted content (e.g. from Word or a webpage) routinely
 // carries an explicit black (or otherwise theme-clashing) text color, which
@@ -212,6 +220,43 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
     sel.addRange(range)
     applyForeColor(color)
     setColorPickerOpen(false)
+  }
+
+  const [highlightPickerOpen, setHighlightPickerOpen] = useState(false)
+
+  useEffect(() => {
+    if (!highlightPickerOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.assignment-toolbar-highlight')) setHighlightPickerOpen(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [highlightPickerOpen])
+
+  // backColor (not the Firefox-only hiliteColor) - same execCommand family
+  // as fontSize/foreColor above, universally supported here too.
+  const applyHighlightToSelection = (color: string) => {
+    const el = notesField.ref.current
+    const range = savedRangeRef.current
+    const sel = window.getSelection()
+    if (!el || !range || !sel) return
+    el.focus()
+    sel.removeAllRanges()
+    sel.addRange(range)
+    document.execCommand('backColor', false, color)
+    setHighlightPickerOpen(false)
+  }
+
+  // The browser's own contentEditable undo/redo history - already tracks
+  // every typed keystroke and execCommand-driven change (bold, font size,
+  // color, paste...) with no extra bookkeeping needed here.
+  const undoEdit = () => {
+    notesField.ref.current?.focus()
+    document.execCommand('undo')
+  }
+  const redoEdit = () => {
+    notesField.ref.current?.focus()
+    document.execCommand('redo')
   }
 
   // Ctrl/Cmd+Shift+V: reads the clipboard directly (a custom shortcut like
@@ -416,6 +461,29 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
             between separately-styled buttons. */}
         <div className="assignment-toolbar" data-focus-exempt>
           <div className="assignment-toolbar-group">
+            <button
+              type="button"
+              className="toolbar-btn"
+              title="Undo (Ctrl/Cmd+Z)"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={undoEdit}
+            >
+              ↩️
+            </button>
+            <button
+              type="button"
+              className="toolbar-btn"
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={redoEdit}
+            >
+              ↪️
+            </button>
+          </div>
+
+          <span className="assignment-toolbar-divider" />
+
+          <div className="assignment-toolbar-group">
             {FORMAT_BUTTONS.map(({ kind, title, glyph }) => (
               <button
                 key={kind}
@@ -447,6 +515,42 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
             >
               ☰•
             </button>
+            <div className="assignment-toolbar-highlight">
+              <button
+                type="button"
+                className="toolbar-btn"
+                disabled={!hasSelection}
+                title={hasSelection ? 'Highlight color (applies to the highlighted text)' : 'Highlight text to add a highlight color'}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setHighlightPickerOpen((open) => !open)}
+              >
+                🖍️
+              </button>
+              {highlightPickerOpen && (
+                <div className="assignment-color-popover" data-focus-exempt>
+                  <button
+                    type="button"
+                    className="assignment-color-swatch default"
+                    title="No highlight"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applyHighlightToSelection('transparent')}
+                  >
+                    ✕
+                  </button>
+                  {HIGHLIGHT_COLOR_PRESETS.map(({ label, value }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className="assignment-color-swatch"
+                      style={{ background: value }}
+                      title={label}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applyHighlightToSelection(value)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="assignment-toolbar-color">
               <button
                 type="button"
