@@ -9,6 +9,7 @@ interface Props {
   selectedAssessmentId: number | null
   highlightedAssessmentIds: Set<number>
   onStart: (taskId: number) => void
+  onShowParentTask: (taskId: number) => void
   compact?: boolean
 }
 
@@ -19,6 +20,7 @@ export function AssessmentsPanel({
   selectedAssessmentId,
   highlightedAssessmentIds,
   onStart,
+  onShowParentTask,
   compact = false,
 }: Props) {
   return (
@@ -56,6 +58,7 @@ export function AssessmentsPanel({
               todayIso={todayIso}
               highlighted={highlightedAssessmentIds.has(task.id)}
               onStart={onStart}
+              onShowParentTask={onShowParentTask}
               compact={compact}
             />
           ))}

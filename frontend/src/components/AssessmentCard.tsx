@@ -17,6 +17,11 @@ interface Props {
   todayIso: string
   highlighted: boolean
   onStart: (taskId: number) => void
+  // Only ever called when task.assigned_task_id is non-null (see the 🔗
+  // button below, which only renders in that case) - jumps back to the main
+  // list and highlights/scrolls to that parent task (see TaskListPage's
+  // highlightParentTask).
+  onShowParentTask: (taskId: number) => void
   compact?: boolean
 }
 
@@ -25,7 +30,15 @@ interface Props {
 // undo/redo, and Clear completed all just work), but no subtasks, no
 // pinning, and a much smaller footprint - text, due date, priority color,
 // urgent toggle, edit, delete.
-export function AssessmentCard({ task, focused, todayIso, highlighted, onStart, compact = false }: Props) {
+export function AssessmentCard({
+  task,
+  focused,
+  todayIso,
+  highlighted,
+  onStart,
+  onShowParentTask,
+  compact = false,
+}: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [editPriority, setEditPriority] = useState(task.priority)
@@ -170,6 +183,18 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart, 
                 >
                   {hasStarted ? '⏵ Continue' : '▶ Start'}
                 </button>
+                {task.assigned_task_id !== null && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setCompactMenuOpen(false)
+                      onShowParentTask(task.assigned_task_id!)
+                    }}
+                  >
+                    🔗 Show parent task
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -241,6 +266,19 @@ export function AssessmentCard({ task, focused, todayIso, highlighted, onStart, 
                 }}
               >
                 {hasStarted ? '⏵ Continue' : '▶ Start'}
+              </button>
+            )}
+            {task.assigned_task_id !== null && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Show the task this is assigned under"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onShowParentTask(task.assigned_task_id!)
+                }}
+              >
+                🔗
               </button>
             )}
             <button

@@ -1394,6 +1394,15 @@ body[data-theme='dark'] .task-card.done {
   animation: focus-flash 0.6s ease-out 1;
 }
 
+/* Same treatment as .assessment-card.highlighted (see its own rule for the
+   keyframe) - the reverse direction, jumping from an assessment's 🔗 button
+   back to the plain task it's assigned under. */
+.task-card.highlighted {
+  border-color: rgba(243, 156, 18, 0.7) !important;
+  box-shadow: 0 0 0 2px rgba(243, 156, 18, 0.35) !important;
+  animation: assignment-highlight-flash 1.6s ease-in-out 1;
+}
+
 @keyframes complete-glow {
   0% {
     box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.9);
@@ -2368,11 +2377,60 @@ body[data-theme='dark'] .assignment-add-link-btn {
   .assignment-links-panel {
     width: 100%;
   }
+
+  .assignment-body-row {
+    flex-direction: column;
+  }
+
+  .assignment-tasks-column {
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: 40vh;
+  }
+}
+
+.assignment-top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.assignment-finish-btn {
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(46, 204, 113, 0.5);
+  background: rgba(46, 204, 113, 0.15);
+  color: var(--text-primary);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.assignment-finish-btn:hover {
+  background: rgba(46, 204, 113, 0.28);
+}
+
+.assignment-finish-btn.done {
+  background: rgba(46, 204, 113, 0.9);
+  color: white;
+  border-color: rgba(46, 204, 113, 0.9);
+}
+
+/* The textbox and the task panel beside it (see .assignment-tasks-column) -
+   the task panel is a fixed narrow column, the textbox takes whatever's
+   left, so it still ends up using most of the page width. */
+.assignment-body-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .assignment-workspace-textbox {
   flex: 1;
-  width: 100%;
+  min-width: 0;
   min-height: 50vh;
   border-radius: 24px;
   padding: 1.75rem 2rem;
@@ -2381,6 +2439,91 @@ body[data-theme='dark'] .assignment-add-link-btn {
   border: 1px solid rgba(128, 128, 128, 0.2);
   font-size: 1.05rem;
   line-height: 1.6;
+}
+
+/* ----------------------------- Assignment tasks panel ----------------------------- */
+/* A small, deliberately bare-bones task list scoped to one assignment - see
+   AssignmentWorkspace. Sits to the left of the textbox; the "compact mode"
+   look the request asked for is approximated with the same small font/row
+   padding as .compact-subtask-row rather than reusing that class directly,
+   since these rows never carry a due date/star/menu the way a real
+   subtask's compact row can. */
+.assignment-tasks-column {
+  flex: 0 0 clamp(180px, 20vw, 260px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 0.75rem;
+  box-sizing: border-box;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+}
+
+.assignment-task-add-form input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.assignment-tasks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.assignment-task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  overflow: hidden;
+}
+
+.assignment-tasks-list li:first-child {
+  border-top: none;
+}
+
+.assignment-task-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.assignment-task-row.done .assignment-task-text {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.assignment-task-delete-btn {
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.assignment-task-row:hover .assignment-task-delete-btn {
+  opacity: 0.7;
+}
+
+.assignment-task-delete-btn:hover {
+  opacity: 1 !important;
+  background: rgba(231, 76, 60, 0.2);
 }
 
 /* ----------------------------- Compact view ----------------------------- */
@@ -2432,6 +2575,16 @@ body[data-theme='dark'] .assessment-card.compact:hover {
   border-color: transparent !important;
   box-shadow: none !important;
   animation: none;
+}
+
+/* .highlighted needs the same compact-mode override as .focused just
+   above - compact rows have no visible border to color (border: none on
+   the card itself), so the highlight has to show as a box-shadow ring
+   instead, same as compact's own hover feedback does. */
+.task-card.compact.highlighted,
+.assessment-card.compact.highlighted {
+  box-shadow: 0 0 0 2px rgba(243, 156, 18, 0.5) !important;
+  animation: assignment-highlight-flash 1.6s ease-in-out 1;
 }
 
 /* Every list/panel a compact row can sit in needs overflow-x left alone -

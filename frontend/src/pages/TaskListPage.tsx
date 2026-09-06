@@ -131,6 +131,27 @@ export function TaskListPage() {
     window.setTimeout(() => setHighlightedAssessmentIds(new Set()), 2000)
   }
 
+  // The reverse direction (the 🔗 button on an assessment, in
+  // AssessmentCard/AssignmentWorkspace) - highlights the one main task it's
+  // assigned under. delayMs gives the exit/enter transition between the
+  // workspace and the main view (see handleShowParentFromWorkspace below)
+  // time to actually mount the target task's DOM node before scrolling to
+  // it; called with no delay from the Assessments panel, where it's already
+  // on-screen.
+  const [highlightedMainTaskIds, setHighlightedMainTaskIds] = useState<Set<number>>(new Set())
+  const highlightParentTask = (mainTaskId: number, delayMs = 0) => {
+    setHighlightedMainTaskIds(new Set([mainTaskId]))
+    window.setTimeout(() => {
+      document.querySelector(`[data-task-id="${mainTaskId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, delayMs)
+    window.setTimeout(() => setHighlightedMainTaskIds(new Set()), delayMs + 2000)
+  }
+
+  const handleShowParentFromWorkspace = (mainTaskId: number) => {
+    setActiveAssignmentId(null)
+    highlightParentTask(mainTaskId, 400)
+  }
+
   // A category that disappears (e.g. after Clear all) shouldn't leave a
   // stale, invalid filter selection sitting around; and a category seen for
   // the first time shouldn't hide the task that just introduced it.
@@ -300,6 +321,7 @@ export function TaskListPage() {
           key="workspace"
           task={activeAssignmentTask}
           onBack={() => setActiveAssignmentId(null)}
+          onShowParentTask={handleShowParentFromWorkspace}
         />
       ) : (
         <motion.div
@@ -387,6 +409,7 @@ export function TaskListPage() {
             selectedAssessmentId={selectedAssessmentId}
             highlightedAssessmentIds={highlightedAssessmentIds}
             onStart={handleStartAssignment}
+            onShowParentTask={highlightParentTask}
             compact={compactView}
           />
         </div>
@@ -446,6 +469,7 @@ export function TaskListPage() {
                     assignedCount={assignedCounts.get(task.id) ?? 0}
                     onShowAssignments={highlightAssignments}
                     compact={compactView}
+                    highlighted={highlightedMainTaskIds.has(task.id)}
                   />
                 ))}
               </AnimatePresence>
@@ -466,6 +490,7 @@ export function TaskListPage() {
                     assignedCount={assignedCounts.get(task.id) ?? 0}
                     onShowAssignments={highlightAssignments}
                     compact={compactView}
+                    highlighted={highlightedMainTaskIds.has(task.id)}
                   />
                 ))}
               </AnimatePresence>

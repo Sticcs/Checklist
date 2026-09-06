@@ -2,13 +2,20 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { Task } from '../types'
-import { useSetTaskLinks, useSetTaskNotes } from '../hooks/useTasks'
+import { useSetTaskLinks, useSetTaskNotes, useToggleDone } from '../hooks/useTasks'
+import { useAddSubtask, useDeleteSubtask, useToggleSubtask } from '../hooks/useSubtasks'
 import { useFormattableEditable, useFormattingContext, type FormatKind } from '../context/FormattingContext'
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
+
+const NEW_DOC_URL = 'https://docs.google.com/document/u/0/create?usp=docs_home&ths=true'
 
 interface Props {
   task: Task
   onBack: () => void
+  // Only ever called when task.assigned_task_id is non-null - closes the
+  // workspace and highlights/scrolls to that parent task back in the main
+  // list (see TaskListPage's highlightParentTask).
+  onShowParentTask: (taskId: number) => void
 }
 
 // A due date is a plain yyyy-mm-dd (no time of day) - the countdown treats
@@ -103,7 +110,7 @@ function stripForcedColors(html: string): string {
 // or scratchpad), the same way AuthPage replaces TaskListPage wholesale (see
 // App.tsx). Mounted/unmounted by TaskListPage, which also owns the
 // AnimatePresence + slide transition around it.
-export function AssignmentWorkspace({ task, onBack }: Props) {
+export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     const handle = setInterval(() => setNow(new Date()), 1000)
@@ -114,6 +121,24 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
   const dirty = useRef(false)
   const setTaskNotes = useSetTaskNotes()
   const setTaskLinks = useSetTaskLinks()
+  const toggleDone = useToggleDone()
+  const addSubtask = useAddSubtask()
+  const toggleSubtask = useToggleSubtask()
+  const deleteSubtask = useDeleteSubtask()
+
+  // A separate, deliberately bare-bones task list scoped to this one
+  // assignment - reuses the exact same subtask entity/mutations as a normal
+  // task's subtask panel (TaskCard), just with a much smaller UI: no due
+  // dates, priority, or notes, only text + done. Typing in the box above
+  // and pressing Enter is the entire add flow, no multi-step wizard.
+  const [newTaskText, setNewTaskText] = useState('')
+  const submitTask = (e: React.FormEvent) => {
+    e.preventDefault()
+    const text = newTaskText.trim()
+    if (!text) return
+    setNewTaskText('')
+    addSubtask.mutate({ taskId: task.id, text })
+  }
 
   const onChange = (value: string) => {
     dirty.current = true
@@ -368,6 +393,12 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
   // so this never needs its own state to stay in sync.
   const isSaving = dirty.current || setTaskNotes.isPending
 
+  const toggleFinished = () => {
+    const next = !task.done
+    toggleDone.mutate({ id: task.id, done: next })
+    toast(next ? '✅ Marked as finished' : '↩️ Marked as not finished')
+  }
+
   return (
     <motion.div
       className="assignment-workspace"
@@ -392,6 +423,28 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
       </button>
 
       <div className="assignment-workspace-main">
+        <div className="assignment-top-actions">
+          <div>
+            {task.assigned_task_id !== null && (
+              <button
+                type="button"
+                className="assignment-add-link-btn"
+                title="Show the task this is assigned under"
+                onClick={() => onShowParentTask(task.assigned_task_id!)}
+              >
+                🔗 Assigned under a task
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            className={task.done ? 'assignment-finish-btn done' : 'assignment-finish-btn'}
+            onClick={toggleFinished}
+          >
+            {task.done ? '✅ Finished' : '✅ Mark as Finished'}
+          </button>
+        </div>
+
         <div className="assignment-workspace-header-row">
           <div className="assignment-workspace-header">
             <h1 className="assignment-workspace-title">{task.text}</h1>
@@ -675,21 +728,79 @@ export function AssignmentWorkspace({ task, onBack }: Props) {
             >
               📋
             </button>
+            <a
+              href={NEW_DOC_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="assignment-add-link-btn"
+              title="Open a blank Google Doc in a new tab"
+            >
+              📄 Create new doc
+            </a>
           </div>
         </div>
 
-        <div
-          ref={notesField.ref}
-          className="assignment-workspace-textbox rich-text-input"
-          contentEditable
-          suppressContentEditableWarning
-          data-placeholder="Start writing..."
-          onInput={notesField.onInput}
-          onFocus={notesField.onFocus}
-          onBlur={notesField.onBlur}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-        />
+        <div className="assignment-body-row">
+          {/* A deliberately minimal task list scoped to this one assignment
+              (see the state/handler above) - typing in the box and pressing
+              Enter is the whole add flow, and each row is just a checkbox
+              and its text, nothing else. */}
+          <div className="assignment-tasks-column" data-focus-exempt>
+            <form className="assignment-task-add-form" onSubmit={submitTask}>
+              <input
+                placeholder="Add a task..."
+                value={newTaskText}
+                onChange={(e) => setNewTaskText(e.target.value)}
+              />
+            </form>
+            <ul className="assignment-tasks-list">
+              <AnimatePresence>
+                {task.subtasks.map((s) => (
+                  <motion.li
+                    key={s.clientKey ?? s.id}
+                    layout
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className={s.done ? 'assignment-task-row done' : 'assignment-task-row'}
+                  >
+                    <input
+                      type="checkbox"
+                      className="task-done-checkbox small"
+                      checked={s.done}
+                      title="Mark complete"
+                      onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                    />
+                    <span className="assignment-task-text">{s.text}</span>
+                    <button
+                      type="button"
+                      className="assignment-task-delete-btn"
+                      title="Delete"
+                      onClick={() => deleteSubtask.mutate(s.id)}
+                    >
+                      ✕
+                    </button>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+            {task.subtasks.length === 0 && <p className="status-message">No tasks yet.</p>}
+          </div>
+
+          <div
+            ref={notesField.ref}
+            className="assignment-workspace-textbox rich-text-input"
+            contentEditable
+            suppressContentEditableWarning
+            data-placeholder="Start writing..."
+            onInput={notesField.onInput}
+            onFocus={notesField.onFocus}
+            onBlur={notesField.onBlur}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+          />
+        </div>
       </div>
     </motion.div>
   )

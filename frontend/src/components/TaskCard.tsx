@@ -35,6 +35,7 @@ interface Props {
   assignedCount?: number
   onShowAssignments?: (taskId: number) => void
   compact?: boolean
+  highlighted?: boolean
 }
 
 export function TaskCard({
@@ -50,6 +51,7 @@ export function TaskCard({
   assignedCount = 0,
   onShowAssignments,
   compact = false,
+  highlighted = false,
 }: Props) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
@@ -647,7 +649,7 @@ export function TaskCard({
     </>
   )
 
-  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}${compact ? ' compact' : ''}`
+  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}${compact ? ' compact' : ''}${highlighted ? ' highlighted' : ''}`
 
   if (draggable) {
     return (
