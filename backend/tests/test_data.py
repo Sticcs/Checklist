@@ -26,7 +26,7 @@ def test_export_includes_task_and_subtask_fields(guest_client):
     # import), but nothing else database-internal.
     assert set(exported.keys()) == {
         "id", "text", "priority", "category", "due_date", "done", "pinned", "urgent", "notes",
-        "assigned_task_id", "in_progress", "links", "subtasks",
+        "assigned_task_id", "in_progress", "links", "pages", "subtasks",
     }
     assert exported["text"] == "Plan trip"
     assert exported["pinned"] is True

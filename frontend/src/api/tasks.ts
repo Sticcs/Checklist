@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { MarkAllCompletedResponse, ClearResponse, LinkItem, Task, TasksResponse } from '../types'
+import type { MarkAllCompletedResponse, ClearResponse, LinkItem, Task, TasksResponse, WorkspacePage } from '../types'
 
 export const tasksApi = {
   list: () => api.get<TasksResponse>('/tasks'),
@@ -15,6 +15,7 @@ export const tasksApi = {
   setInProgress: (id: number, in_progress: boolean) =>
     api.patch<Task>(`/tasks/${id}/in-progress`, { in_progress }),
   setLinks: (id: number, links: LinkItem[]) => api.patch<Task>(`/tasks/${id}/links`, { links }),
+  setPages: (id: number, pages: WorkspacePage[]) => api.patch<Task>(`/tasks/${id}/pages`, { pages }),
   setDueDate: (id: number, due_date: string | null) => api.patch<Task>(`/tasks/${id}/due-date`, { due_date }),
   assign: (id: number, assigned_task_id: number | null) =>
     api.patch<Task>(`/tasks/${id}/assign`, { assigned_task_id }),

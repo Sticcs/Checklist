@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS } from '../constants'
+import { CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '../constants'
 import { computeDueDate, DUE_PRESET_ORDER, type DuePreset } from '../utils/dueDatePresets'
 import { isTypingElement } from '../utils/isTypingElement'
 import { useAddTask } from '../hooks/useTasks'
@@ -14,6 +14,12 @@ const DUE_KEYS: Record<DuePreset, string> = {
   Custom: '5',
   'No date': '6',
 }
+
+// How long a picked button stays visibly green before its row swaps to the
+// next step - see selectWithFlash below.
+const FLASH_MS = 320
+
+type Step = 'category' | 'priority' | 'due' | 'confirm'
 
 interface Props {
   onAdded?: (taskId: number) => void
@@ -29,14 +35,17 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
   const [duePreset, setDuePreset] = useState<DuePreset | null>(null)
   const [customDueDate, setCustomDueDate] = useState('')
 
+  // Which button row the overlay is currently showing - deliberately a
+  // separate piece of state from category/priority/duePreset above (rather
+  // than deriving "which row is visible" from whichever of those is still
+  // null, the way this form used to work), so a just-picked value can
+  // finish its green flash (see flashValue) while the row underneath it
+  // hasn't swapped to the next step yet.
+  const [step, setStep] = useState<Step>('category')
+  const [flashValue, setFlashValue] = useState<string | null>(null)
+
   const addTask = useAddTask()
   const customCategoryRef = useRef<HTMLInputElement>(null)
-
-  const categoryVisible = textLocked
-  const priorityVisible = textLocked && category !== null
-  const dueVisible = textLocked && category !== null && priority !== null
-  const dueReady = duePreset !== null && (duePreset !== 'Custom' || customDueDate !== '')
-  const addVisible = textLocked && category !== null && priority !== null && dueReady
 
   useEffect(() => {
     if (category === 'Custom') customCategoryRef.current?.focus()
@@ -79,6 +88,15 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     setPriority(null)
     setDuePreset(null)
     setCustomDueDate('')
+    setStep('category')
+    setFlashValue(null)
+  }
+
+  const lockText = () => {
+    if (text.trim() === '') return
+    setTextLocked(true)
+    setStep('category')
+    ;(document.activeElement as HTMLElement | null)?.blur()
   }
 
   // Accepts an optional freshly-typed custom date so Enter-to-submit inside
@@ -91,10 +109,10 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     if (duePreset === 'Custom' && effectiveCustomDate === '') return
     const finalCategory = category === 'Custom' ? customCategory.trim() || 'General' : category
     const dueDate = computeDueDate(duePreset, effectiveCustomDate || null)
-    // Collapse the option rows immediately - the mutation is optimistic, so
-    // the task itself already appears in the list right away too. Waiting
-    // for the server round trip here just left the buttons sitting on
-    // screen for however long the request took, with nothing left to do.
+    // Collapse the overlay immediately - the mutation is optimistic, so the
+    // task itself already appears in the list right away too. Waiting for
+    // the server round trip here just left the buttons sitting on screen
+    // for however long the request took, with nothing left to do.
     resetAll()
     addTask.mutate(
       { text: text.trim(), priority, category: finalCategory, dueDate },
@@ -104,61 +122,123 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     )
   }
 
+  // The one place a picked value actually commits - holds the row on screen
+  // (with `value` shown green) for FLASH_MS before advancing `step` and
+  // clearing the flash, so the "briefly goes green, then the whole row
+  // transitions to the next set" beat is visible instead of an instant swap.
+  const selectWithFlash = (value: string, commit: () => void) => {
+    setFlashValue(value)
+    window.setTimeout(() => {
+      commit()
+      setFlashValue(null)
+    }, FLASH_MS)
+  }
+
+  const pickCategory = (cat: string) => {
+    if (cat === 'Custom') {
+      setCategory('Custom')
+      return
+    }
+    selectWithFlash(cat, () => {
+      setCategory(cat)
+      if (cat === SHOPPING_CATEGORY) {
+        // Shopping skips straight to confirm - no priority/due to ask for.
+        setPriority('Medium')
+        setDuePreset('No date')
+        setStep('confirm')
+      } else {
+        setStep('priority')
+      }
+    })
+  }
+
+  const commitCustomCategory = () => {
+    if (customCategory.trim() === '') return
+    selectWithFlash('Custom', () => setStep('priority'))
+  }
+
+  const pickPriority = (pri: string) => {
+    selectWithFlash(pri, () => {
+      setPriority(pri)
+      setStep('due')
+    })
+  }
+
+  const pickDue = (preset: DuePreset) => {
+    if (preset === 'Custom') {
+      setDuePreset('Custom')
+      return
+    }
+    selectWithFlash(preset, () => {
+      setDuePreset(preset)
+      setStep('confirm')
+    })
+  }
+
+  const commitCustomDue = (dateStr: string) => {
+    if (dateStr === '') return
+    setCustomDueDate(dateStr)
+    selectWithFlash('Custom', () => setStep('confirm'))
+  }
+
   const handleTextChange = (value: string) => {
     setText(value)
-    if (value.trim() === '') {
-      setTextLocked(false)
-      setCategory(null)
-      setPriority(null)
-      setDuePreset(null)
-    }
+    if (value.trim() === '') resetAll()
   }
 
   const handleTextKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter' || text.trim() === '') return
     e.preventDefault()
-    if (!textLocked) {
-      setTextLocked(true)
-      e.currentTarget.blur()
-    } else if (addVisible) {
-      submit()
-    }
+    if (!textLocked) lockText()
   }
 
-  // Hotkeys only engage once the text is locked (the progressive disclosure
-  // flow has actually started) and focus isn't inside a text input - so
-  // there's no "first keystroke eaten by a hotkey" clash to work around the
-  // way the Streamlit version needed: before locking, keystrokes just go to
-  // the plain text input like any normal page.
+  const cancelOverlay = () => {
+    setText('')
+    resetAll()
+  }
+
+  // Hotkeys only engage once the overlay is open, mapped to whichever step
+  // is currently visible (matches the button row actually on screen) - and
+  // focus isn't inside a text input, so there's no "first keystroke eaten
+  // by a hotkey" clash to work around the way the Streamlit version needed.
   useEffect(() => {
     if (!textLocked) return
 
     const handler = (e: KeyboardEvent) => {
       if (isTypingElement(document.activeElement)) return
 
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        cancelOverlay()
+        return
+      }
+
       const key = e.key.toLowerCase()
-      for (const [cat, hotkey] of Object.entries(CAT_KEYS)) {
-        if (hotkey && hotkey.toLowerCase() === key) {
-          e.preventDefault()
-          setCategory(cat)
-          return
+      if (step === 'category') {
+        for (const [cat, hotkey] of Object.entries(CAT_KEYS)) {
+          if (hotkey && hotkey.toLowerCase() === key) {
+            e.preventDefault()
+            pickCategory(cat)
+            return
+          }
         }
-      }
-      for (const [pri, hotkey] of Object.entries(PRI_KEYS)) {
-        if (hotkey.toLowerCase() === key) {
-          e.preventDefault()
-          setPriority(pri)
-          return
+      } else if (step === 'priority') {
+        for (const [pri, hotkey] of Object.entries(PRI_KEYS)) {
+          if (hotkey.toLowerCase() === key) {
+            e.preventDefault()
+            pickPriority(pri)
+            return
+          }
         }
-      }
-      for (const [preset, hotkey] of Object.entries(DUE_KEYS)) {
-        if (hotkey === key) {
-          e.preventDefault()
-          setDuePreset(preset as DuePreset)
-          return
+      } else if (step === 'due') {
+        for (const [preset, hotkey] of Object.entries(DUE_KEYS)) {
+          if (hotkey === key) {
+            e.preventDefault()
+            pickDue(preset as DuePreset)
+            return
+          }
         }
-      }
-      if (e.key === 'Enter' && addVisible) {
+      } else if (step === 'confirm' && e.key === 'Enter') {
         e.preventDefault()
         submit()
       }
@@ -167,141 +247,175 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textLocked, addVisible, category, priority, duePreset, customDueDate, text])
+  }, [textLocked, step, category, priority, duePreset, customDueDate, customCategory, text])
 
-  // A single running hint under the input: onboarding copy while it's empty,
-  // then one instruction per progressive-disclosure step as the flow
-  // advances - so there's always exactly one thing telling the user what to
-  // do next.
   const hint = (() => {
     if (text.trim() === '' && !textLocked) {
       // Only makes sense before there's anything in the list yet - once a
       // task exists it isn't the user's "first" task anymore, and an empty
       // box doesn't need a prompt at all.
       if (hasTasks) return null
-      return { text: 'Start typing to enter your first task.', tone: 'onboarding' }
+      return 'Start typing to enter your first task.'
     }
-    if (!textLocked) return { text: 'Press Enter to lock in your text.', tone: 'step' }
-    if (category === null) return { text: 'Select a category.', tone: 'step' }
-    if (priority === null) return { text: 'Select a priority.', tone: 'step' }
-    if (!dueReady) return { text: 'Select a due date.', tone: 'step' }
-    return { text: 'Click "Add task" to finish.', tone: 'step' }
+    if (!textLocked) return 'Press Enter (or the green button) to continue.'
+    return null
   })()
 
   const sectionMotion = {
-    initial: { opacity: 0, height: 0 },
-    animate: { opacity: 1, height: 'auto' },
-    exit: { opacity: 0, height: 0 },
-    transition: { duration: 0.25, ease: 'easeOut' as const },
+    initial: { opacity: 0, y: 16 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: 16 },
+    transition: { duration: 0.2, ease: 'easeOut' as const },
+  }
+
+  const categoryGlowClass = (cat: string): string => {
+    if (cat === 'Assessment') return 'btn-option btn-option-glow-red'
+    if (cat === SHOPPING_CATEGORY) return 'btn-option btn-option-glow-blue'
+    return 'btn-option'
+  }
+
+  const optionClass = (stepName: Step, value: string, selected: boolean, baseClass: string): string => {
+    if (step === stepName && flashValue === value) return `${baseClass} flashing-green`
+    return selected ? `${baseClass} btn-primary` : baseClass
   }
 
   return (
     <div className="add-task-form">
-      <input
-        className="task-text-input"
-        placeholder="E.g., Review Big O time complexity"
-        value={text}
-        onChange={(e) => handleTextChange(e.target.value)}
-        onKeyDown={handleTextKeyDown}
-      />
-      {hint && <p className={`entry-hint entry-hint-${hint.tone}`}>{hint.text}</p>}
+      <div className="task-entry-row">
+        <input
+          className="task-text-input"
+          placeholder="E.g., Review Big O time complexity"
+          value={text}
+          onChange={(e) => handleTextChange(e.target.value)}
+          onKeyDown={handleTextKeyDown}
+          disabled={textLocked}
+        />
+        {/* The physical-Enter-key equivalent, as an actual button - mainly
+            for touch/mobile, where there's no keyboard "Enter" to press
+            without bringing up the on-screen one. */}
+        <button
+          type="button"
+          className="task-entry-enter-btn"
+          title="Enter"
+          disabled={text.trim() === '' || textLocked}
+          onClick={lockText}
+        >
+          ➤
+        </button>
+      </div>
+      {hint && <p className="entry-hint entry-hint-step">{hint}</p>}
 
+      {/* A dark vignette anchored to the bottom of the screen, not an
+          inline row under the input - only shows once the text is locked
+          in, and holds every remaining step (category -> priority -> due ->
+          confirm) so the whole rest of the add-a-task flow happens as one
+          focused, dynamic interaction instead of a stack of boxes pushing
+          the page down. */}
       <AnimatePresence>
-        {categoryVisible && (
-          <motion.div key="category-row" className="option-row" {...sectionMotion}>
-            <p className="option-row-label">Category</p>
-            <div className="option-row-buttons">
-              {CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  className={category === cat ? 'btn-option btn-primary' : 'btn-option'}
-                  aria-pressed={category === cat}
-                  onClick={() => setCategory(cat)}
-                >
-                  {CAT_KEYS[cat] ? `${cat} [${CAT_KEYS[cat]}]` : cat}
-                </button>
-              ))}
-            </div>
-            {category === 'Custom' && (
-              <input
-                ref={customCategoryRef}
-                className="custom-input"
-                placeholder="E.g., Groceries"
-                value={customCategory}
-                onChange={(e) => setCustomCategory(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter') return
-                  e.preventDefault()
-                  // Hands off to the priority row's click/hotkey flow, same
-                  // as the main text input blurring itself once locked.
-                  e.currentTarget.blur()
-                }}
-              />
-            )}
-          </motion.div>
-        )}
-
-        {priorityVisible && (
-          <motion.div key="priority-row" className="option-row" {...sectionMotion}>
-            <p className="option-row-label">Priority</p>
-            <div className="option-row-buttons">
-              {PRIORITIES.map((pri) => (
-                <button
-                  key={pri}
-                  type="button"
-                  className={priority === pri ? 'btn-option btn-primary' : 'btn-option'}
-                  aria-pressed={priority === pri}
-                  onClick={() => setPriority(pri)}
-                >
-                  {pri} [{PRI_KEYS[pri]}]
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {dueVisible && (
-          <motion.div key="due-row" className="option-row" {...sectionMotion}>
-            <p className="option-row-label">Due</p>
-            <div className="option-row-buttons">
-              {DUE_PRESET_ORDER.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  className={duePreset === preset ? 'btn-option btn-primary' : 'btn-option'}
-                  aria-pressed={duePreset === preset}
-                  onClick={() => setDuePreset(preset)}
-                >
-                  {preset} [{DUE_KEYS[preset]}]
-                </button>
-              ))}
-            </div>
-            {duePreset === 'Custom' && (
-              <DateInput
-                className="custom-input"
-                value={customDueDate}
-                autoFocus
-                onCommit={setCustomDueDate}
-                onEnter={(next) => {
-                  if (next === '') return
-                  submit(next)
-                }}
-              />
-            )}
-          </motion.div>
-        )}
-
-        {addVisible && (
-          <motion.button
-            key="add-task-btn"
-            type="button"
-            className="btn-add-task btn-primary"
-            onClick={() => submit()}
-            {...sectionMotion}
+        {textLocked && (
+          <motion.div
+            className="task-entry-vignette"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) cancelOverlay()
+            }}
           >
-            Add task
-          </motion.button>
+            <div className="task-entry-vignette-panel">
+              <AnimatePresence mode="wait">
+                {step === 'category' && (
+                  <motion.div key="category-row" className="option-row" {...sectionMotion}>
+                    <p className="option-row-label">Category</p>
+                    <div className="option-row-buttons">
+                      {CATEGORIES.map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          className={optionClass('category', cat, category === cat, categoryGlowClass(cat))}
+                          aria-pressed={category === cat}
+                          onClick={() => pickCategory(cat)}
+                        >
+                          {CAT_KEYS[cat] ? `${cat} [${CAT_KEYS[cat]}]` : cat}
+                        </button>
+                      ))}
+                    </div>
+                    {category === 'Custom' && (
+                      <input
+                        ref={customCategoryRef}
+                        className="custom-input"
+                        placeholder="E.g., Groceries"
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return
+                          e.preventDefault()
+                          commitCustomCategory()
+                        }}
+                      />
+                    )}
+                  </motion.div>
+                )}
+
+                {step === 'priority' && (
+                  <motion.div key="priority-row" className="option-row" {...sectionMotion}>
+                    <p className="option-row-label">Priority</p>
+                    <div className="option-row-buttons">
+                      {PRIORITIES.map((pri) => (
+                        <button
+                          key={pri}
+                          type="button"
+                          className={optionClass('priority', pri, priority === pri, 'btn-option')}
+                          aria-pressed={priority === pri}
+                          onClick={() => pickPriority(pri)}
+                        >
+                          {pri} [{PRI_KEYS[pri]}]
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {step === 'due' && (
+                  <motion.div key="due-row" className="option-row" {...sectionMotion}>
+                    <p className="option-row-label">Due</p>
+                    <div className="option-row-buttons">
+                      {DUE_PRESET_ORDER.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          className={optionClass('due', preset, duePreset === preset, 'btn-option')}
+                          aria-pressed={duePreset === preset}
+                          onClick={() => pickDue(preset)}
+                        >
+                          {preset} [{DUE_KEYS[preset]}]
+                        </button>
+                      ))}
+                    </div>
+                    {duePreset === 'Custom' && (
+                      <DateInput
+                        className="custom-input"
+                        value={customDueDate}
+                        autoFocus
+                        onCommit={() => {}}
+                        onEnter={commitCustomDue}
+                      />
+                    )}
+                  </motion.div>
+                )}
+
+                {step === 'confirm' && (
+                  <motion.div key="confirm-row" className="task-entry-confirm-row" {...sectionMotion}>
+                    <p className="option-row-label">Ready to add “{text.trim()}”</p>
+                    <button type="button" className="task-entry-confirm-btn" onClick={() => submit()}>
+                      ✓ Enter
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

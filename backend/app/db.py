@@ -55,6 +55,12 @@ tasks_table = Table(
     # rather than a separate table since links are always read/written as
     # one whole list for a task, never queried or joined on individually.
     Column("links", Text, nullable=True),
+    # JSON-encoded list of {"id", "title", "content"} objects - the
+    # AssignmentWorkspace's multi-page tabs (each page is its own rich-text
+    # doc, same html shape as `notes`). Same "whole list, one blob" reasoning
+    # as `links` above. `notes` itself remains page 1's content for anything
+    # written before this existed - see crud.get_task_pages.
+    Column("pages", Text, nullable=True),
 )
 
 subtasks_table = Table(
@@ -195,6 +201,10 @@ def init_db() -> None:
     if "links" not in existing_task_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN links TEXT"))
+
+    if "pages" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN pages TEXT"))
 
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:

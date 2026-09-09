@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { tasksApi } from '../api/tasks'
-import type { LinkItem, Task, TasksResponse } from '../types'
+import type { LinkItem, Task, TasksResponse, WorkspacePage } from '../types'
 import { pushUndoSnapshot } from './undoRedoStack'
 import { markDirty } from './saveState'
 import { STATS_KEY } from './useStats'
@@ -79,6 +79,7 @@ export function useAddTask() {
         assigned_task_id: null,
         in_progress: false,
         links: [],
+        pages: [],
         subtasks: [],
         clientKey,
       }
@@ -290,6 +291,31 @@ export function useSetTaskLinks() {
     onError: (_err, _vars, ctx) => {
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to update links')
+    },
+  })
+}
+
+// Same "no undo snapshot" reasoning as useSetTaskNotes - the whole pages
+// array is re-saved on every debounced keystroke while typing in a page
+// (see AssignmentWorkspace), so snapshotting each one would flood the
+// undo stack with near-identical in-progress drafts.
+export function useSetTaskPages() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, pages }: { id: number; pages: WorkspacePage[] }) => tasksApi.setPages(id, pages),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: TASKS_KEY })
+      const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+      setTasksData(queryClient, (old) => ({
+        ...old,
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, pages: vars.pages } : t)),
+      }))
+      markDirty()
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to save pages')
     },
   })
 }

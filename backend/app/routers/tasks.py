@@ -14,6 +14,7 @@ from app.models import (
     TaskInProgressUpdate,
     TaskLinksUpdate,
     TaskNotesUpdate,
+    TaskPagesUpdate,
     TaskPinnedUpdate,
     TaskPositionUpdate,
     TasksResponse,
@@ -127,6 +128,16 @@ def update_task_links(
 ) -> Task:
     _require_task(task_id, current_user.username)
     task = crud.set_task_links(task_id, [link.model_dump() for link in body.links], current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/pages", response_model=Task)
+def update_task_pages(
+    task_id: int, body: TaskPagesUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    _require_task(task_id, current_user.username)
+    task = crud.set_task_pages(task_id, [page.model_dump() for page in body.pages], current_user.username)
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 

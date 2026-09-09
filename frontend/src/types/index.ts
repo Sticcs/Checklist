@@ -27,6 +27,12 @@ export interface LinkItem {
   url: string
 }
 
+export interface WorkspacePage {
+  id: string
+  title: string
+  content: string
+}
+
 export interface Task {
   id: number
   text: string
@@ -48,6 +54,7 @@ export interface Task {
   // AssignmentWorkspace) - cleared again on completion.
   in_progress: boolean
   links: LinkItem[]
+  pages: WorkspacePage[]
   subtasks: Subtask[]
   clientKey?: string
 }
@@ -104,6 +111,7 @@ export interface ExportedTask {
   notes: string | null
   in_progress: boolean
   links: LinkItem[]
+  pages: WorkspacePage[]
   subtasks: ExportedSubtask[]
 }
 

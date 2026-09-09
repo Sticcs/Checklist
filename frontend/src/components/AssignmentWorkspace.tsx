@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
-import type { Task } from '../types'
-import { useSetTaskLinks, useSetTaskNotes, useToggleDone } from '../hooks/useTasks'
+import type { Task, WorkspacePage } from '../types'
+import { useSetTaskLinks, useSetTaskPages, useToggleDone } from '../hooks/useTasks'
 import { useAddSubtask, useDeleteSubtask, useToggleSubtask } from '../hooks/useSubtasks'
 import { useFormattableEditable, useFormattingContext, type FormatKind } from '../context/FormattingContext'
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
@@ -44,6 +44,20 @@ function formatRemaining(ms: number): string {
 function normalizeUrl(raw: string): string {
   const trimmed = raw.trim()
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
+// The very first page, synthesized from the legacy single `notes` field for
+// any assignment that predates the pages feature - a stable id (not random)
+// so re-deriving this fallback on every render/prop update doesn't churn
+// activePageId. Once the user edits or adds a page, the real `pages` array
+// gets saved for good (see the pages-sync effect below) and this fallback
+// stops being hit.
+function defaultFirstPage(notes: string | null): WorkspacePage {
+  return { id: 'page-1', title: 'Page 1', content: notes ?? '' }
+}
+
+function makePage(title: string): WorkspacePage {
+  return { id: `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, content: '' }
 }
 
 const FORMAT_BUTTONS: Array<{ kind: FormatKind; title: string; glyph: React.ReactNode }> = [
@@ -117,32 +131,77 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     return () => clearInterval(handle)
   }, [])
 
-  const [draft, setDraft] = useState(task.notes ?? '')
-  const dirty = useRef(false)
-  const setTaskNotes = useSetTaskNotes()
   const setTaskLinks = useSetTaskLinks()
+  const setTaskPages = useSetTaskPages()
   const toggleDone = useToggleDone()
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
   const deleteSubtask = useDeleteSubtask()
 
-  // A separate, deliberately bare-bones task list scoped to this one
-  // assignment - reuses the exact same subtask entity/mutations as a normal
-  // task's subtask panel (TaskCard), just with a much smaller UI: no due
-  // dates, priority, or notes, only text + done. Typing in the box above
-  // and pressing Enter is the entire add flow, no multi-step wizard.
-  const [newTaskText, setNewTaskText] = useState('')
-  const submitTask = (e: React.FormEvent) => {
-    e.preventDefault()
-    const text = newTaskText.trim()
-    if (!text) return
-    setNewTaskText('')
-    addSubtask.mutate({ taskId: task.id, text })
-  }
+  // Multiple pages (Word/Docs-style tabs) per assignment - each its own
+  // rich-text doc. `pages` is the working copy (kept in sync with
+  // task.pages below, same "only sync while not mid-edit" pattern the old
+  // single-notes-field version used); `draft` mirrors just the *active*
+  // page's content, since that's the one piece bound to the contentEditable
+  // box via useSyncEditableContent.
+  const [pages, setPages] = useState<WorkspacePage[]>(() =>
+    task.pages.length > 0 ? task.pages : [defaultFirstPage(task.notes)]
+  )
+  const [activePageId, setActivePageId] = useState(() => pages[0].id)
+  const [draft, setDraft] = useState(() => pages[0].content)
+  const dirty = useRef(false)
+
+  useEffect(() => {
+    if (dirty.current) return
+    const serverPages = task.pages.length > 0 ? task.pages : [defaultFirstPage(task.notes)]
+    setPages(serverPages)
+    const nextId = serverPages.some((p) => p.id === activePageId) ? activePageId : serverPages[0].id
+    setActivePageId(nextId)
+    setDraft(serverPages.find((p) => p.id === nextId)?.content ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.pages, task.notes])
+
+  useEffect(() => {
+    if (!dirty.current) return
+    const handle = setTimeout(() => {
+      dirty.current = false
+      setTaskPages.mutate({ id: task.id, pages })
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, 600)
+    return () => clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pages])
 
   const onChange = (value: string) => {
     dirty.current = true
     setDraft(value)
+    setPages((prev) => prev.map((p) => (p.id === activePageId ? { ...p, content: value } : p)))
+  }
+
+  const switchPage = (id: string) => {
+    if (id === activePageId) return
+    setActivePageId(id)
+    setDraft(pages.find((p) => p.id === id)?.content ?? '')
+  }
+
+  const addPage = () => {
+    const page = makePage(`Page ${pages.length + 1}`)
+    const next = [...pages, page]
+    setPages(next)
+    setActivePageId(page.id)
+    setDraft('')
+    setTaskPages.mutate({ id: task.id, pages: next })
+  }
+
+  const deletePage = (id: string) => {
+    if (pages.length <= 1) return
+    const next = pages.filter((p) => p.id !== id)
+    setPages(next)
+    if (activePageId === id) {
+      setActivePageId(next[0].id)
+      setDraft(next[0].content)
+    }
+    setTaskPages.mutate({ id: task.id, pages: next })
   }
 
   const notesField = useFormattableEditable(onChange)
@@ -165,6 +224,10 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const savedRangeRef = useRef<Range | null>(null)
   const [customSizeOpen, setCustomSizeOpen] = useState(false)
   const [customSizeValue, setCustomSizeValue] = useState('')
+  // A live readout of the highlighted text's own font size - null when
+  // nothing's selected, so the toolbar can show "16px" etc instead of a
+  // static "Font size" placeholder.
+  const [currentFontSizePx, setCurrentFontSizePx] = useState<number | null>(null)
 
   useEffect(() => {
     const handler = () => {
@@ -179,9 +242,13 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
       if (sel.isCollapsed) {
         setHasSelection(false)
         savedRangeRef.current = null
+        setCurrentFontSizePx(null)
       } else {
         savedRangeRef.current = range.cloneRange()
         setHasSelection(true)
+        const startNode = range.startContainer
+        const startEl = startNode.nodeType === Node.ELEMENT_NODE ? (startNode as Element) : startNode.parentElement
+        setCurrentFontSizePx(startEl ? Math.round(Number.parseFloat(getComputedStyle(startEl).fontSize)) || null : null)
       }
     }
     document.addEventListener('selectionchange', handler)
@@ -213,6 +280,7 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     // corrected markup (otherwise the debounced autosave would persist the
     // pre-restyle <font size="7"> instead of the actual chosen size).
     onChange(el.innerHTML)
+    setCurrentFontSizePx(px)
   }
 
   // Ctrl/Cmd+Shift+. / Ctrl/Cmd+Shift+, - reads the size off the selection's
@@ -369,29 +437,28 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     }
   }
 
-  useEffect(() => {
-    if (!dirty.current) setDraft(task.notes ?? '')
-  }, [task.notes])
-
-  useEffect(() => {
-    if (!dirty.current) return
-    const handle = setTimeout(() => {
-      dirty.current = false
-      setTaskNotes.mutate({ id: task.id, notes: draft })
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, 600)
-    return () => clearTimeout(handle)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft])
+  // A separate, deliberately bare-bones task list scoped to this one
+  // assignment - reuses the exact same subtask entity/mutations as a normal
+  // task's subtask panel (TaskCard), just with a much smaller UI: no due
+  // dates, priority, or notes, only text + done. Typing in the box above
+  // and pressing Enter is the entire add flow, no multi-step wizard.
+  const [newTaskText, setNewTaskText] = useState('')
+  const submitTask = (e: React.FormEvent) => {
+    e.preventDefault()
+    const text = newTaskText.trim()
+    if (!text) return
+    setNewTaskText('')
+    addSubtask.mutate({ taskId: task.id, text })
+  }
 
   const remainingMs = task.due_date ? deadlineFor(task.due_date).getTime() - now.getTime() : null
   // dirty is a plain ref (not state) since the debounce logic above already
   // needs it to read as current-not-stale inside effects/timeouts - reading
   // it here during render is safe because every actual transition (typing,
-  // the debounce firing into setTaskNotes.mutate) already triggers a
+  // the debounce firing into setTaskPages.mutate) already triggers a
   // re-render of its own (setDraft, or react-query's isPending flipping),
   // so this never needs its own state to stay in sync.
-  const isSaving = dirty.current || setTaskNotes.isPending
+  const isSaving = dirty.current || setTaskPages.isPending
 
   const toggleFinished = () => {
     const next = !task.done
@@ -417,7 +484,11 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     >
       {/* A large tap/click zone (not just the small arrow glyph) running the
           full height of the left edge - the glyph alone was easy to miss
-          and hard to hit precisely on a touch screen. */}
+          and hard to hit precisely on a touch screen. Positioned relative to
+          .assignment-workspace, which no longer scrolls itself (only the
+          textbox does - see .assignment-workspace-textbox), so this stays
+          on screen the same way the rest of the chrome does, with no extra
+          "stickiness" of its own needed. */}
       <button type="button" className="assignment-workspace-back-zone" title="Back" onClick={onBack}>
         <span className="assignment-workspace-back-icon">←</span>
       </button>
@@ -458,63 +529,6 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
             <p className={isSaving ? 'assignment-save-status saving' : 'assignment-save-status'}>
               {isSaving ? '💾 Saving…' : '✅ Saved'}
             </p>
-          </div>
-
-          {/* Shares the header row with the title/countdown tile instead of
-              its own full-height side column - that used to tax the
-              textbox's width for the entire page just to hold a handful of
-              links. A long list still gets its own internal scroll (see
-              .assignment-links-list) rather than growing the header
-              indefinitely. */}
-          <div className="assignment-links-panel" data-focus-exempt>
-            <button
-              type="button"
-              className="assignment-add-link-btn"
-              onClick={() => setLinksOpen((open) => !open)}
-            >
-              🔗 Add link
-            </button>
-            <AnimatePresence>
-              {linksOpen && (
-                <motion.form
-                  className="assignment-add-link-form"
-                  onSubmit={submitLink}
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <input
-                    placeholder="Website name"
-                    value={linkName}
-                    onChange={(e) => setLinkName(e.target.value)}
-                    autoFocus
-                  />
-                  <input
-                    placeholder="https://..."
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                  />
-                  <button type="submit" className="btn-primary">
-                    Add
-                  </button>
-                </motion.form>
-              )}
-            </AnimatePresence>
-            {task.links.length > 0 && (
-              <ul className="assignment-links-list">
-                {task.links.map((link, i) => (
-                  <li key={`${link.url}-${i}`}>
-                    <a href={link.url} target="_blank" rel="noreferrer">
-                      {link.name}
-                    </a>
-                    <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         </div>
 
@@ -679,7 +693,7 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
               }}
             >
               <option value="" disabled>
-                Font size
+                {hasSelection && currentFontSizePx !== null ? `${currentFontSizePx}px` : 'Font size'}
               </option>
               {FONT_SIZE_PRESETS_PX.map((px) => (
                 <option key={px} value={px}>
@@ -741,65 +755,151 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
         </div>
 
         <div className="assignment-body-row">
-          {/* A deliberately minimal task list scoped to this one assignment
-              (see the state/handler above) - typing in the box and pressing
-              Enter is the whole add flow, and each row is just a checkbox
-              and its text, nothing else. */}
-          <div className="assignment-tasks-column" data-focus-exempt>
-            <form className="assignment-task-add-form" onSubmit={submitTask}>
-              <input
-                placeholder="Add a task..."
-                value={newTaskText}
-                onChange={(e) => setNewTaskText(e.target.value)}
-              />
-            </form>
-            <ul className="assignment-tasks-list">
+          {/* Links (moved up here, above the task panel, so both live in one
+              shared left column instead of links sitting up in the header)
+              and the bare-bones per-assignment task list - both fixed/
+              anchored the same way the rest of the chrome is, only the
+              textbox itself scrolls (see .assignment-workspace-textbox). */}
+          <div className="assignment-left-column">
+            <div className="assignment-links-panel" data-focus-exempt>
+              <button
+                type="button"
+                className="assignment-add-link-btn"
+                onClick={() => setLinksOpen((open) => !open)}
+              >
+                🔗 Add link
+              </button>
               <AnimatePresence>
-                {task.subtasks.map((s) => (
-                  <motion.li
-                    key={s.clientKey ?? s.id}
-                    layout
+                {linksOpen && (
+                  <motion.form
+                    className="assignment-add-link-form"
+                    onSubmit={submitLink}
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className={s.done ? 'assignment-task-row done' : 'assignment-task-row'}
+                    transition={{ duration: 0.2 }}
                   >
                     <input
-                      type="checkbox"
-                      className="task-done-checkbox small"
-                      checked={s.done}
-                      title="Mark complete"
-                      onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                      placeholder="Website name"
+                      value={linkName}
+                      onChange={(e) => setLinkName(e.target.value)}
+                      autoFocus
                     />
-                    <span className="assignment-task-text">{s.text}</span>
+                    <input
+                      placeholder="https://..."
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                    />
+                    <button type="submit" className="btn-primary">
+                      Add
+                    </button>
+                  </motion.form>
+                )}
+              </AnimatePresence>
+              {task.links.length > 0 && (
+                <ul className="assignment-links-list">
+                  {task.links.map((link, i) => (
+                    <li key={`${link.url}-${i}`}>
+                      <a href={link.url} target="_blank" rel="noreferrer">
+                        {link.name}
+                      </a>
+                      <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* A deliberately minimal task list scoped to this one assignment
+                (see the state/handler above) - typing in the box and pressing
+                Enter is the whole add flow, and each row is just a checkbox
+                and its text, nothing else. */}
+            <div className="assignment-tasks-column" data-focus-exempt>
+              <form className="assignment-task-add-form" onSubmit={submitTask}>
+                <input
+                  placeholder="Add a task..."
+                  value={newTaskText}
+                  onChange={(e) => setNewTaskText(e.target.value)}
+                />
+              </form>
+              <ul className="assignment-tasks-list">
+                <AnimatePresence>
+                  {task.subtasks.map((s) => (
+                    <motion.li
+                      key={s.clientKey ?? s.id}
+                      layout
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className={s.done ? 'assignment-task-row done' : 'assignment-task-row'}
+                    >
+                      <input
+                        type="checkbox"
+                        className="task-done-checkbox small"
+                        checked={s.done}
+                        title="Mark complete"
+                        onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                      />
+                      <span className="assignment-task-text">{s.text}</span>
+                      <button
+                        type="button"
+                        className="assignment-task-delete-btn"
+                        title="Delete"
+                        onClick={() => deleteSubtask.mutate(s.id)}
+                      >
+                        ✕
+                      </button>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
+              </ul>
+              {task.subtasks.length === 0 && <p className="status-message">No tasks yet.</p>}
+            </div>
+          </div>
+
+          <div className="assignment-textbox-column">
+            <div className="assignment-page-tabs" data-focus-exempt>
+              {pages.map((page) => (
+                <div
+                  key={page.id}
+                  className={page.id === activePageId ? 'assignment-page-tab active' : 'assignment-page-tab'}
+                >
+                  <button type="button" onClick={() => switchPage(page.id)}>
+                    {page.title}
+                  </button>
+                  {pages.length > 1 && (
                     <button
                       type="button"
-                      className="assignment-task-delete-btn"
-                      title="Delete"
-                      onClick={() => deleteSubtask.mutate(s.id)}
+                      className="assignment-page-tab-close"
+                      title="Delete this page"
+                      onClick={() => deletePage(page.id)}
                     >
                       ✕
                     </button>
-                  </motion.li>
-                ))}
-              </AnimatePresence>
-            </ul>
-            {task.subtasks.length === 0 && <p className="status-message">No tasks yet.</p>}
-          </div>
+                  )}
+                </div>
+              ))}
+              <button type="button" className="assignment-page-tab-add" title="Add a page" onClick={addPage}>
+                + Page
+              </button>
+            </div>
 
-          <div
-            ref={notesField.ref}
-            className="assignment-workspace-textbox rich-text-input"
-            contentEditable
-            suppressContentEditableWarning
-            data-placeholder="Start writing..."
-            onInput={notesField.onInput}
-            onFocus={notesField.onFocus}
-            onBlur={notesField.onBlur}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-          />
+            <div
+              ref={notesField.ref}
+              className="assignment-workspace-textbox rich-text-input"
+              contentEditable
+              suppressContentEditableWarning
+              data-placeholder="Start writing..."
+              onInput={notesField.onInput}
+              onFocus={notesField.onFocus}
+              onBlur={notesField.onBlur}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+            />
+          </div>
         </div>
       </div>
     </motion.div>

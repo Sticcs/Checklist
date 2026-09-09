@@ -1,4 +1,4 @@
-export const CATEGORIES = ['House', 'Work', 'Study', 'Personal', 'Assessment', 'Custom'] as const
+export const CATEGORIES = ['House', 'Work', 'Study', 'Personal', 'Assessment', 'Shopping', 'Custom'] as const
 export const PRIORITIES = ['High', 'Medium', 'Low'] as const
 
 export const CAT_KEYS: Record<string, string> = {
@@ -7,6 +7,7 @@ export const CAT_KEYS: Record<string, string> = {
   Study: 'S',
   Personal: 'P',
   Assessment: 'A',
+  Shopping: 'G',
   Custom: 'C',
 }
 export const PRI_KEYS: Record<string, string> = { High: 'T', Medium: 'M', Low: 'L' }
@@ -18,6 +19,12 @@ export const PRIORITY_ORDER: Record<string, number> = { High: 0, Medium: 1, Low:
 // about them (mutations, undo/redo, clear completed) is shared with normal
 // tasks, only the UI they render into and the fields they expose differ.
 export const ASSESSMENT_CATEGORY = 'Assessment'
+
+// Same routing idea as ASSESSMENT_CATEGORY, into the Shopping panel instead
+// (see TaskListPage's entryTab). Picking this category in AddTaskForm skips
+// the priority/due-date steps entirely (see its Shopping fast-path) - a
+// shopping item doesn't need either, it's just a checkable line.
+export const SHOPPING_CATEGORY = 'Shopping'
 
 // The one real deployment of this app - used only by the desktop app's
 // "Sign in with Google" link (AuthPage), which must hit the actual live

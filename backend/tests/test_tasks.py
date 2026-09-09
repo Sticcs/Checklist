@@ -91,6 +91,23 @@ def test_set_links(guest_client):
     assert r.json()["links"] == []
 
 
+def test_set_pages(guest_client):
+    client, _ = guest_client
+    task = _add_task(client)
+    assert task["pages"] == []
+
+    r = client.patch(
+        f"/api/tasks/{task['id']}/pages",
+        json={"pages": [{"id": "page-1", "title": "Page 1", "content": "<p>hi</p>"}]},
+    )
+    assert r.status_code == 200
+    assert r.json()["pages"] == [{"id": "page-1", "title": "Page 1", "content": "<p>hi</p>"}]
+
+    # Whole-list replacement, same as links.
+    r = client.patch(f"/api/tasks/{task['id']}/pages", json={"pages": []})
+    assert r.json()["pages"] == []
+
+
 def test_edit_task(guest_client):
     client, _ = guest_client
     task = _add_task(client, text="Old text")

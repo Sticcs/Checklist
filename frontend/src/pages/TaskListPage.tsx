@@ -16,12 +16,13 @@ import { QuoteHeader } from '../components/QuoteHeader'
 import { Scratchpad } from '../components/Scratchpad'
 import { SubtaskNotepad } from '../components/SubtaskNotepad'
 import { AssessmentsPanel } from '../components/AssessmentsPanel'
+import { ShoppingPanel } from '../components/ShoppingPanel'
 import { AssignmentWorkspace } from '../components/AssignmentWorkspace'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
 import { toISODate } from '../utils/dueDatePresets'
-import { ASSESSMENT_CATEGORY } from '../constants'
+import { ASSESSMENT_CATEGORY, SHOPPING_CATEGORY } from '../constants'
 import type { Task } from '../types'
 
 export function TaskListPage() {
@@ -49,6 +50,12 @@ export function TaskListPage() {
   const [lastExpandedTaskId, setLastExpandedTaskId] = useState<number | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeAssignmentId, setActiveAssignmentId] = useState<number | null>(null)
+  // Switches the panel above the entry column between Assessments and the
+  // Shopping list (see the tab bar right above AssessmentsPanel/
+  // ShoppingPanel below) - both draw from the same `tasks` entity, just
+  // filtered by category, the same way Assessments already worked before
+  // Shopping existed.
+  const [entryTab, setEntryTab] = useState<'assessments' | 'shopping'>('assessments')
 
   const handleStartAssignment = (taskId: number) => {
     setActiveAssignmentId(taskId)
@@ -72,11 +79,15 @@ export function TaskListPage() {
     setNotepadHidden(false)
   }, [focusedSubtaskId])
 
-  // Assessments (category === 'Assessment') live in their own panel, not the
-  // main list - everything else about them (mutations, undo/redo, clear
-  // completed) is shared, via the same `tasks` entity and the same
-  // click-delegation handler below, just filtered into a different view.
-  const mainTasks = useMemo(() => tasks.filter((t) => t.category !== ASSESSMENT_CATEGORY), [tasks])
+  // Assessments (category === 'Assessment') and Shopping items (category
+  // === 'Shopping') both live in their own panel, not the main list -
+  // everything else about them (mutations, undo/redo, clear completed) is
+  // shared, via the same `tasks` entity and the same click-delegation
+  // handler below, just filtered into a different view.
+  const mainTasks = useMemo(
+    () => tasks.filter((t) => t.category !== ASSESSMENT_CATEGORY && t.category !== SHOPPING_CATEGORY),
+    [tasks]
+  )
   // Closest due date first; assessments with no due date sort to the end.
   const assessments = useMemo(
     () =>
@@ -91,6 +102,7 @@ export function TaskListPage() {
         }),
     [tasks]
   )
+  const shoppingItems = useMemo(() => tasks.filter((t) => t.category === SHOPPING_CATEGORY), [tasks])
 
   const availableCategories = useMemo(
     () => Array.from(new Set(mainTasks.map((t) => t.category))).sort(),
@@ -402,16 +414,36 @@ export function TaskListPage() {
               )}
             </AnimatePresence>
           </div>
-          <AssessmentsPanel
-            assessments={assessments}
-            focusedTaskId={focusedTaskId}
-            todayIso={todayIso}
-            selectedAssessmentId={selectedAssessmentId}
-            highlightedAssessmentIds={highlightedAssessmentIds}
-            onStart={handleStartAssignment}
-            onShowParentTask={highlightParentTask}
-            compact={compactView}
-          />
+          <div className="entry-tabs">
+            <button
+              type="button"
+              className={entryTab === 'assessments' ? 'entry-tab active' : 'entry-tab'}
+              onClick={() => setEntryTab('assessments')}
+            >
+              📚 Assessments
+            </button>
+            <button
+              type="button"
+              className={entryTab === 'shopping' ? 'entry-tab active' : 'entry-tab'}
+              onClick={() => setEntryTab('shopping')}
+            >
+              🛒 Shopping
+            </button>
+          </div>
+          {entryTab === 'assessments' ? (
+            <AssessmentsPanel
+              assessments={assessments}
+              focusedTaskId={focusedTaskId}
+              todayIso={todayIso}
+              selectedAssessmentId={selectedAssessmentId}
+              highlightedAssessmentIds={highlightedAssessmentIds}
+              onStart={handleStartAssignment}
+              onShowParentTask={highlightParentTask}
+              compact={compactView}
+            />
+          ) : (
+            <ShoppingPanel items={shoppingItems} />
+          )}
         </div>
 
         <div className="task-list-column">

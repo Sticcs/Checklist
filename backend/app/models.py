@@ -125,6 +125,19 @@ class TaskLinksUpdate(BaseModel):
     links: list[LinkItem]
 
 
+class WorkspacePage(BaseModel):
+    id: str
+    title: str
+    content: str = ''
+
+
+class TaskPagesUpdate(BaseModel):
+    # Whole-list replacement, same reasoning as TaskLinksUpdate - the
+    # AssignmentWorkspace's page tabs (add/rename/switch/type) all just
+    # compute the next full list client-side and PATCH it.
+    pages: list[WorkspacePage]
+
+
 class TaskDueDateUpdate(BaseModel):
     due_date: str | None = None
 
@@ -154,6 +167,7 @@ class Task(BaseModel):
     # crud.set_done.
     in_progress: bool = False
     links: list[LinkItem] = []
+    pages: list[WorkspacePage] = []
     subtasks: list[Subtask] = []
 
 
@@ -208,6 +222,7 @@ class ExportedTask(BaseModel):
     assigned_task_id: int | None = None
     in_progress: bool = False
     links: list[LinkItem] = []
+    pages: list[WorkspacePage] = []
     subtasks: list[ExportedSubtask] = []
 
 

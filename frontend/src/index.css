@@ -1289,6 +1289,216 @@ body[data-theme='dark'] .entry-hint-step {
   padding: 0.6rem 1.4rem;
 }
 
+.task-entry-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.task-entry-row .task-text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The physical-Enter-key equivalent, as a real button - mainly for touch/
+   mobile, where there's no keyboard Enter to press without summoning the
+   on-screen one. Green (not the app's usual red primary) specifically so
+   it reads as "go" rather than blending in with the destructive/primary
+   red used everywhere else. */
+.task-entry-enter-btn {
+  flex-shrink: 0;
+  width: 2.6rem;
+  border: none;
+  border-radius: 8px;
+  background: #2ecc71;
+  color: white;
+  font-size: 1.1rem;
+  box-shadow: 0 0 10px rgba(46, 204, 113, 0.5);
+}
+
+.task-entry-enter-btn:hover:not(:disabled) {
+  background: #27ae60;
+}
+
+.task-entry-enter-btn:disabled {
+  background: rgba(128, 128, 128, 0.3);
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+
+/* A dark vignette pinned to the bottom of the screen (fading to transparent
+   going up, per the request) rather than a full opaque modal backdrop - the
+   rest of the page stays visible/dimmed above it, only the button panel
+   itself is fully opaque. Clicking the dark area (not the panel) cancels
+   the whole add-task flow, same as Escape. */
+.task-entry-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: clamp(1.5rem, 6vh, 4rem);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.4) 35%, transparent 75%);
+}
+
+.task-entry-vignette-panel {
+  width: min(680px, 92vw);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 1.5rem 1.75rem;
+}
+
+.task-entry-vignette .option-row-buttons {
+  justify-content: center;
+}
+
+/* Assessment and Shopping stand out from the plain category buttons - a
+   soft pulsing glow in their own color (red/blue) rather than the flat
+   default look every other category button has. */
+.btn-option-glow-red {
+  border-color: rgba(231, 76, 60, 0.6);
+  animation: option-glow-red 1.8s ease-in-out infinite;
+}
+
+.btn-option-glow-blue {
+  border-color: rgba(52, 152, 219, 0.6);
+  animation: option-glow-blue 1.8s ease-in-out infinite;
+}
+
+@keyframes option-glow-red {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(231, 76, 60, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(231, 76, 60, 0.75);
+  }
+}
+
+@keyframes option-glow-blue {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(52, 152, 219, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(52, 152, 219, 0.75);
+  }
+}
+
+/* The brief "picked" state before a row transitions to the next step (see
+   AddTaskForm's selectWithFlash) - solid green, a quick pop, overriding
+   whatever glow/primary styling that button normally has. */
+.flashing-green {
+  background: #2ecc71 !important;
+  border-color: #2ecc71 !important;
+  color: white !important;
+  animation: option-flash-pop 0.32s ease-out 1;
+}
+
+@keyframes option-flash-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.task-entry-confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.task-entry-confirm-row .option-row-label {
+  margin: 0;
+  text-transform: none;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+
+.task-entry-confirm-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  background: #2ecc71;
+  color: white;
+  font-weight: 700;
+  padding: 0.6rem 1.4rem;
+  font-size: 0.95rem;
+  animation: confirm-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes confirm-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(46, 204, 113, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(46, 204, 113, 0.9);
+  }
+}
+
+/* ----------------------------- Entry tabs (Assessments/Shopping) ----------------------------- */
+.entry-tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.entry-tab {
+  border: none;
+  background: rgba(128, 128, 128, 0.12);
+  border-radius: 8px 8px 0 0;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  opacity: 0.7;
+}
+
+.entry-tab.active {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--glass-bg);
+}
+
+.entry-tab:hover {
+  opacity: 1;
+}
+
+.shopping-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shopping-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--card-bg);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  box-shadow: var(--card-shadow);
+}
+
+.shopping-item .task-text {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ----------------------------- Progress bar ----------------------------- */
 .progress-bar {
   background: var(--glass-bg);
@@ -2012,9 +2222,16 @@ kbd {
 }
 
 /* ----------------------------- Assignment workspace ----------------------------- */
+/* Word/Docs-style: the page itself never scrolls (height, not min-height,
+   plus overflow hidden) - only .assignment-workspace-textbox does, via its
+   own overflow-y below. Everything else (back button, top actions, header,
+   toolbar, links/tasks column, page tabs) is therefore anchored in place
+   for free, just by virtue of never being part of a scrolling region -
+   no position:sticky/fixed juggling needed anywhere else in this file. */
 .assignment-workspace {
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   box-sizing: border-box;
   /* Left padding alone has to clear .assignment-workspace-back-zone's own
      width (clamp(56px, 6vw, 96px)) - the right side has nothing to clear
@@ -2027,10 +2244,16 @@ kbd {
 
 /* The one remaining column here (the back-zone is its own absolutely-
    positioned sibling) - full width, so the textbox inside it gets to use
-   nearly the entire page rather than sharing it with a side rail. */
+   nearly the entire page rather than sharing it with a side rail. Fills the
+   fixed-height parent (height, not min-height, + min-height: 0 so the flex
+   column can actually shrink its children below their content size) so the
+   one child that should scroll internally (.assignment-body-row's textbox)
+   has a real bounded box to scroll within.  */
 .assignment-workspace-main {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -2279,16 +2502,16 @@ kbd {
 }
 
 /* ----------------------------- Assignment links ----------------------------- */
-/* A compact tile sharing the header row with the title/countdown (see
-   .assignment-workspace-header-row) instead of its own full-height side
-   column - that used to tax the textbox's width for the entire page just
-   to hold a handful of links. It only ever grows to fit its own content
-   (the "Add link" button, the open form, the list); a long list scrolls
-   internally (see .assignment-links-list) rather than growing this tile -
-   and therefore the header row - indefinitely. */
+/* Sits at the top of .assignment-left-column, right above the task panel
+   (see .assignment-tasks-column) - it used to share the header row with the
+   title/countdown instead, its own full-height side column before that,
+   both of which taxed the textbox's width for the entire page just to hold
+   a handful of links. It only ever grows to fit its own content (the "Add
+   link" button, the open form, the list); a long list scrolls internally
+   (see .assignment-links-list) rather than growing this tile indefinitely. */
 .assignment-links-panel {
   flex-shrink: 0;
-  width: clamp(180px, 22vw, 260px);
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -2374,15 +2597,12 @@ body[data-theme='dark'] .assignment-add-link-btn {
     flex-direction: column;
   }
 
-  .assignment-links-panel {
-    width: 100%;
-  }
-
   .assignment-body-row {
     flex-direction: column;
+    overflow-y: auto;
   }
 
-  .assignment-tasks-column {
+  .assignment-left-column {
     flex: 0 0 auto;
     width: 100%;
     max-height: 40vh;
@@ -2417,21 +2637,49 @@ body[data-theme='dark'] .assignment-add-link-btn {
   border-color: rgba(46, 204, 113, 0.9);
 }
 
-/* The textbox and the task panel beside it (see .assignment-tasks-column) -
-   the task panel is a fixed narrow column, the textbox takes whatever's
-   left, so it still ends up using most of the page width. */
+/* The textbox column and the links+tasks column beside it (see
+   .assignment-left-column) - fills whatever vertical space
+   .assignment-workspace-main has left below the header/toolbar (both fixed
+   in place - see .assignment-workspace's own comment on why), so the one
+   thing that actually scrolls (the textbox) has a real bounded box to
+   scroll within instead of pushing the whole page taller. */
 .assignment-body-row {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 1.25rem;
   width: 100%;
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Links (see .assignment-links-panel) stacked right above the task panel
+   (see .assignment-tasks-column) - a fixed narrow column, the textbox
+   column takes whatever's left, so it still ends up using most of the page
+   width. */
+.assignment-left-column {
+  flex: 0 0 clamp(180px, 20vw, 260px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+}
+
+.assignment-textbox-column {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .assignment-workspace-textbox {
   flex: 1;
   min-width: 0;
-  min-height: 50vh;
+  min-height: 0;
+  overflow-y: auto;
   border-radius: 24px;
   padding: 1.75rem 2rem;
   background: var(--card-bg);
@@ -2441,16 +2689,85 @@ body[data-theme='dark'] .assignment-add-link-btn {
   line-height: 1.6;
 }
 
+/* ----------------------------- Assignment page tabs ----------------------------- */
+.assignment-page-tabs {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.assignment-page-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 8px 8px 0 0;
+  background: rgba(128, 128, 128, 0.12);
+  padding-right: 0.3rem;
+}
+
+.assignment-page-tab.active {
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+}
+
+.assignment-page-tab button {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  opacity: 0.7;
+}
+
+.assignment-page-tab.active button {
+  opacity: 1;
+  font-weight: 600;
+}
+
+.assignment-page-tab-close {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 !important;
+  border-radius: 50%;
+  font-size: 0.65rem !important;
+  opacity: 0.5 !important;
+}
+
+.assignment-page-tab-close:hover {
+  opacity: 1 !important;
+  background: rgba(231, 76, 60, 0.25);
+}
+
+.assignment-page-tab-add {
+  flex-shrink: 0;
+  border: 1px dashed rgba(128, 128, 128, 0.4);
+  background: none;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  opacity: 0.7;
+}
+
+.assignment-page-tab-add:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.12);
+}
+
 /* ----------------------------- Assignment tasks panel ----------------------------- */
 /* A small, deliberately bare-bones task list scoped to one assignment - see
-   AssignmentWorkspace. Sits to the left of the textbox; the "compact mode"
-   look the request asked for is approximated with the same small font/row
-   padding as .compact-subtask-row rather than reusing that class directly,
-   since these rows never carry a due date/star/menu the way a real
-   subtask's compact row can. */
+   AssignmentWorkspace. Sits below the links panel, in the same left column
+   (see .assignment-left-column); the "compact mode" look the request asked
+   for is approximated with the same small font/row padding as
+   .compact-subtask-row rather than reusing that class directly, since these
+   rows never carry a due date/star/menu the way a real subtask's compact
+   row can. */
 .assignment-tasks-column {
-  flex: 0 0 clamp(180px, 20vw, 260px);
-  min-width: 0;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -2462,7 +2779,6 @@ body[data-theme='dark'] .assignment-add-link-btn {
   -webkit-backdrop-filter: blur(10px);
   padding: 0.75rem;
   box-sizing: border-box;
-  max-height: calc(100vh - 4rem);
   overflow-y: auto;
 }
 
