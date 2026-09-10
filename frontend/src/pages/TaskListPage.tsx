@@ -321,15 +321,25 @@ export function TaskListPage() {
 
       // Alt+click-to-assign: with an assessment currently selected (see
       // selectedAssessmentId above), Alt+clicking a *plain* task's content
-      // files that assessment under it. Never does anything else (no focus
-      // toggle, no Ctrl+click-done) - and does nothing at all if nothing's
-      // selected or the click landed back on the selected assessment itself.
+      // files that assessment under it - or, if it's already filed under
+      // that exact task, Alt+clicking it again unlinks it instead (a second
+      // Alt+click on the same target toggles the assignment off rather than
+      // redundantly re-assigning it to itself). Never does anything else (no
+      // focus toggle, no Ctrl+click-done) - and does nothing at all if
+      // nothing's selected or the click landed back on the selected
+      // assessment itself.
       if (e.altKey) {
         if (selectedAssessmentId !== null && contentId !== selectedAssessmentId) {
           const target = tasksById.get(contentId)
+          const assessment = tasksById.get(selectedAssessmentId)
           if (target && target.category !== ASSESSMENT_CATEGORY) {
-            assignTask.mutate({ id: selectedAssessmentId, assignedTaskId: contentId })
-            toast(`📎 Assigned under "${target.text}"`)
+            if (assessment?.assigned_task_id === contentId) {
+              assignTask.mutate({ id: selectedAssessmentId, assignedTaskId: null })
+              toast(`🔓 Unassigned from "${target.text}"`)
+            } else {
+              assignTask.mutate({ id: selectedAssessmentId, assignedTaskId: contentId })
+              toast(`📎 Assigned under "${target.text}"`)
+            }
           }
         }
         return
@@ -438,7 +448,23 @@ export function TaskListPage() {
             <QuoteHeader />
             <AddTaskForm onAdded={(id) => setLatestTaskId(id)} hasTasks={mainTasks.length > 0} />
           </div>
-          <div className="bottom-panels-row">
+          <div
+            className="bottom-panels-row"
+            // The scratchpad's contentEditable box (see Scratchpad.tsx) is
+            // narrower than this row - when the subtask notepad isn't also
+            // showing, that leaves empty flex space beside it. Clicking that
+            // empty space (not any actual child) was landing focus inside
+            // the scratchpad anyway and letting the next keystroke type into
+            // it - a contentEditable-adjacent-click browser quirk, not
+            // anything this app's own code does. preventDefault on mousedown
+            // is the standard fix for exactly this (see the toolbar buttons
+            // in AssignmentWorkspace.tsx for the same pattern) - it only
+            // fires when the mousedown target is this row itself, never a
+            // child, so clicking the scratchpad or the notepad is untouched.
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) e.preventDefault()
+            }}
+          >
             <Scratchpad />
             {/* popLayout: switching focus straight from one subtask to
                 another swaps the `key`, so the old notepad is exiting while

@@ -5,6 +5,7 @@ import type { LinkItem, Task, TasksResponse, WorkspacePage } from '../types'
 import { pushUndoSnapshot } from './undoRedoStack'
 import { markDirty } from './saveState'
 import { STATS_KEY } from './useStats'
+import { SHOPPING_CATEGORY } from '../constants'
 
 export const TASKS_KEY = ['tasks']
 // A collaborator's view of assignments they don't own (see
@@ -200,12 +201,30 @@ function applyToggleDone<T extends Task>(t: T, done: boolean): T {
   }
 }
 
+// Looks a task up by id across both caches, purely to read its category for
+// the toast message below - a Shopping item being checked off isn't a "task
+// completed" the way a to-do or assignment is.
+function findTaskInCache(queryClient: QueryClient, id: number): Task | undefined {
+  return (
+    queryClient.getQueryData<TasksResponse>(TASKS_KEY)?.tasks.find((t) => t.id === id) ??
+    queryClient.getQueryData<Task[]>(SHARED_KEY)?.find((t) => t.id === id)
+  )
+}
+
 export function useToggleDone() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, done }: { id: number; done: boolean }) => tasksApi.setDone(id, done),
     onMutate: async (vars) => {
-      toast.success(vars.done ? 'Task completed' : 'Task unmarked')
+      const isShoppingItem = findTaskInCache(queryClient, vars.id)?.category === SHOPPING_CATEGORY
+      const message = isShoppingItem
+        ? vars.done
+          ? '🛒 Got it!'
+          : '↩️ Back on the list'
+        : vars.done
+          ? 'Task completed'
+          : 'Task unmarked'
+      toast.success(message)
       if (isOwnedTask(queryClient, vars.id)) {
         const previous = await beginOptimisticUpdate(queryClient)
         setTasksData(queryClient, (old) => ({

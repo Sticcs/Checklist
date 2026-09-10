@@ -2044,8 +2044,21 @@ body[data-theme='dark'] .subtask-panel {
     height: auto;
   }
 
+  /* min-width: 0 overrides a grid item's default min-width: auto, which
+     otherwise sizes it to its own min-content width (here: its padding
+     plus whatever floor its nested children - entry-column/task-list-
+     column, themselves grids/flexboxes with their own fixed-width compact-
+     row columns - refuse to shrink below) instead of the single 1fr track
+     .app-layout just assigned it above. Without this, .content-area (and
+     everything inside it) rendered wider than the actual viewport on
+     narrow screens, forcing the whole page into unwanted horizontal
+     scroll - most visibly, .compact-row's fixed Due Date/Importance
+     columns pushing the assessments/task list panels out past the screen
+     edge (see the compact-row narrow-viewport rule elsewhere in this file,
+     which was necessary but not sufficient without this fix too). */
   .content-area {
     grid-template-columns: 1fr;
+    min-width: 0;
   }
 
   .task-list-column {
@@ -3220,6 +3233,35 @@ body[data-theme='dark'] .assessment-card.compact:hover {
 .compact-subtask-row.done .compact-subtask-title {
   text-decoration: line-through;
   opacity: 0.55;
+}
+
+/* Compact view's Due Date/Importance columns are fixed-width (see
+   .compact-row-due/.compact-star-btn above) so the header labels and the
+   actual row values line up - sized for a desktop-width task list. On a
+   narrow phone viewport, those two fixed columns alone (6rem + 5.5rem)
+   plus the checkbox spacer and menu button left no room for .compact-row-
+   title's own 3rem floor to fit inside .entry-column/.task-list-column's
+   narrower single-column width, so the whole row (and the panel it sat in)
+   overflowed past the screen edge instead of the title just truncating
+   further like it's meant to. Narrowing these two columns here reclaims
+   enough width to fit; .compact-star-btn additionally needs its own
+   ellipsis truncation added since the "Importance" header label no longer
+   fits its shrunk column otherwise (the star icon itself always did). */
+@media (max-width: 480px) {
+  .compact-row-due {
+    flex-basis: 4rem;
+  }
+
+  .compact-star-btn {
+    flex-basis: 2.4rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compact-row-title {
+    min-width: 2rem;
+  }
 }
 
 .task-done-checkbox.small {

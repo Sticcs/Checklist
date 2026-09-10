@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '../constants'
 import { computeDueDate, DUE_PRESET_ORDER, type DuePreset } from '../utils/dueDatePresets'
@@ -20,6 +21,39 @@ const DUE_KEYS: Record<DuePreset, string> = {
 const FLASH_MS = 320
 
 type Step = 'category' | 'priority' | 'due' | 'confirm'
+
+// Rendered via a portal straight into <body> (same pattern as
+// ExpandOverlay.tsx) - .task-entry-panel, this overlay's DOM ancestor if it
+// weren't portaled, has its own backdrop-filter (glass-panel styling),
+// which - like transform/filter - establishes a new containing block for
+// position:fixed descendants. Without the portal, this vignette's "inset: 0"
+// resolved against .task-entry-panel's own small box instead of the actual
+// viewport, confining the whole category/priority/due/confirm flow to a
+// tiny area overlapping whatever sat below it (most visibly the sidebar on
+// the mobile layout, where the two panels' content rendered tangled
+// together).
+//
+// Must be a genuine component (not createPortal() called inline as
+// AnimatePresence's own child expression) - AnimatePresence needs a real,
+// cloneable element as its direct child to track for exit animations; hand
+// it a raw ReactPortal directly and it silently fails to render anything.
+function TaskEntryVignetteOverlay({ onCancel, children }: { onCancel: () => void; children: React.ReactNode }) {
+  return createPortal(
+    <motion.div
+      className="task-entry-vignette"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel()
+      }}
+    >
+      <div className="task-entry-vignette-panel">{children}</div>
+    </motion.div>,
+    document.body
+  )
+}
 
 interface Props {
   onAdded?: (taskId: number) => void
@@ -310,20 +344,11 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
           in, and holds every remaining step (category -> priority -> due ->
           confirm) so the whole rest of the add-a-task flow happens as one
           focused, dynamic interaction instead of a stack of boxes pushing
-          the page down. */}
+          the page down. See TaskEntryVignetteOverlay above for why this is
+          portaled into <body>. */}
       <AnimatePresence>
         {textLocked && (
-          <motion.div
-            className="task-entry-vignette"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) cancelOverlay()
-            }}
-          >
-            <div className="task-entry-vignette-panel">
+          <TaskEntryVignetteOverlay onCancel={cancelOverlay}>
               <AnimatePresence mode="wait">
                 {step === 'category' && (
                   <motion.div key="category-row" className="option-row" {...sectionMotion}>
@@ -414,8 +439,7 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
-          </motion.div>
+          </TaskEntryVignetteOverlay>
         )}
       </AnimatePresence>
     </div>
