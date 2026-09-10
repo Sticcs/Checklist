@@ -25,12 +25,27 @@ def _require_owning_task(subtask_id: int, username: str) -> int:
     return task_id
 
 
+def _require_owning_task_access(subtask_id: int, username: str) -> tuple[int, str]:
+    """Like _require_owning_task, but also allows an assignment collaborator
+    (see crud.get_task_for_user via tasks.py's _require_task_access). Returns
+    (task_id, owner_username) - callers must pass owner_username, not
+    `username`, into every downstream crud call, same reasoning as tasks.py's
+    _require_task_access."""
+    task_id = crud.get_subtask_owning_task_id(subtask_id)
+    if task_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Subtask not found")
+    task = crud.get_task_for_user(task_id, username)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Subtask not found")
+    return task_id, task["username"]
+
+
 @router.patch("/{subtask_id}", response_model=SubtaskMutationResponse)
 def toggle_subtask_done(
     subtask_id: int, body: SubtaskDoneUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> SubtaskMutationResponse:
-    task_id = _require_owning_task(subtask_id, current_user.username)
-    subtask, parent_done = crud.set_subtask_done(subtask_id, task_id, body.done, current_user.username)
+    task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
+    subtask, parent_done = crud.set_subtask_done(subtask_id, task_id, body.done, owner_username)
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
 
 
@@ -71,6 +86,6 @@ def update_subtask_notes(
 def remove_subtask(
     subtask_id: int, current_user: CurrentUser = Depends(get_current_user)
 ) -> SubtaskMutationResponse:
-    task_id = _require_owning_task(subtask_id, current_user.username)
-    parent_done = crud.delete_subtask(subtask_id, task_id, current_user.username)
+    task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
+    parent_done = crud.delete_subtask(subtask_id, task_id, owner_username)
     return SubtaskMutationResponse(subtask=None, parent_done=parent_done)

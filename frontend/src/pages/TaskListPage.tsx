@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { toast } from 'sonner'
 import { useAssignTask, useSetPosition, useSetTaskInProgress, useTasks, useToggleDone } from '../hooks/useTasks'
+import { useJoinAssignment, useSharedWithMe } from '../hooks/useCollaboration'
 import { useSettings } from '../context/SettingsContext'
 import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
@@ -22,11 +23,13 @@ import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
 import { toISODate } from '../utils/dueDatePresets'
-import { ASSESSMENT_CATEGORY, SHOPPING_CATEGORY } from '../constants'
+import { ASSESSMENT_CATEGORY, PENDING_JOIN_TOKEN_KEY, SHOPPING_CATEGORY } from '../constants'
 import type { Task } from '../types'
 
 export function TaskListPage() {
   const { data, isLoading, error } = useTasks()
+  const { data: sharedData } = useSharedWithMe()
+  const joinAssignment = useJoinAssignment()
   const toggleDone = useToggleDone()
   const toggleSubtask = useToggleSubtask()
   const setPosition = useSetPosition()
@@ -62,8 +65,52 @@ export function TaskListPage() {
     setTaskInProgress.mutate({ id: taskId, inProgress: true })
   }
 
+  // Opens a collaborator-accessed assignment directly - deliberately doesn't
+  // call setTaskInProgress like handleStartAssignment above does, since
+  // "in_progress" is an owner-only field (not exposed by the workspace UI,
+  // see routers/tasks.py) and a collaborator's request for it would just 404.
+  const handleOpenSharedAssignment = (taskId: number) => {
+    setActiveAssignmentId(taskId)
+  }
+
+  // Consumes a share link's token captured pre-auth (see main.tsx's
+  // sessionStorage bootstrap) - runs once, right after this page first
+  // mounts post-login, and drops the visitor straight into the joined
+  // assignment's workspace. Uses mutateAsync's own returned promise (not a
+  // callback passed to .mutate(), and not the mutation object's reactive
+  // .data) - both of those are bound to useMutation's component-subscribed
+  // observer, which React 18 StrictMode's dev-only double effect invocation
+  // can tear down and rebuild out from under an effect with an empty
+  // dependency array, silently dropping the result. mutateAsync's promise
+  // resolves directly off the underlying request, independent of whichever
+  // observer instance is currently subscribed, so it isn't affected.
+  useEffect(() => {
+    const token = sessionStorage.getItem(PENDING_JOIN_TOKEN_KEY)
+    if (!token) return
+    sessionStorage.removeItem(PENDING_JOIN_TOKEN_KEY)
+    joinAssignment
+      .mutateAsync(token)
+      .then((task) => setActiveAssignmentId(task.id))
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const tasks = useMemo(() => data?.tasks ?? [], [data])
-  const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+  const sharedTasks = useMemo(() => sharedData ?? [], [sharedData])
+  // Merges in assignments shared with (not owned by) this user, purely for
+  // lookup - activeAssignmentTask and the vanished-task fallback effect
+  // below both already operate generically on tasksById, so a
+  // collaborator-accessed assignment opens the workspace with zero further
+  // changes to either. Every other derived list below (mainTasks,
+  // assessments, shoppingItems...) intentionally keeps using `tasks` alone,
+  // since shared assignments never belong in the main list, sidebar
+  // filters, or "Clear completed" - they show up only in the Assessments
+  // panel's own "Shared with me" section (see AssessmentsPanel).
+  const tasksById = useMemo(() => {
+    const map = new Map(tasks.map((t) => [t.id, t]))
+    for (const t of sharedTasks) if (!map.has(t.id)) map.set(t.id, t)
+    return map
+  }, [tasks, sharedTasks])
   const subtasksById = useMemo(() => {
     const m = new Map<number, (typeof tasks)[number]['subtasks'][number]>()
     for (const t of tasks) for (const s of t.subtasks) m.set(s.id, s)
@@ -433,11 +480,13 @@ export function TaskListPage() {
           {entryTab === 'assessments' ? (
             <AssessmentsPanel
               assessments={assessments}
+              shared={sharedTasks}
               focusedTaskId={focusedTaskId}
               todayIso={todayIso}
               selectedAssessmentId={selectedAssessmentId}
               highlightedAssessmentIds={highlightedAssessmentIds}
               onStart={handleStartAssignment}
+              onOpenShared={handleOpenSharedAssignment}
               onShowParentTask={highlightParentTask}
               compact={compactView}
             />

@@ -4,22 +4,31 @@ import { AssessmentCard } from './AssessmentCard'
 
 interface Props {
   assessments: Task[]
+  // Assignments shared with (not owned by) this user - see TaskListPage's
+  // useSharedWithMe. Deliberately rendered as a much simpler, read-mostly
+  // list below the owned assessments: no edit/delete/urgent icons, no
+  // Alt+click-assign selection - all real interaction happens once you're
+  // inside the workspace itself (see AssignmentWorkspace).
+  shared: Task[]
   focusedTaskId: number | null
   todayIso: string
   selectedAssessmentId: number | null
   highlightedAssessmentIds: Set<number>
   onStart: (taskId: number) => void
+  onOpenShared: (taskId: number) => void
   onShowParentTask: (taskId: number) => void
   compact?: boolean
 }
 
 export function AssessmentsPanel({
   assessments,
+  shared,
   focusedTaskId,
   todayIso,
   selectedAssessmentId,
   highlightedAssessmentIds,
   onStart,
+  onOpenShared,
   onShowParentTask,
   compact = false,
 }: Props) {
@@ -65,6 +74,36 @@ export function AssessmentsPanel({
         </AnimatePresence>
       </ul>
       {assessments.length === 0 && <p className="status-message">No assessments yet.</p>}
+
+      {shared.length > 0 && (
+        <>
+          <p className="assessments-heading shared-heading">🤝 Shared with me</p>
+          <ul className="assessments-list shared-assessments-list">
+            <AnimatePresence>
+              {shared.map((task) => (
+                <motion.li
+                  key={task.id}
+                  layout
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, overflow: 'hidden' }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className={task.done ? 'assessment-card shared done' : 'assessment-card shared'}
+                >
+                  <button
+                    type="button"
+                    className="shared-assessment-open-btn"
+                    onClick={() => onOpenShared(task.id)}
+                  >
+                    <span className={task.done ? 'task-text done' : 'task-text'}>{task.text}</span>
+                    <span className="shared-assessment-owner">by {task.username}</span>
+                  </button>
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </ul>
+        </>
+      )}
     </div>
   )
 }

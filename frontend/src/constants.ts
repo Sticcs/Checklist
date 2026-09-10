@@ -32,3 +32,10 @@ export const SHOPPING_CATEGORY = 'Shopping'
 // that's what makes the same Google account show the same tasks on both.
 // See backend/app/config.py's public_base_url for the matching backend value.
 export const PRODUCTION_URL = 'https://checklist-kmtw.onrender.com'
+
+// sessionStorage key holding a share link's token captured pre-auth (see
+// main.tsx's bootstrap, which runs before React mounts) - read once by
+// TaskListPage's pending-join effect right after login/signup/guest-continue
+// lands. Lives here (not main.tsx) so both can import it without a circular
+// dependency (main.tsx -> App.tsx -> ... -> TaskListPage.tsx -> main.tsx).
+export const PENDING_JOIN_TOKEN_KEY = 'checklist-pending-join-token'

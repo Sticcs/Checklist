@@ -61,6 +61,13 @@ tasks_table = Table(
     # as `links` above. `notes` itself remains page 1's content for anything
     # written before this existed - see crud.get_task_pages.
     Column("pages", Text, nullable=True),
+    # Set when the owner generates a share link for an Assignment (see
+    # routers/collaboration.py). NULL = no active link. Regenerating
+    # overwrites it (silently invalidating the old link); revoking sets it
+    # back to NULL. Never exposed on the Task response model (see models.py)
+    # so other users can't see or reuse the owner's live token via a normal
+    # task fetch - only routers/collaboration.py's owner-gated endpoints read it.
+    Column("share_token", String, nullable=True),
 )
 
 subtasks_table = Table(
@@ -91,6 +98,20 @@ website_links_table = Table(
     Column("website_username", String, nullable=False),
     Column("website_password", String, nullable=False),
     Column("linked_at", String, nullable=False),
+)
+
+assignment_collaborators_table = Table(
+    "assignment_collaborators",
+    metadata,
+    # No FK to tasks/users (see google_sub's comment above for why - ALTER
+    # TABLE-added constraints aren't portable across SQLite/Postgres). No DB
+    # uniqueness on (task_id, username) either - crud.add_collaborator
+    # dedupes before inserting, same convention as google_sub's uniqueness
+    # being enforced in application code rather than the schema.
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("task_id", Integer, nullable=False),
+    Column("username", String, nullable=False),
+    Column("added_at", String, nullable=False),
 )
 
 activity_log_table = Table(
@@ -205,6 +226,10 @@ def init_db() -> None:
     if "pages" not in existing_task_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN pages TEXT"))
+
+    if "share_token" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN share_token TEXT"))
 
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:

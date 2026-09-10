@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 
 from app.db import init_db
 from app.paths import resource_path
-from app.routers import activity, auth, data, stats, subtasks, tasks, undo_redo
+from app.routers import activity, auth, collaboration, data, stats, subtasks, tasks, undo_redo
 
 
 @asynccontextmanager
@@ -19,6 +19,7 @@ app = FastAPI(title="Checklist API", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(subtasks.router)
+app.include_router(collaboration.router)
 app.include_router(activity.router)
 app.include_router(stats.router)
 app.include_router(undo_redo.router)

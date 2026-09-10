@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
-import type { Task, WorkspacePage } from '../types'
-import { useSetTaskLinks, useSetTaskPages, useToggleDone } from '../hooks/useTasks'
+import type { Task, TasksResponse, WorkspacePage } from '../types'
+import { TASKS_KEY, isOwnedTask, setSharedData, useSetTaskLinks, useSetTaskPages, useToggleDone } from '../hooks/useTasks'
 import { useAddSubtask, useDeleteSubtask, useToggleSubtask } from '../hooks/useSubtasks'
+import {
+  useCollaborators,
+  useCreateShareLink,
+  useRegenerateShareLink,
+  useRemoveCollaborator,
+  useRevokeShareLink,
+} from '../hooks/useCollaboration'
+import { collaborationApi } from '../api/collaboration'
+import { ApiError } from '../api/client'
+import { useAuth } from '../context/AuthContext'
+import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useFormattableEditable, useFormattingContext, type FormatKind } from '../context/FormattingContext'
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
 
@@ -137,6 +149,97 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
   const deleteSubtask = useDeleteSubtask()
+
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const isDesktopApp = useIsDesktopApp()
+  const isOwner = task.username === user?.username
+
+  // Refreshes this one assignment every 20s while the workspace stays open -
+  // the app's whole collaboration model is "refresh to see" (no websockets/
+  // SSE), so this is the entire mechanism by which a collaborator's edits
+  // eventually show up for the owner (and vice versa) without a manual
+  // reload. The pages-sync effect below already guards against a poll
+  // clobbering in-progress local typing (it only re-syncs from a changed
+  // task.pages prop when !dirty.current), so no extra guard is needed here.
+  const pollQuery = useQuery({
+    queryKey: ['assignment-poll', task.id],
+    queryFn: () => collaborationApi.getTask(task.id),
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+  })
+
+  useEffect(() => {
+    const fresh = pollQuery.data
+    if (!fresh) return
+    if (isOwnedTask(queryClient, fresh.id)) {
+      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+        old ? { ...old, tasks: old.tasks.map((t) => (t.id === fresh.id ? fresh : t)) } : old
+      )
+    } else {
+      setSharedData(queryClient, (old) => old.map((t) => (t.id === fresh.id ? fresh : t)))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollQuery.data])
+
+  useEffect(() => {
+    // 404 means the assignment was deleted, or (for a collaborator) access
+    // was revoked - either way there's nothing left to show here.
+    if (pollQuery.error instanceof ApiError && pollQuery.error.status === 404) {
+      toast.error('This assignment is no longer available')
+      onBack()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollQuery.error])
+
+  const [sharePopoverOpen, setSharePopoverOpen] = useState(false)
+  const [shareLink, setShareLink] = useState<string | null>(null)
+  const createShareLink = useCreateShareLink()
+  const regenerateShareLink = useRegenerateShareLink()
+  const revokeShareLink = useRevokeShareLink()
+  const collaboratorsQuery = useCollaborators(task.id, sharePopoverOpen && isOwner)
+  const removeCollaborator = useRemoveCollaborator()
+
+  // Get-or-create is idempotent server-side, so re-fetching every time the
+  // popover opens is harmless - it just returns the existing link if one's
+  // already active, giving an instant "here's your link" instead of an
+  // extra click to generate one.
+  useEffect(() => {
+    if (!sharePopoverOpen || !isOwner) return
+    createShareLink.mutate(task.id, { onSuccess: (res) => setShareLink(res.url) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharePopoverOpen, isOwner, task.id])
+
+  useEffect(() => {
+    if (!sharePopoverOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.assignment-share')) setSharePopoverOpen(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [sharePopoverOpen])
+
+  const copyShareLink = async () => {
+    if (!shareLink) return
+    try {
+      await navigator.clipboard.writeText(shareLink)
+      toast('🔗 Link copied')
+    } catch {
+      toast.error("Couldn't copy - try selecting the link and copying manually")
+    }
+  }
+
+  const handleGenerateLink = () => {
+    createShareLink.mutate(task.id, { onSuccess: (res) => setShareLink(res.url) })
+  }
+
+  const handleRegenerateLink = () => {
+    regenerateShareLink.mutate(task.id, { onSuccess: (res) => setShareLink(res.url) })
+  }
+
+  const handleRevokeLink = () => {
+    revokeShareLink.mutate(task.id, { onSuccess: () => setShareLink(null) })
+  }
 
   // Multiple pages (Word/Docs-style tabs) per assignment - each its own
   // rich-text doc. `pages` is the working copy (kept in sync with
@@ -495,7 +598,7 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
 
       <div className="assignment-workspace-main">
         <div className="assignment-top-actions">
-          <div>
+          <div className="assignment-top-actions-left">
             {task.assigned_task_id !== null && (
               <button
                 type="button"
@@ -505,6 +608,82 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
               >
                 🔗 Assigned under a task
               </button>
+            )}
+
+            {isOwner ? (
+              isDesktopApp ? (
+                <p className="status-message assignment-share-desktop-note">
+                  Sharing isn't available in the desktop app - it uses its own offline database, separate
+                  from the website's.
+                </p>
+              ) : (
+                <div className="assignment-share" data-focus-exempt>
+                  <button
+                    type="button"
+                    className="assignment-add-link-btn"
+                    onClick={() => setSharePopoverOpen((open) => !open)}
+                  >
+                    🔗 Share
+                  </button>
+                  {sharePopoverOpen && (
+                    <div className="assignment-share-popover" data-focus-exempt>
+                      {shareLink ? (
+                        <>
+                          <div className="assignment-share-link-row">
+                            <input
+                              readOnly
+                              value={shareLink}
+                              onFocus={(e) => e.currentTarget.select()}
+                            />
+                            <button type="button" className="btn-primary" onClick={() => void copyShareLink()}>
+                              Copy
+                            </button>
+                          </div>
+                          <div className="assignment-share-link-actions">
+                            <button type="button" onClick={handleRegenerateLink}>
+                              Regenerate
+                            </button>
+                            <button type="button" onClick={handleRevokeLink}>
+                              Revoke
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={createShareLink.isPending}
+                          onClick={handleGenerateLink}
+                        >
+                          {createShareLink.isPending ? 'Generating…' : 'Generate share link'}
+                        </button>
+                      )}
+                      <p className="assessments-heading assignment-share-collaborators-heading">Collaborators</p>
+                      {(collaboratorsQuery.data?.collaborators.length ?? 0) === 0 ? (
+                        <p className="status-message">No collaborators yet.</p>
+                      ) : (
+                        <ul className="assignment-collaborators-list">
+                          {collaboratorsQuery.data!.collaborators.map((c) => (
+                            <li key={c.username}>
+                              <span>{c.username}</span>
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                title="Remove collaborator"
+                                onClick={() => removeCollaborator.mutate({ taskId: task.id, username: c.username })}
+                              >
+                                ✕
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            ) : (
+              <p className="status-message assignment-shared-by">🤝 Shared by {task.username}</p>
             )}
           </div>
           <button

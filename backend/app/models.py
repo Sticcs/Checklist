@@ -177,6 +177,26 @@ class TasksResponse(BaseModel):
     can_redo: bool
 
 
+# ----------------------------- Collaboration -----------------------------
+# Deliberately separate models rather than adding fields to Task - a share
+# token/collaborator list must never appear on the normal Task response
+# (see routers/collaboration.py), only on these dedicated, owner-gated
+# endpoints.
+
+class ShareLinkResponse(BaseModel):
+    token: str
+    url: str
+
+
+class CollaboratorEntry(BaseModel):
+    username: str
+    added_at: str
+
+
+class CollaboratorsResponse(BaseModel):
+    collaborators: list[CollaboratorEntry]
+
+
 class MarkAllCompletedResponse(BaseModel):
     updated_count: int
 

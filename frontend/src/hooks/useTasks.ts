@@ -7,6 +7,14 @@ import { markDirty } from './saveState'
 import { STATS_KEY } from './useStats'
 
 export const TASKS_KEY = ['tasks']
+// A collaborator's view of assignments they don't own (see
+// hooks/useCollaboration.ts's useSharedWithMe) - a plain Task[], unlike
+// TASKS_KEY's {tasks, can_undo, can_redo} shape, since a collaborator has no
+// undo/redo stack of their own for someone else's task. Defined here (not in
+// useCollaboration.ts) because the mutation hooks below need it, and
+// useCollaboration.ts already needs to import from here - keeping it here
+// avoids a circular import.
+export const SHARED_KEY = ['shared-with-me']
 
 // Shared by every mutation below: cancel any in-flight refetch (so it can't
 // clobber our optimistic write when it resolves), snapshot the current cache
@@ -28,6 +36,36 @@ function setTasksData(queryClient: QueryClient, updater: (old: TasksResponse) =>
 
 function rollback(queryClient: QueryClient, previous: TasksResponse | undefined) {
   if (previous) queryClient.setQueryData(TASKS_KEY, previous)
+}
+
+// True when `taskId` is in the signed-in user's own TASKS_KEY cache (i.e.
+// they own it) - false means it's a collaborator-accessed assignment (see
+// SHARED_KEY), which every dual-path mutation hook below branches on. This
+// is deliberately a cache lookup, not an API call: TaskListPage always has
+// both caches populated before either the main list or a workspace can be
+// interacted with, so the cache is authoritative for "which list is this
+// task actually in right now" without an extra round-trip.
+export function isOwnedTask(queryClient: QueryClient, taskId: number): boolean {
+  const data = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+  return !!data?.tasks.some((t) => t.id === taskId)
+}
+
+// SHARED_KEY equivalents of beginOptimisticUpdate/setTasksData/rollback
+// above - deliberately lighter: no pushUndoSnapshot, since a collaborator's
+// edits to someone else's assignment have nothing to do with the owner's own
+// undo/redo stack (which is fetched from the owner's own /api/tasks and
+// isn't even visible to a collaborator).
+export async function beginSharedOptimisticUpdate(queryClient: QueryClient) {
+  await queryClient.cancelQueries({ queryKey: SHARED_KEY })
+  return queryClient.getQueryData<Task[]>(SHARED_KEY)
+}
+
+export function setSharedData(queryClient: QueryClient, updater: (old: Task[]) => Task[]) {
+  queryClient.setQueryData<Task[]>(SHARED_KEY, (old) => (old ? updater(old) : old))
+}
+
+export function rollbackShared(queryClient: QueryClient, previous: Task[] | undefined) {
+  if (previous) queryClient.setQueryData(SHARED_KEY, previous)
 }
 
 // None of these mutations refetch on settle. Each onMutate already applies
@@ -149,46 +187,50 @@ export function useEditTask() {
   })
 }
 
+// Mirrors the backend's set_done cascade (completing clears in_progress and
+// cascades to subtasks) - shared verbatim by both the owner and collaborator
+// optimistic-update branches below, since the server-side effect is
+// identical either way, only which cache holds the task differs.
+function applyToggleDone<T extends Task>(t: T, done: boolean): T {
+  return {
+    ...t,
+    done,
+    in_progress: done ? false : t.in_progress,
+    subtasks: t.subtasks.map((s) => ({ ...s, done, urgent: done ? false : s.urgent })),
+  }
+}
+
 export function useToggleDone() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, done }: { id: number; done: boolean }) => tasksApi.setDone(id, done),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
-      setTasksData(queryClient, (old) => ({
-        tasks: old.tasks.map((t) =>
-          t.id === vars.id
-            ? {
-                ...t,
-                done: vars.done,
-                // Mirrors the backend's set_done: completing a task also
-                // clears its own "In progress" flag, since there's nothing
-                // left to show as in-progress once it's done. Un-completing
-                // leaves it alone rather than guessing it back to true.
-                in_progress: vars.done ? false : t.in_progress,
-                subtasks: t.subtasks.map((s) => ({
-                  ...s,
-                  done: vars.done,
-                  urgent: vars.done ? false : s.urgent,
-                })),
-              }
-            : t
-        ),
-        can_undo: true,
-        can_redo: false,
-      }))
       toast.success(vars.done ? 'Task completed' : 'Task unmarked')
-      return { previous }
+      if (isOwnedTask(queryClient, vars.id)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        setTasksData(queryClient, (old) => ({
+          tasks: old.tasks.map((t) => (t.id === vars.id ? applyToggleDone(t, vars.done) : t)),
+          can_undo: true,
+          can_redo: false,
+        }))
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map((t) => (t.id === vars.id ? applyToggleDone(t, vars.done) : t)))
+      return { previous, shared: true }
     },
     onError: (_err, _vars, ctx) => {
-      rollback(queryClient, ctx?.previous)
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to update task')
     },
-    onSuccess: (_task, vars) => {
+    onSuccess: (_task, vars, ctx) => {
       // The streak/heatmap panel is derived from the server's activity log
       // (a 'completed' entry only exists once the request actually lands),
       // so it refetches on settle rather than being guessed optimistically.
-      if (vars.done) queryClient.invalidateQueries({ queryKey: STATS_KEY })
+      // Only meaningful for the owner's own stats - a collaborator
+      // completing someone else's assignment doesn't touch their own streak.
+      if (vars.done && !ctx?.shared) queryClient.invalidateQueries({ queryKey: STATS_KEY })
     },
   })
 }
@@ -280,16 +322,22 @@ export function useSetTaskLinks() {
   return useMutation({
     mutationFn: ({ id, links }: { id: number; links: LinkItem[] }) => tasksApi.setLinks(id, links),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
-      setTasksData(queryClient, (old) => ({
-        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, links: vars.links } : t)),
-        can_undo: true,
-        can_redo: false,
-      }))
-      return { previous }
+      if (isOwnedTask(queryClient, vars.id)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        setTasksData(queryClient, (old) => ({
+          tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, links: vars.links } : t)),
+          can_undo: true,
+          can_redo: false,
+        }))
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map((t) => (t.id === vars.id ? { ...t, links: vars.links } : t)))
+      return { previous, shared: true }
     },
     onError: (_err, _vars, ctx) => {
-      rollback(queryClient, ctx?.previous)
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to update links')
     },
   })
@@ -304,17 +352,23 @@ export function useSetTaskPages() {
   return useMutation({
     mutationFn: ({ id, pages }: { id: number; pages: WorkspacePage[] }) => tasksApi.setPages(id, pages),
     onMutate: async (vars) => {
-      await queryClient.cancelQueries({ queryKey: TASKS_KEY })
-      const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
-      setTasksData(queryClient, (old) => ({
-        ...old,
-        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, pages: vars.pages } : t)),
-      }))
       markDirty()
-      return { previous }
+      if (isOwnedTask(queryClient, vars.id)) {
+        await queryClient.cancelQueries({ queryKey: TASKS_KEY })
+        const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+        setTasksData(queryClient, (old) => ({
+          ...old,
+          tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, pages: vars.pages } : t)),
+        }))
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map((t) => (t.id === vars.id ? { ...t, pages: vars.pages } : t)))
+      return { previous, shared: true }
     },
     onError: (_err, _vars, ctx) => {
-      rollback(queryClient, ctx?.previous)
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to save pages')
     },
   })

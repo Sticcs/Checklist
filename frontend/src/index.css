@@ -518,6 +518,42 @@ body[data-theme='dark'] .assessment-card.done {
   gap: 0.5rem;
 }
 
+.assessments-heading.shared-heading {
+  margin-top: 0.9rem;
+}
+
+.assessment-card.shared {
+  border-left-color: rgba(128, 128, 128, 0.35);
+  padding: 0;
+}
+
+.assessment-card.shared.done {
+  background: var(--card-bg) !important;
+  border-color: rgba(128, 128, 128, 0.2) !important;
+  color: inherit;
+}
+
+.shared-assessment-open-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.shared-assessment-owner {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  opacity: 0.6;
+}
+
 .assessment-main {
   flex: 1;
   min-width: 0;
@@ -2635,6 +2671,78 @@ body[data-theme='dark'] .assignment-add-link-btn {
   background: rgba(46, 204, 113, 0.9);
   color: white;
   border-color: rgba(46, 204, 113, 0.9);
+}
+
+.assignment-top-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.assignment-share-desktop-note,
+.assignment-shared-by {
+  margin: 0;
+}
+
+.assignment-share {
+  position: relative;
+}
+
+.assignment-share-popover {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 320px;
+  max-width: 80vw;
+  padding: 0.75rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.assignment-share-link-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.assignment-share-link-row input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.assignment-share-link-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.assignment-share-collaborators-heading {
+  margin-top: 0.3rem;
+}
+
+.assignment-collaborators-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.assignment-collaborators-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
 }
 
 /* The textbox column and the links+tasks column beside it (see

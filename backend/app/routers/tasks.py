@@ -33,11 +33,42 @@ def _require_task(task_id: int, username: str) -> dict:
     return task
 
 
+def _require_task_access(task_id: int, username: str) -> dict:
+    """Like _require_task, but also allows an assignment collaborator (see
+    crud.get_task_for_user) - not just the owner. The returned dict's
+    "username" is always the task's real owner: every downstream crud call
+    must be passed task["username"], never the caller's own username,
+    since every crud mutation filters its WHERE clause by whichever
+    username it's given."""
+    task = crud.get_task_for_user(task_id, username)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found")
+    return task
+
+
 @router.get("", response_model=TasksResponse)
 def list_tasks(current_user: CurrentUser = Depends(get_current_user)) -> TasksResponse:
     tasks = crud.get_tasks_with_subtasks(current_user.username)
     can_undo, can_redo = undo.status(current_user.username)
     return TasksResponse(tasks=tasks, can_undo=can_undo, can_redo=can_redo)
+
+
+@router.get("/shared-with-me", response_model=list[Task])
+def shared_with_me(current_user: CurrentUser = Depends(get_current_user)) -> list[Task]:
+    # Registered before GET /{task_id} below - Starlette matches path
+    # operations in registration order, so "shared-with-me" must be listed
+    # first or it would be swallowed by {task_id}.
+    return crud.get_shared_with_me(current_user.username)
+
+
+@router.get("/{task_id}", response_model=Task)
+def get_single_task(task_id: int, current_user: CurrentUser = Depends(get_current_user)) -> Task:
+    # Owner-or-collaborator gated (see _require_task_access) - used by the
+    # frontend's AssignmentWorkspace for its periodic poll refresh, which
+    # collaborators also need since they have no other single-task fetch.
+    task = _require_task_access(task_id, current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=Task)
@@ -66,8 +97,13 @@ def edit_task(
 def toggle_done(
     task_id: int, body: TaskDoneUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> Task:
-    _require_task(task_id, current_user.username)
-    task = crud.set_done(task_id, body.done, current_user.username)
+    # Collaborator-accessible (see _require_task_access) - AssignmentWorkspace's
+    # "Mark as Finished" button. owner_task["username"] (not current_user.username)
+    # is threaded into crud.set_done since every crud mutation filters by
+    # whichever username it's given, and a collaborator's own username won't
+    # match the row's owner column.
+    owner_task = _require_task_access(task_id, current_user.username)
+    task = crud.set_done(task_id, body.done, owner_task["username"])
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 
@@ -126,8 +162,9 @@ def toggle_task_in_progress(
 def update_task_links(
     task_id: int, body: TaskLinksUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> Task:
-    _require_task(task_id, current_user.username)
-    task = crud.set_task_links(task_id, [link.model_dump() for link in body.links], current_user.username)
+    # Collaborator-accessible - see toggle_done's comment on owner_task["username"].
+    owner_task = _require_task_access(task_id, current_user.username)
+    task = crud.set_task_links(task_id, [link.model_dump() for link in body.links], owner_task["username"])
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 
@@ -136,8 +173,9 @@ def update_task_links(
 def update_task_pages(
     task_id: int, body: TaskPagesUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> Task:
-    _require_task(task_id, current_user.username)
-    task = crud.set_task_pages(task_id, [page.model_dump() for page in body.pages], current_user.username)
+    # Collaborator-accessible - see toggle_done's comment on owner_task["username"].
+    owner_task = _require_task_access(task_id, current_user.username)
+    task = crud.set_task_pages(task_id, [page.model_dump() for page in body.pages], owner_task["username"])
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 
@@ -198,9 +236,10 @@ def clear_all(current_user: CurrentUser = Depends(get_current_user)) -> ClearRes
 def create_subtask(
     task_id: int, body: SubtaskCreate, current_user: CurrentUser = Depends(get_current_user)
 ) -> SubtaskMutationResponse:
-    _require_task(task_id, current_user.username)
+    # Collaborator-accessible - see toggle_done's comment on owner_task["username"].
+    owner_task = _require_task_access(task_id, current_user.username)
     text = body.text.strip()
     if not text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Subtask text is required")
-    subtask, parent_done = crud.add_subtask(task_id, text, current_user.username)
+    subtask, parent_done = crud.add_subtask(task_id, text, owner_task["username"])
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)

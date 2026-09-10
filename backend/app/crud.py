@@ -206,6 +206,64 @@ def get_task(task_id: int, username: str) -> dict | None:
     return _task_dict(row) if row else None
 
 
+def get_task_for_user(task_id: int, username: str) -> dict | None:
+    """Like get_task, but also allows a collaborator (see
+    assignment_collaborators_table) - not just the owner. The returned
+    dict's "username" field is always the task's actual owner, never
+    `username` itself, so callers (see routers/tasks.py's
+    _require_task_access) can thread the owner through to the crud
+    functions below, every one of which filters by owner username."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT t.* FROM tasks t
+                WHERE t.id = :id AND (
+                    t.username = :username
+                    OR EXISTS (
+                        SELECT 1 FROM assignment_collaborators c
+                        WHERE c.task_id = t.id AND c.username = :username
+                    )
+                )
+                """
+            ),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+    return _task_dict(row) if row else None
+
+
+def get_shared_with_me(username: str) -> list[dict]:
+    """Assignments owned by someone else where `username` is a listed
+    collaborator (see assignment_collaborators_table) - the frontend's
+    "Shared with me" section (see AssessmentsPanel)."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT t.* FROM tasks t
+                JOIN assignment_collaborators c ON c.task_id = t.id
+                WHERE c.username = :username
+                ORDER BY t.created_at DESC
+                """
+            ),
+            {"username": username},
+        ).mappings().all()
+    tasks = [_task_dict(r) for r in rows]
+    subtasks_by_task = defaultdict(list)
+    if tasks:
+        stmt = text("SELECT * FROM subtasks WHERE task_id IN :task_ids ORDER BY created_at ASC").bindparams(
+            bindparam("task_ids", expanding=True)
+        )
+        with engine.connect() as conn:
+            for s in conn.execute(stmt, {"task_ids": [t["id"] for t in tasks]}).mappings().all():
+                subtasks_by_task[s["task_id"]].append(_subtask_dict(s))
+    for t in tasks:
+        t["subtasks"] = subtasks_by_task.get(t["id"], [])
+    return tasks
+
+
 def get_subtask_owning_task_id(subtask_id: int) -> int | None:
     engine = get_engine()
     with engine.connect() as conn:
@@ -366,8 +424,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress, links, pages) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress, :links, :pages)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress, links, pages, share_token) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress, :links, :pages, :share_token)"
                 ),
                 {
                     "id": t["id"],
@@ -405,6 +463,12 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     # TEXT column.
                     "links": json.dumps(t["links"]) if t.get("links") else None,
                     "pages": json.dumps(t["pages"]) if t.get("pages") else None,
+                    # Same round-trip requirement as links/pages above - an
+                    # active share link (see get_or_create_share_token) would
+                    # otherwise be silently revoked the moment any unrelated
+                    # action gets undone, since this restore replaces every
+                    # task for the user wholesale.
+                    "share_token": t.get("share_token"),
                 },
             )
 
@@ -672,6 +736,10 @@ def delete_task(task_id: int, username: str) -> None:
             text("UPDATE tasks SET assigned_task_id = NULL WHERE assigned_task_id = :id AND username = :username"),
             {"id": task_id, "username": username},
         )
+        # Same dangling-reference cleanup, for assignment_collaborators.
+        conn.execute(
+            text("DELETE FROM assignment_collaborators WHERE task_id = :id"), {"id": task_id}
+        )
     log_activity(username, "deleted", task_text, task_id=task_id)
 
 
@@ -697,6 +765,11 @@ def clear_completed(username: str) -> int:
                 "UPDATE tasks SET assigned_task_id = NULL WHERE assigned_task_id IN :task_ids AND username = :username"
             ).bindparams(bindparam("task_ids", expanding=True))
             conn.execute(unassign_stmt, {"task_ids": done_ids, "username": username})
+            # Same dangling-reference cleanup, for assignment_collaborators.
+            collab_stmt = text(
+                "DELETE FROM assignment_collaborators WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(collab_stmt, {"task_ids": done_ids})
         conn.execute(
             text("DELETE FROM tasks WHERE done = 1 AND username = :username"), {"username": username}
         )
@@ -714,6 +787,14 @@ def clear_all(username: str) -> int:
         ).scalar_one()
         conn.execute(
             text("DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE username = :username)"),
+            {"username": username},
+        )
+        # Same dangling-reference cleanup as delete_task/clear_completed.
+        conn.execute(
+            text(
+                "DELETE FROM assignment_collaborators WHERE task_id IN "
+                "(SELECT id FROM tasks WHERE username = :username)"
+            ),
             {"username": username},
         )
         conn.execute(text("DELETE FROM tasks WHERE username = :username"), {"username": username})
@@ -744,6 +825,121 @@ def mark_all_completed(username: str) -> int:
     if count:
         log_activity(username, "marked_all_completed", f"{count} task{'s' if count != 1 else ''}")
     return count
+
+
+# ----------------------------- Collaboration -----------------------------
+
+def get_or_create_share_token(task_id: int, username: str) -> str | None:
+    """Owner-only (caller must have already confirmed ownership). Returns the
+    existing token if one is already active, otherwise mints and stores a
+    fresh one. Returns None if the task doesn't belong to `username`."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT share_token FROM tasks WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        if row["share_token"]:
+            return row["share_token"]
+        token = secrets.token_urlsafe(24)
+        conn.execute(
+            text("UPDATE tasks SET share_token = :token WHERE id = :id AND username = :username"),
+            {"token": token, "id": task_id, "username": username},
+        )
+        return token
+
+
+def regenerate_share_token(task_id: int, username: str) -> str | None:
+    """Owner-only. Always issues a fresh token, silently invalidating
+    whatever link was previously shared - existing collaborators are
+    untouched, only the join link itself changes."""
+    engine = get_engine()
+    token = secrets.token_urlsafe(24)
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE tasks SET share_token = :token WHERE id = :id AND username = :username"),
+            {"token": token, "id": task_id, "username": username},
+        )
+        if result.rowcount == 0:
+            return None
+    return token
+
+
+def revoke_share_link(task_id: int, username: str) -> bool:
+    """Owner-only. Clears the token so the link stops working - existing
+    collaborators keep their access (see remove_collaborator to remove one)."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE tasks SET share_token = NULL WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        )
+    return result.rowcount > 0
+
+
+def get_task_by_share_token(token: str) -> dict | None:
+    """No username filter - resolves a share link before/without a caller
+    session, used only by the join endpoint (see routers/collaboration.py)."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT * FROM tasks WHERE share_token = :token"), {"token": token}
+        ).mappings().fetchone()
+    return _task_dict(row) if row else None
+
+
+def add_collaborator(task_id: int, username: str) -> None:
+    """Dedupes before inserting - see assignment_collaborators_table's
+    comment on why this isn't enforced at the schema level."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        existing = conn.execute(
+            text("SELECT 1 FROM assignment_collaborators WHERE task_id = :task_id AND username = :username"),
+            {"task_id": task_id, "username": username},
+        ).fetchone()
+        if existing:
+            return
+        conn.execute(
+            text(
+                "INSERT INTO assignment_collaborators (task_id, username, added_at) "
+                "VALUES (:task_id, :username, :added_at)"
+            ),
+            {"task_id": task_id, "username": username, "added_at": datetime.now().isoformat()},
+        )
+
+
+def list_collaborators(task_id: int) -> list[dict]:
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT username, added_at FROM assignment_collaborators "
+                "WHERE task_id = :task_id ORDER BY added_at ASC"
+            ),
+            {"task_id": task_id},
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def is_collaborator(task_id: int, username: str) -> bool:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT 1 FROM assignment_collaborators WHERE task_id = :task_id AND username = :username"),
+            {"task_id": task_id, "username": username},
+        ).fetchone()
+    return row is not None
+
+
+def remove_collaborator(task_id: int, username: str) -> None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM assignment_collaborators WHERE task_id = :task_id AND username = :username"),
+            {"task_id": task_id, "username": username},
+        )
 
 
 # ----------------------------- Subtask mutations -----------------------------

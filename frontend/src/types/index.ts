@@ -137,3 +137,13 @@ export interface ActivityEntry {
   detail: string
   created_at: string
 }
+
+export interface ShareLink {
+  token: string
+  url: string
+}
+
+export interface Collaborator {
+  username: string
+  added_at: string
+}
