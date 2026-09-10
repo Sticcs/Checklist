@@ -1741,6 +1741,69 @@ body[data-theme='dark'] .task-card.done {
   }
 }
 
+/* The reveal row's own look: full pill badges (not .badge's default 4px
+   corners, which read as small square chips once several sit side by
+   side) and borderless "ghost" icon buttons (not .icon-btn's default
+   bordered/filled look, which is right for a standalone button like
+   "Compact view" but reads as a cluster of boxes when six of them are
+   packed into one dense row). Scoped to .task-reveal specifically so it
+   doesn't change how badges/icon buttons look anywhere else in the app. */
+.task-reveal .badge {
+  border-radius: 999px;
+  padding: 0.22rem 0.7rem;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.task-reveal .urgent-subtask-badge,
+.task-reveal .subtask-due-tally-badge {
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+}
+
+.task-reveal .icon-btn {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.92rem;
+}
+
+.task-reveal .icon-btn:hover {
+  background: var(--badge-bg);
+}
+
+/* Specificity-matches (not just overrides) the existing dark-mode rule that
+   gives .icon-btn a visible bordered/filled look there - without an equally
+   specific selector here, that rule would win regardless of source order
+   and the ghost-button treatment above would only apply in light mode. */
+body[data-theme='dark'] .task-reveal .icon-btn:not(.btn-primary) {
+  background: transparent;
+  border: none;
+}
+
+body[data-theme='dark'] .task-reveal .icon-btn:not(.btn-primary):hover {
+  background: var(--badge-bg);
+}
+
+/* The pinned/notes-with-content state normally gets .btn-primary's solid
+   fill (right for a prominent standalone button, too loud for one icon in
+   a row of six) - tint the glyph instead of filling the whole button. */
+.task-reveal .icon-btn.btn-primary {
+  background: transparent;
+  border: none;
+  color: #d68910;
+}
+
+.task-reveal .icon-btn.btn-primary:hover {
+  background: var(--badge-bg);
+}
+
 .subtask-toggle-pill {
   border: none;
   font: inherit;
