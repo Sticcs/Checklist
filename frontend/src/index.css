@@ -1562,11 +1562,6 @@ body[data-theme='dark'] .entry-hint-step {
   overflow: hidden;
 }
 
-.progress-bar-track.small {
-  height: 5px;
-  flex: 1;
-}
-
 .progress-bar-fill {
   height: 100%;
   background: #ff4b4b;
@@ -1666,31 +1661,96 @@ body[data-theme='dark'] .task-card.done {
   animation: complete-glow 1s ease-out 1;
 }
 
+/* The quiet, always-visible line: drag handle (Manual sort only), checkbox,
+   pin glyph, title, due date - everything else lives in .task-reveal below,
+   which only expands on hover/focus. */
 .task-content {
   cursor: pointer;
-}
-
-.task-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  font-size: 1.05rem;
-  margin-bottom: 6px;
-  flex-wrap: nowrap;
-  /* Reserves room for the checkbox/pin/edit/delete row, which floats over
-     the top-right corner via .task-actions' own absolute positioning rather
-     than sharing this flex row - without this, title content could render
-     underneath it. */
-  padding-right: 11rem;
+  gap: 0.5rem;
+  font-size: 1.02rem;
 }
 
-.task-title > * {
-  flex-shrink: 0;
+.task-content .task-text {
+  flex: 1 1 auto;
+  min-width: 3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-text.done {
   text-decoration: line-through;
   opacity: 0.85;
+}
+
+.task-due-inline {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-due-inline.overdue {
+  color: #e74c3c;
+  font-weight: 600;
+}
+
+.task-due-inline.warm {
+  color: #d68910;
+  font-weight: 600;
+}
+
+.task-card.done .task-due-inline {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Hidden by default (zero height, not display:none, so the collapse/expand
+   animates) - hover or keyboard focus on the card expands it; force-open
+   (see TaskCard's revealOpen) keeps it open while notes or subtasks are
+   actually in use, so the row that holds their close controls doesn't
+   vanish the moment the pointer leaves. flex-basis: 100% drops it to its
+   own row below the checkbox/title/due-date line instead of competing with
+   the title for horizontal space - fighting over width there squeezed long
+   titles down to a couple of visible characters the moment a card revealed. */
+.task-reveal {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.22s ease, opacity 0.15s ease, margin-top 0.22s ease;
+}
+
+.task-content:hover .task-reveal,
+.task-card.focused .task-reveal,
+.task-reveal.force-open {
+  max-height: 10rem;
+  opacity: 1;
+  margin-top: 0.15rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-reveal {
+    transition: none;
+  }
+}
+
+.subtask-toggle-pill {
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.subtask-toggle-pill:hover {
+  background: rgba(128, 128, 128, 0.3);
 }
 
 .pin-badge {
@@ -1750,14 +1810,11 @@ body[data-theme='dark'] .task-card.done {
   white-space: nowrap;
 }
 
-.task-title > .subtask-due-tally-row {
-  /* The one title element allowed to shrink/clip - everything else (pin,
-     text, urgent/due-soon badges) keeps its natural size via the
-     `.task-title > *` flex-shrink:0 rule above; this is the sole exception,
-     so when things get crowded it's the due-date tally that gives way, not
-     the rest of the header. Sits directly after the other indicator badges
-     (no margin-left:auto) so it doesn't get shoved all the way to the far
-     right of the title row, away from the badges it's grouped with. */
+.subtask-due-tally-row {
+  /* The one .task-reveal item allowed to shrink/clip - the badges around it
+     keep their natural size; this is the sole exception, so when things get
+     crowded it's the due-date tally that gives way, not the rest of the
+     row. */
   flex-shrink: 1;
   min-width: 0;
   display: flex;
@@ -1771,7 +1828,7 @@ body[data-theme='dark'] .task-card.done {
    being clipped at the right edge - applying it unconditionally faded out
    the last badge even when the row had plenty of room to spare (TaskCard
    only adds this class once it measures real overflow). */
-.task-title > .subtask-due-tally-row.overflowing {
+.subtask-due-tally-row.overflowing {
   -webkit-mask-image: linear-gradient(to right, black calc(100% - 22px), transparent 100%);
   mask-image: linear-gradient(to right, black calc(100% - 22px), transparent 100%);
 }
@@ -1785,14 +1842,6 @@ body[data-theme='dark'] .task-card.done {
   border-radius: 4px;
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.meta-tags {
-  display: flex;
-  gap: 8px;
-  font-size: 0.75rem;
-  opacity: 0.85;
-  margin-bottom: 6px;
 }
 
 .badge {
@@ -1821,28 +1870,6 @@ body[data-theme='dark'] .task-card.done {
 .task-card.done .badge {
   background: rgba(255, 255, 255, 0.25);
   color: white;
-}
-
-.subtask-progress-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.3rem 0 0.4rem;
-}
-
-.subtask-progress-label {
-  font-size: 0.75rem;
-  opacity: 0.8;
-  white-space: nowrap;
-}
-
-.task-actions {
-  position: absolute;
-  top: 0.9rem;
-  right: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .due-date-quick-input {
@@ -1885,10 +1912,8 @@ body[data-theme='dark'] .task-card.done {
 }
 
 /* ----------------------------- Notes ----------------------------- */
-.notes-section {
-  margin-top: 0.6rem;
-}
-
+/* No margin on .notes-section itself, same reasoning as .subtask-section
+   above - it's an empty wrapper while closed. */
 .notes-textarea {
   width: 100%;
   min-height: 4.5rem;
@@ -1924,15 +1949,10 @@ body[data-theme='dark'] .notes-textarea {
 }
 
 /* ----------------------------- Subtasks ----------------------------- */
-.subtask-section {
-  margin-top: 0.6rem;
-}
-
-.subtask-toggle-btn {
-  width: 100%;
-  text-align: left;
-}
-
+/* No margin on .subtask-section itself - it renders as an empty wrapper
+   whenever the panel is closed (see TaskCard: the toggle now lives in
+   .task-reveal, not here), and .subtask-panel already carries its own
+   margin-top for when it's actually open. */
 .subtask-panel {
   background: rgba(255, 255, 255, 0.92);
   border-radius: 10px;

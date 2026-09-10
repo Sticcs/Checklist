@@ -107,6 +107,27 @@ export function TaskCard({
   const subDone = task.subtasks.filter((s) => s.done).length
   const urgentSubtaskCount = task.subtasks.filter((s) => s.urgent).length
 
+  // The one due-date indicator that stays visible on the quiet, unhovered
+  // card - folds what used to be three separate badges (the raw date, a
+  // "🚨 Urgent!" badge, and a "⏳ Due in N days" badge) into a single piece
+  // of text, styled by how pressing it is, instead of three things
+  // competing for the same glance.
+  const dueDateClass = overdue || dueUrgent ? 'task-due-inline overdue' : dueSoon ? 'task-due-inline warm' : 'task-due-inline'
+  const dueDateLabel = overdue
+    ? `${Math.abs(daysToDue ?? 0)} day${Math.abs(daysToDue ?? 0) === 1 ? '' : 's'} overdue`
+    : dueUrgent || dueSoon
+      ? daysToDue === 0
+        ? 'due today'
+        : `due in ${daysToDue} day${daysToDue === 1 ? '' : 's'}`
+      : task.due_date
+
+  // Everything besides checkbox/pin/title/due-date lives in a reveal row
+  // that's hidden until you hover or focus the card (see .task-reveal) - but
+  // once notes or subtasks are actually open, keep it visible even after the
+  // mouse leaves, so the button that closes them (and the rest of the row)
+  // doesn't vanish out from under you mid-edit.
+  const revealOpen = focused || notesOpen || subtasksOpen
+
   // Tally not-done subtasks by days-until-due, so "3 subtasks due in 2 days"
   // and "1 subtask due in 5 days" show as separate counts instead of being
   // flattened into one combined number.
@@ -342,26 +363,60 @@ export function TaskCard({
           </div>
         </div>
       ) : (
+        // Quiet by default: checkbox, an optional pin glyph, the title, and
+        // a due-date indicator (styled by urgency) are the only things on
+        // screen until you hover or focus the card. Category, assigned
+        // count, urgent/due-tally badges, notes, subtasks, and the pin/edit/
+        // delete actions all still exist - they live in .task-reveal below,
+        // which only expands on hover/focus (see the matching CSS) or while
+        // notes/subtasks are actually open (see revealOpen above). Nothing
+        // here is a new feature; it's the same controls as before, just not
+        // all shouting on the card at once.
         <div data-task-content-id={task.id} className="task-content">
-          <div className="task-title">
-            {draggable && (
-              <span
-                className="drag-handle"
-                title="Drag to reorder"
-                onPointerDown={(e) => dragControls.start(e)}
+          {draggable && (
+            <span
+              className="drag-handle"
+              title="Drag to reorder"
+              onPointerDown={(e) => dragControls.start(e)}
+            >
+              ⠿
+            </span>
+          )}
+          <input
+            type="checkbox"
+            className="task-done-checkbox"
+            checked={task.done}
+            title="Mark complete"
+            onChange={() => toggleDone.mutate({ id: task.id, done: !task.done })}
+          />
+          {task.pinned && (
+            <span className="pin-badge" title="Pinned">
+              📌
+            </span>
+          )}
+          <span className={task.done ? 'task-text done' : 'task-text'} title={task.text}>
+            {task.text}
+          </span>
+          {task.due_date && <span className={dueDateClass}>{dueDateLabel}</span>}
+
+          <div className={revealOpen ? 'task-reveal force-open' : 'task-reveal'} data-focus-exempt>
+            <span className="badge">{task.category}</span>
+            {assignedCount > 0 && (
+              <button
+                type="button"
+                className="badge assigned-count-badge"
+                title="Show the assessments assigned under this task"
+                onClick={(e) => {
+                  // Otherwise bubbles up to the document-level click
+                  // delegation (see TaskListPage) and also toggles this
+                  // task's focus - this button's click should only ever
+                  // trigger the highlight, nothing else.
+                  e.stopPropagation()
+                  onShowAssignments?.(task.id)
+                }}
               >
-                ⠿
-              </span>
-            )}
-            {task.pinned && (
-              <span className="pin-badge" title="Pinned">
-                📌
-              </span>
-            )}
-            <span className={task.done ? 'task-text done' : 'task-text'}>{task.text}</span>
-            {dueUrgent && <span className="urgent-badge">🚨 Urgent!</span>}
-            {dueSoon && (
-              <span className="due-soon-badge">⏳ Due in {daysToDue} day{daysToDue === 1 ? '' : 's'}</span>
+                🔗 {assignedCount}
+              </button>
             )}
             {urgentSubtaskCount > 0 && (
               <span className="urgent-subtask-badge" title={`${urgentSubtaskCount} urgent subtask(s)`}>
@@ -380,78 +435,63 @@ export function TaskCard({
                 ))}
               </div>
             )}
-            {!notesOpen && task.notes && (
-              <span className="notes-indicator" title="Has notes">
-                📝
-              </span>
-            )}
-          </div>
-          <div className="meta-tags">
-            <span className="badge">{task.category}</span>
-            {assignedCount > 0 && (
-              <button
-                type="button"
-                className="badge assigned-count-badge"
-                title="Show the assessments assigned under this task"
-                onClick={(e) => {
-                  // Otherwise bubbles up to the document-level click
-                  // delegation (see TaskListPage) and also toggles this
-                  // task's focus - this button's click should only ever
-                  // trigger the highlight, nothing else.
-                  e.stopPropagation()
-                  onShowAssignments?.(task.id)
-                }}
-              >
-                🔗 {assignedCount} assignment{assignedCount === 1 ? '' : 's'}
-              </button>
-            )}
-            {task.due_date && <span className={overdue ? 'badge overdue' : 'badge'}>{task.due_date}</span>}
-          </div>
-          {task.subtasks.length > 0 && (
-            <div className="subtask-progress-wrap">
-              <div className="progress-bar-track small">
-                <motion.div
-                  className="progress-bar-fill"
-                  initial={false}
-                  animate={{ width: `${(subDone / task.subtasks.length) * 100}%` }}
-                  transition={{ duration: 0.3, ease: 'easeOut' }}
-                />
-              </div>
-              <span className="subtask-progress-label">
-                Subtasks: {subDone}/{task.subtasks.length}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!compact && (
-        <div className="task-actions">
-          {!editing && (
-            <input
-              type="checkbox"
-              className="task-done-checkbox"
-              checked={task.done}
-              title="Mark complete"
-              onChange={() => toggleDone.mutate({ id: task.id, done: !task.done })}
-            />
-          )}
-          <button
-            type="button"
-            className={task.pinned ? 'icon-btn btn-primary' : 'icon-btn'}
-            aria-pressed={task.pinned}
-            onClick={() => setPinned.mutate({ id: task.id, pinned: !task.pinned })}
-          >
-            📌
-          </button>
-          {!editing && (
-            <button type="button" className="icon-btn" onClick={startEditing}>
+            <button
+              type="button"
+              className="badge subtask-toggle-pill"
+              title="Toggle subtasks"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleSubtasksOpen()
+              }}
+            >
+              {task.subtasks.length > 0 ? `📋 ${subDone}/${task.subtasks.length}` : '📋 Add subtasks'}
+            </button>
+            <button
+              type="button"
+              className={task.notes ? 'icon-btn btn-primary' : 'icon-btn'}
+              title={task.notes ? 'Notes' : 'Add notes'}
+              onClick={(e) => {
+                e.stopPropagation()
+                setNotesOpen((prev) => !prev)
+              }}
+            >
+              📝
+            </button>
+            <button
+              type="button"
+              className={task.pinned ? 'icon-btn btn-primary' : 'icon-btn'}
+              aria-pressed={task.pinned}
+              title={task.pinned ? 'Unpin' : 'Pin (mark important)'}
+              onClick={(e) => {
+                e.stopPropagation()
+                setPinned.mutate({ id: task.id, pinned: !task.pinned })
+              }}
+            >
+              📌
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Edit"
+              onClick={(e) => {
+                e.stopPropagation()
+                startEditing()
+              }}
+            >
               ✏️
             </button>
-          )}
-          <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
-            🗑️
-          </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Delete"
+              onClick={(e) => {
+                e.stopPropagation()
+                deleteTask.mutate(task.id)
+              }}
+            >
+              🗑️
+            </button>
+          </div>
         </div>
       )}
 
@@ -489,12 +529,11 @@ export function TaskCard({
         )}
       </AnimatePresence>
 
+      {/* The toggle button that used to live here permanently is now the
+          "📋" pill in .task-reveal above (and clicking a task already opens
+          this panel via focus, see the effect syncing subtasksOpen to
+          `focused`) - this section is just the panel itself now. */}
       {!compact && <div className="subtask-section">
-        <button type="button" className="subtask-toggle-btn" onClick={toggleSubtasksOpen}>
-          {task.subtasks.length > 0
-            ? `📋 Subtasks (${subDone}/${task.subtasks.length})`
-            : '📋 Add subtasks'}
-        </button>
         {subtasksOpen && (
           <div className="subtask-panel">
             <ul className="subtask-list">
@@ -622,15 +661,10 @@ export function TaskCard({
         )}
       </div>}
 
+      {/* Same as the subtask panel above - the "📝" icon in .task-reveal is
+          now the toggle; this is just the panel. */}
       {!compact && (
         <div className="notes-section">
-          <button
-            type="button"
-            className="subtask-toggle-btn"
-            onClick={() => setNotesOpen((prev) => !prev)}
-          >
-            {task.notes ? '📝 Notes' : '📝 Add notes'}
-          </button>
           {notesOpen && (
             <div
               ref={notesField.ref}
