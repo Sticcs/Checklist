@@ -21,6 +21,9 @@ import {
 } from '../hooks/useSubtasks'
 import { daysUntil } from '../utils/dueDatePresets'
 import { DateInput } from './DateInput'
+import { useDraftText, readPendingDraft, writePendingDraft, clearPendingDraft } from '../hooks/useDraftText'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { ApiError } from '../api/client'
 
 interface Props {
   task: Task
@@ -60,11 +63,16 @@ export function TaskCard({
   const [editDueDate, setEditDueDate] = useState(task.due_date ?? '')
 
   const [subtasksOpen, setSubtasksOpen] = useState(false)
-  const [newSubtaskText, setNewSubtaskText] = useState('')
+  const [newSubtaskText, setNewSubtaskText] = useDraftText(`subtask-add:${task.id}`)
 
+  const notesDraftKey = `task-notes:${task.id}`
   const [notesOpen, setNotesOpen] = useState(false)
-  const [notesDraft, setNotesDraft] = useState(task.notes ?? '')
-  const notesDirty = useRef(false)
+  // A pending localStorage draft (an edit that never made it to the server -
+  // see the debounce effect below) wins over the server's own notes so a
+  // reload doesn't silently drop it in favor of the stale server copy.
+  const [notesDraft, setNotesDraft] = useState(() => readPendingDraft<string>(notesDraftKey) ?? task.notes ?? '')
+  const notesDirty = useRef(readPendingDraft<string>(notesDraftKey) !== null)
+  const online = useOnlineStatus()
 
   const [dueDatePickerSubtaskId, setDueDatePickerSubtaskId] = useState<number | null>(null)
   // Drives the compact-view subtask dropdown's animated reveal (see the
@@ -197,16 +205,34 @@ export function TaskCard({
     if (!notesDirty.current) setNotesDraft(task.notes ?? '')
   }, [task.notes])
 
+  const saveNotes = () => {
+    notesDirty.current = false
+    setTaskNotes.mutate(
+      { id: task.id, notes: notesDraft },
+      {
+        onSuccess: () => clearPendingDraft(notesDraftKey),
+        onError: (err) => {
+          // A network failure, not a real rejection - the draft is still
+          // safe in localStorage (written on every keystroke below), and
+          // staying dirty means the next edit or the next reconnect (see
+          // the online-triggered effect below) tries again.
+          if (!(err instanceof ApiError)) notesDirty.current = true
+        },
+      }
+    )
+  }
+
   useEffect(() => {
     if (!notesDirty.current) return
-    const handle = setTimeout(() => {
-      notesDirty.current = false
-      setTaskNotes.mutate({ id: task.id, notes: notesDraft })
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, 600)
+    const handle = setTimeout(saveNotes, 600)
     return () => clearTimeout(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notesDraft])
+
+  useEffect(() => {
+    if (online && notesDirty.current) saveNotes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online])
 
   // Clicking to focus a task is also how you get at its subtasks now - open
   // the panel the moment focus lands, close it the moment focus leaves,
@@ -223,11 +249,26 @@ export function TaskCard({
 
   const handleNotesChange = (value: string) => {
     notesDirty.current = true
+    writePendingDraft(notesDraftKey, value)
     setNotesDraft(value)
   }
 
   const notesField = useFormattableEditable(handleNotesChange)
   useSyncEditableContent(notesField.ref, notesDraft, () => notesDirty.current)
+
+  // The notes box only exists in the DOM while notesOpen is true (see
+  // below), unlike most of this card - useSyncEditableContent's effect is
+  // keyed on notesDraft's value, so if that value hasn't changed since
+  // before the box existed (the common case: notes already loaded, panel
+  // just opened for the first time this session), the box would otherwise
+  // mount and stay empty even though notesDraft is correct. Same fix
+  // SubtaskNotepad's expanded overlay already uses for the same reason.
+  useEffect(() => {
+    if (!notesOpen || notesDirty.current) return
+    const el = notesField.ref.current
+    if (el) el.innerHTML = notesDraft
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesOpen])
 
   const startEditing = () => {
     setEditText(task.text)

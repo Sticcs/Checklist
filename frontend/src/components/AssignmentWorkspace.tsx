@@ -18,6 +18,8 @@ import { useAuth } from '../context/AuthContext'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useFormattableEditable, useFormattingContext, type FormatKind } from '../context/FormattingContext'
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
+import { useDraftText, readPendingDraft, writePendingDraft, clearPendingDraft } from '../hooks/useDraftText'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 
 const NEW_DOC_URL = 'https://docs.google.com/document/u/0/create?usp=docs_home&ths=true'
 
@@ -258,12 +260,17 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   // single-notes-field version used); `draft` mirrors just the *active*
   // page's content, since that's the one piece bound to the contentEditable
   // box via useSyncEditableContent.
-  const [pages, setPages] = useState<WorkspacePage[]>(() =>
-    task.pages.length > 0 ? task.pages : [defaultFirstPage(task.notes)]
+  const pagesDraftKey = `task-pages:${task.id}`
+  const pendingPages = readPendingDraft<WorkspacePage[]>(pagesDraftKey)
+  // A pending localStorage draft (edits that never reached the server) wins
+  // over the server's own pages - same reasoning as TaskCard's notes.
+  const [pages, setPages] = useState<WorkspacePage[]>(
+    () => pendingPages ?? (task.pages.length > 0 ? task.pages : [defaultFirstPage(task.notes)])
   )
   const [activePageId, setActivePageId] = useState(() => pages[0].id)
   const [draft, setDraft] = useState(() => pages[0].content)
-  const dirty = useRef(false)
+  const dirty = useRef(pendingPages !== null)
+  const online = useOnlineStatus()
 
   useEffect(() => {
     if (dirty.current) return
@@ -275,21 +282,39 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task.pages, task.notes])
 
+  const savePages = () => {
+    dirty.current = false
+    setTaskPages.mutate(
+      { id: task.id, pages },
+      {
+        onSuccess: () => clearPendingDraft(pagesDraftKey),
+        onError: (err) => {
+          if (!(err instanceof ApiError)) dirty.current = true
+        },
+      }
+    )
+  }
+
   useEffect(() => {
     if (!dirty.current) return
-    const handle = setTimeout(() => {
-      dirty.current = false
-      setTaskPages.mutate({ id: task.id, pages })
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, 600)
+    const handle = setTimeout(savePages, 600)
     return () => clearTimeout(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages])
 
+  useEffect(() => {
+    if (online && dirty.current) savePages()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online])
+
   const onChange = (value: string) => {
     dirty.current = true
     setDraft(value)
-    setPages((prev) => prev.map((p) => (p.id === activePageId ? { ...p, content: value } : p)))
+    setPages((prev) => {
+      const next = prev.map((p) => (p.id === activePageId ? { ...p, content: value } : p))
+      writePendingDraft(pagesDraftKey, next)
+      return next
+    })
   }
 
   const switchPage = (id: string) => {
@@ -556,7 +581,7 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   // task's subtask panel (TaskCard), just with a much smaller UI: no due
   // dates, priority, or notes, only text + done. Typing in the box above
   // and pressing Enter is the entire add flow, no multi-step wizard.
-  const [newTaskText, setNewTaskText] = useState('')
+  const [newTaskText, setNewTaskText] = useDraftText(`subtask-add:${task.id}`)
   const submitTask = (e: React.FormEvent) => {
     e.preventDefault()
     const text = newTaskText.trim()

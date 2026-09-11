@@ -11,6 +11,7 @@ import {
   useRevokeListShareLink,
 } from '../hooks/useLists'
 import { LIST_ITEM_CATEGORY, SHOPPING_CATEGORY } from '../constants'
+import { useDraftText } from '../hooks/useDraftText'
 
 interface Props {
   list: ListEntry
@@ -34,7 +35,9 @@ export function ListPanel({ list, items }: Props) {
   const regenerateShareLink = useRegenerateListShareLink()
   const revokeShareLink = useRevokeListShareLink()
 
-  const [newItemText, setNewItemText] = useState('')
+  // Keyed per-list so a draft in one list's add-item box doesn't bleed into
+  // another's, and survives a reload the same way the main quick-add does.
+  const [newItemText, setNewItemText] = useDraftText(`list-item:${list.id}`)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameDraft, setRenameDraft] = useState(list.name)

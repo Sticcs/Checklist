@@ -11,7 +11,9 @@ import { useIsMobileLayout } from '../hooks/useIsMobileLayout'
 import { useWebsiteLinkStatus } from '../hooks/useData'
 import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
 import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
+import { useOfflineSync } from '../hooks/useOfflineSync'
 import { AddTaskForm } from '../components/AddTaskForm'
+import { OfflineBanner } from '../components/OfflineBanner'
 import { TaskCard } from '../components/TaskCard'
 import { ProgressBar } from '../components/ProgressBar'
 import { QuoteHeader } from '../components/QuoteHeader'
@@ -42,6 +44,7 @@ export function TaskListPage() {
   const isDesktopApp = useIsDesktopApp()
   const isMobileLayout = useIsMobileLayout() && !isDesktopApp
   useWebsiteLinkStatus()
+  useOfflineSync()
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
@@ -419,7 +422,9 @@ export function TaskListPage() {
   // AnimatePresence can only animate an element out if it stays mounted
   // itself across the transition.
   return (
-    <AnimatePresence mode="wait">
+    <>
+      <OfflineBanner />
+      <AnimatePresence mode="wait">
       {activeAssignmentTask ? (
         <AssignmentWorkspace
           key="workspace"
@@ -665,6 +670,7 @@ export function TaskListPage() {
       <KeyboardShortcutsHelp />
         </motion.div>
       )}
-    </AnimatePresence>
+      </AnimatePresence>
+    </>
   )
 }

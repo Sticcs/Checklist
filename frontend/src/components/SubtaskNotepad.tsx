@@ -5,6 +5,9 @@ import { useFormattableEditable } from '../context/FormattingContext'
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
 import { isTypingElement } from '../utils/isTypingElement'
 import { ExpandOverlay } from './ExpandOverlay'
+import { readPendingDraft, writePendingDraft, clearPendingDraft } from '../hooks/useDraftText'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { ApiError } from '../api/client'
 import type { Subtask } from '../types'
 
 interface Props {
@@ -15,13 +18,19 @@ interface Props {
 // switches to a different subtask, so the draft always starts from that
 // subtask's own notes instead of carrying over the previous one's.
 export function SubtaskNotepad({ subtask }: Props) {
-  const [draft, setDraft] = useState(subtask.notes ?? '')
-  const dirty = useRef(false)
+  const draftKey = `subtask-notes:${subtask.id}`
+  // A pending localStorage draft (an edit that never made it to the server)
+  // wins over the server's own notes - see the matching comment in
+  // TaskCard's notes handling for why this can't just be a plain string.
+  const [draft, setDraft] = useState(() => readPendingDraft<string>(draftKey) ?? subtask.notes ?? '')
+  const dirty = useRef(readPendingDraft<string>(draftKey) !== null)
   const setSubtaskNotes = useSetSubtaskNotes()
   const [expanded, setExpanded] = useState(false)
+  const online = useOnlineStatus()
 
   const onChange = (value: string) => {
     dirty.current = true
+    writePendingDraft(draftKey, value)
     setDraft(value)
   }
 
@@ -36,16 +45,32 @@ export function SubtaskNotepad({ subtask }: Props) {
     if (!dirty.current) setDraft(subtask.notes ?? '')
   }, [subtask.notes])
 
+  const save = () => {
+    dirty.current = false
+    setSubtaskNotes.mutate(
+      { subtaskId: subtask.id, notes: draft },
+      {
+        onSuccess: () => clearPendingDraft(draftKey),
+        onError: (err) => {
+          // Still safe in localStorage either way - a network failure just
+          // means "try again," not "give up and lose it."
+          if (!(err instanceof ApiError)) dirty.current = true
+        },
+      }
+    )
+  }
+
   useEffect(() => {
     if (!dirty.current) return
-    const handle = setTimeout(() => {
-      dirty.current = false
-      setSubtaskNotes.mutate({ subtaskId: subtask.id, notes: draft })
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, 600)
+    const handle = setTimeout(save, 600)
     return () => clearTimeout(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft])
+
+  useEffect(() => {
+    if (online && dirty.current) save()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online])
 
   // Takes `` ` `` away from the scratchpad while a subtask notepad is open -
   // registered in the capture phase, which document always runs before its

@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { tasksApi } from '../api/tasks'
+import { ApiError } from '../api/client'
 import type { LinkItem, Task, TasksResponse, WorkspacePage } from '../types'
 import { pushUndoSnapshot } from './undoRedoStack'
 import { markDirty } from './saveState'
 import { STATS_KEY } from './useStats'
 import { SHOPPING_CATEGORY } from '../constants'
+import { addToOutbox } from '../lib/offlineOutbox'
 
 export const TASKS_KEY = ['tasks']
 // A collaborator's view of assignments they don't own (see
@@ -99,6 +101,15 @@ export function useAddTask() {
       dueDate: string | null
       listId?: number | null
     }) => tasksApi.create(text, priority, category, dueDate, listId ?? null),
+    // Without this, TanStack Query's default networkMode ('online') PAUSES
+    // the mutation the moment navigator.onLine is false, instead of
+    // actually attempting (and failing) the request - mutationFn is simply
+    // never called until the browser reports back online, so onError below
+    // (which is what feeds the offline outbox) never fires, and a page
+    // reload while that pause is in effect loses the whole thing silently.
+    // 'always' makes it behave the way a plain fetch does: try for real,
+    // fail for real, so the outbox actually gets a chance to catch it.
+    networkMode: 'always',
     onMutate: async (vars) => {
       const previous = await beginOptimisticUpdate(queryClient)
       const tempId = -Date.now()
@@ -133,9 +144,18 @@ export function useAddTask() {
       toast.success('Task added')
       return { previous, tempId, clientKey }
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, vars, ctx) => {
       rollback(queryClient, ctx?.previous)
-      toast.error('Failed to add task')
+      if (err instanceof ApiError) {
+        toast.error('Failed to add task')
+        return
+      }
+      // A network failure (offline, unreachable, etc.), not a real
+      // rejection from the server - the typed text is real work the user
+      // shouldn't have to redo, so it's queued instead of just discarded;
+      // useOfflineSync replays it the moment connectivity returns.
+      addToOutbox({ kind: 'task', label: vars.text, payload: vars })
+      toast.warning(`Offline — "${vars.text}" will be added once you're back online.`)
     },
     onSuccess: (task, _vars, ctx) => {
       // Swap the temp negative-id placeholder for the server's real record
@@ -373,6 +393,10 @@ export function useSetTaskPages() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, pages }: { id: number; pages: WorkspacePage[] }) => tasksApi.setPages(id, pages),
+    // See the matching comment on useAddTask - AssignmentWorkspace's pages
+    // autosave retry logic is keyed on onError actually firing while
+    // offline, which the default networkMode ('online') never lets happen.
+    networkMode: 'always',
     onMutate: async (vars) => {
       markDirty()
       if (isOwnedTask(queryClient, vars.id)) {
@@ -449,6 +473,10 @@ export function useSetTaskNotes() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, notes }: { id: number; notes: string }) => tasksApi.setNotes(id, notes),
+    // See the matching comment on useAddTask - TaskCard's notes-autosave
+    // retry logic is keyed on onError actually firing while offline, which
+    // the default networkMode ('online') never lets happen.
+    networkMode: 'always',
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: TASKS_KEY })
       const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)

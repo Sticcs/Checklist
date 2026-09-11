@@ -5,6 +5,7 @@ import { CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '.
 import { computeDueDate, DUE_PRESET_ORDER, type DuePreset } from '../utils/dueDatePresets'
 import { isTypingElement } from '../utils/isTypingElement'
 import { useAddTask } from '../hooks/useTasks'
+import { useDraftText } from '../hooks/useDraftText'
 import { DateInput } from './DateInput'
 
 const DUE_KEYS: Record<DuePreset, string> = {
@@ -61,7 +62,10 @@ interface Props {
 }
 
 export function AddTaskForm({ onAdded, hasTasks }: Props) {
-  const [text, setText] = useState('')
+  // Mirrored to localStorage (see useDraftText) so text you're mid-typing
+  // survives an accidental reload or a dropped connection instead of just
+  // vanishing - restored automatically the next time this form mounts.
+  const [text, setText] = useDraftText('quick-add')
   const [textLocked, setTextLocked] = useState(false)
   const [category, setCategory] = useState<string | null>(null)
   const [customCategory, setCustomCategory] = useState('')

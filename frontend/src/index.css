@@ -108,6 +108,39 @@ body[data-theme='dark'] {
   overflow: hidden;
 }
 
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  margin-top: 0.6rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  max-width: min(90vw, 34rem);
+  color: #7a4a00;
+  background: rgba(255, 186, 8, 0.92);
+  box-shadow: var(--glass-shadow);
+}
+
+.offline-banner-sending {
+  color: #0b4a8f;
+  background: rgba(120, 190, 255, 0.92);
+}
+
+body[data-theme='dark'] .offline-banner {
+  color: #3a2400;
+  background: rgba(255, 196, 61, 0.92);
+}
+
+body[data-theme='dark'] .offline-banner-sending {
+  color: #04203f;
+  background: rgba(120, 190, 255, 0.92);
+}
+
 .sidebar-toggle-btn {
   position: fixed;
   top: 1rem;
@@ -142,6 +175,12 @@ body[data-theme='dark'] {
   gap: 1.5rem;
   align-items: flex-start;
   min-height: calc(100vh - 3rem);
+  /* Without this, the column's grid track grows to fit its widest child's
+     content size (a grid item's implicit min-width is auto, i.e.
+     max-content) instead of respecting content-area's 1fr share - a wide
+     .entry-tabs row (more lists = more nowrap tabs) would otherwise push
+     the whole column wider and squeeze the task list column next to it. */
+  min-width: 0;
 }
 
 .task-entry-panel {
@@ -1556,6 +1595,7 @@ body[data-theme='dark'] .entry-hint-step {
 .entry-tabbed-panel {
   flex: 1;
   width: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1566,6 +1606,13 @@ body[data-theme='dark'] .entry-hint-step {
   gap: 0.3rem;
   flex-shrink: 0;
   padding-left: 0.3rem;
+  /* Tabs never wrap (each is white-space: nowrap) - past a handful of lists
+     the row scrolls sideways within its own box instead of growing wider
+     than .entry-tabbed-panel and dragging the whole column (and the task
+     list next to it) along with it. */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .entry-tab {

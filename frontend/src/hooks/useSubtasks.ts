@@ -1,9 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { subtasksApi } from '../api/subtasks'
+import { ApiError } from '../api/client'
 import { TASKS_KEY, isOwnedTask, beginSharedOptimisticUpdate, setSharedData, rollbackShared } from './useTasks'
 import { pushUndoSnapshot } from './undoRedoStack'
 import { markDirty } from './saveState'
+import { addToOutbox } from '../lib/offlineOutbox'
 import type { Task, TasksResponse } from '../types'
 
 async function beginOptimisticUpdate(queryClient: ReturnType<typeof useQueryClient>) {
@@ -37,6 +39,10 @@ export function useAddSubtask() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ taskId, text }: { taskId: number; text: string }) => subtasksApi.create(taskId, text),
+    // See the matching comment on useAddTask - without this, the default
+    // 'online' networkMode pauses the mutation (never calling mutationFn,
+    // never firing onError) instead of actually failing it while offline.
+    networkMode: 'always',
     onMutate: async (vars) => {
       const tempId = -(++tempSubtaskSeq)
       const clientKey = `temp-subtask-${tempId}`
@@ -74,10 +80,15 @@ export function useAddSubtask() {
       )
       return { previous, shared: true, tempId, clientKey }
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, vars, ctx) => {
       if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
       else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
-      toast.error('Failed to add subtask')
+      if (err instanceof ApiError) {
+        toast.error('Failed to add subtask')
+        return
+      }
+      addToOutbox({ kind: 'subtask', label: vars.text, payload: vars })
+      toast.warning(`Offline — "${vars.text}" will be added once you're back online.`)
     },
     onSuccess: (res, vars, ctx) => {
       // Swap the temp placeholder for the server's real subtask record,
@@ -261,6 +272,10 @@ export function useSetSubtaskNotes() {
   return useMutation({
     mutationFn: ({ subtaskId, notes }: { subtaskId: number; notes: string }) =>
       subtasksApi.setNotes(subtaskId, notes),
+    // See the matching comment on useAddTask - SubtaskNotepad's autosave
+    // retry logic is keyed on onError actually firing while offline, which
+    // the default networkMode ('online') never lets happen.
+    networkMode: 'always',
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: TASKS_KEY })
       const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
