@@ -76,7 +76,16 @@ def create_task(body: TaskCreate, current_user: CurrentUser = Depends(get_curren
     text = body.text.strip()
     if not text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Task text is required")
-    task = crud.add_task(text, body.priority, body.category, body.due_date, current_user.username)
+    if body.list_id is not None:
+        # Must belong to the caller and be a real 'custom' list - the
+        # built-in 'shopping' list is never targeted by list_id (its items
+        # are found by category alone, see crud.py's Lists section).
+        target_list = crud.get_list(body.list_id, current_user.username)
+        if target_list is None or target_list["kind"] != "custom":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
+    task = crud.add_task(
+        text, body.priority, body.category, body.due_date, current_user.username, list_id=body.list_id
+    )
     task["subtasks"] = []
     return task
 

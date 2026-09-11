@@ -68,6 +68,15 @@ tasks_table = Table(
     # so other users can't see or reuse the owner's live token via a normal
     # task fetch - only routers/collaboration.py's owner-gated endpoints read it.
     Column("share_token", String, nullable=True),
+    # Set only for a task that's an item in a custom list (see lists_table
+    # below) - null for every ordinary task, including Assessment/Shopping-
+    # category ones, which are still routed by `category` alone. No FK (see
+    # google_sub's comment above). A custom list's items are found by this
+    # column; Shopping's items are still found by category, never list_id -
+    # see crud.get_or_create_shopping_list's docstring for why the two
+    # built-in tabs (Shopping) and user-created ones (custom) use different
+    # membership rules despite sharing the same lists_table/UI.
+    Column("list_id", Integer, nullable=True),
 )
 
 subtasks_table = Table(
@@ -81,6 +90,13 @@ subtasks_table = Table(
     Column("urgent", Integer, nullable=False, server_default=text("0")),
     Column("due_date", String, nullable=True),
     Column("notes", Text, nullable=True),
+    # Who this mini task (in an Assignment workspace's own bare-bones task
+    # panel) is assigned to - the owner's own username, one of the
+    # assignment's collaborators (see assignment_collaborators_table), or
+    # null for unassigned. No FK (see google_sub's comment above); validated
+    # against the current collaborator list at write time by
+    # routers/subtasks.py, not enforced by the schema.
+    Column("assigned_username", String, nullable=True),
 )
 
 website_links_table = Table(
@@ -112,6 +128,30 @@ assignment_collaborators_table = Table(
     Column("task_id", Integer, nullable=False),
     Column("username", String, nullable=False),
     Column("added_at", String, nullable=False),
+)
+
+lists_table = Table(
+    "lists",
+    metadata,
+    # No FK (see google_sub's comment above). No DB uniqueness on
+    # (username, kind='shopping') - crud.get_or_create_shopping_list checks
+    # before inserting, same convention as everywhere else in this file.
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("username", String, nullable=False),
+    Column("name", String, nullable=False),
+    Column("created_at", String, nullable=False),
+    Column("position", Float, nullable=False, server_default=text("0")),
+    # Mirrors tasks.share_token exactly (see its comment) - never exposed on
+    # a response model a non-owner could reach.
+    Column("share_token", String, nullable=True),
+    # 'custom' (a user-created list via the "+" tab - its items are tasks
+    # with list_id pointing at this row) or 'shopping' (the one, permanent,
+    # lazily-created-per-account row backing the built-in Shopping tab -
+    # its items are tasks with category='Shopping', never list_id; see
+    # crud.get_or_create_shopping_list). This lets Shopping and custom lists
+    # share one rename/delete/share code path, branching on `kind` only
+    # where their membership rule or delete semantics genuinely differ.
+    Column("kind", String, nullable=False, server_default="custom"),
 )
 
 activity_log_table = Table(
@@ -231,6 +271,10 @@ def init_db() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN share_token TEXT"))
 
+    if "list_id" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN list_id INTEGER"))
+
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:
         with engine.begin() as conn:
@@ -243,6 +287,10 @@ def init_db() -> None:
     if "notes" not in existing_subtask_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE subtasks ADD COLUMN notes TEXT"))
+
+    if "assigned_username" not in existing_subtask_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE subtasks ADD COLUMN assigned_username TEXT"))
 
     existing_activity_columns = {c["name"] for c in inspector.get_columns("activity_log")}
     if "task_id" not in existing_activity_columns:

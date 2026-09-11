@@ -426,6 +426,34 @@ body[data-theme='dark'] {
   opacity: 0.6;
 }
 
+/* ----------------------------- List panel (Shopping/custom lists) ----------------------------- */
+.list-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.list-panel-title {
+  margin: 0;
+}
+
+.list-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0.2rem 0.4rem;
+}
+
+.list-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .assessments-list {
   list-style: none;
   margin: 0;
@@ -1180,6 +1208,40 @@ button:disabled {
   max-width: 380px;
 }
 
+/* ----------------------------- Public (no-login) shared list ----------------------------- */
+/* The entire page (see PublicListPage.tsx/main.tsx) - deliberately the same
+   centered-card-on-wallpaper shape as .auth-page/.auth-card (the other page
+   a visitor can land on with no session at all), just wider to comfortably
+   fit a longer checklist. */
+.public-list-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  background-image: var(--bg-image);
+  background-size: cover;
+  background-position: center;
+}
+
+.public-list-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 2rem;
+  width: 100%;
+  max-width: 480px;
+}
+
+.public-list-title {
+  margin: 0 0 1.2rem;
+  font-size: 1.3rem;
+  text-align: center;
+}
+
 .auth-title {
   text-align: center;
   margin: 0 0 1.5rem;
@@ -1484,30 +1546,65 @@ body[data-theme='dark'] .entry-hint-step {
   }
 }
 
-/* ----------------------------- Entry tabs (Assessments/Shopping) ----------------------------- */
+/* ----------------------------- Entry tabs (Assessments/Shopping/Lists) ----------------------------- */
+/* Tabs + panel wrapped as one unit (see TaskListPage's .entry-tabbed-panel)
+   so they read as one continuous shape - the active tab's background
+   matches the panel's exactly, sits flush against it with no gap, and the
+   panel's own top-left corner squares off right where the tab row begins
+   (see the override below) instead of showing a rounded corner peeking out
+   from behind the tabs. */
+.entry-tabbed-panel {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .entry-tabs {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  padding-left: 0.3rem;
 }
 
 .entry-tab {
   border: none;
   background: rgba(128, 128, 128, 0.12);
-  border-radius: 8px 8px 0 0;
-  padding: 0.4rem 0.8rem;
+  border-radius: 10px 10px 0 0;
+  padding: 0.45rem 0.85rem;
   font-size: 0.82rem;
   color: var(--text-primary);
-  opacity: 0.7;
+  opacity: 0.65;
+  white-space: nowrap;
 }
 
 .entry-tab.active {
   opacity: 1;
   font-weight: 600;
   background: var(--glass-bg);
+  position: relative;
+  z-index: 1;
 }
 
 .entry-tab:hover {
   opacity: 1;
+}
+
+.entry-tab-add {
+  opacity: 0.45;
+  font-weight: 700;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+
+.entry-tab-add:hover {
+  opacity: 1;
+}
+
+.entry-tabbed-panel .assessments-panel {
+  border-top-left-radius: 0;
+  margin-top: -1px;
 }
 
 .shopping-list {
@@ -3022,6 +3119,18 @@ body[data-theme='dark'] .assignment-add-link-btn {
 .assignment-task-row.done .assignment-task-text {
   text-decoration: line-through;
   opacity: 0.55;
+}
+
+.assignment-task-assignee {
+  flex-shrink: 0;
+  max-width: 6.5rem;
+  border: none;
+  background: var(--badge-bg);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
 }
 
 .assignment-task-delete-btn {

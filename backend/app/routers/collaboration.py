@@ -23,6 +23,22 @@ def _require_owned_assignment(task_id: int, username: str) -> dict:
     return task
 
 
+def _require_assignment_access(task_id: int, username: str) -> dict:
+    """Like _require_owned_assignment, but also allows a current collaborator
+    - not just the owner. Used only for read access (who's on this
+    assignment) - share-link management and collaborator removal stay
+    owner-only via _require_owned_assignment above. Letting a collaborator
+    see who else is on the assignment is intentional: the workspace's
+    per-item assignee picker (see routers/subtasks.py's assignee endpoint)
+    needs every viewer, not just the owner, to see this list."""
+    task = crud.get_task_for_user(task_id, username)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found")
+    if task["category"] != ASSESSMENT_CATEGORY:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only Assignments can be shared")
+    return task
+
+
 def _require_desktop_disabled() -> None:
     # The desktop build's local server reads/writes its own local SQLite
     # file, entirely separate from the deployed Postgres database - a token
@@ -61,7 +77,7 @@ def revoke_share_link(task_id: int, current_user: CurrentUser = Depends(get_curr
 
 @router.get("/api/tasks/{task_id}/collaborators", response_model=CollaboratorsResponse)
 def get_collaborators(task_id: int, current_user: CurrentUser = Depends(get_current_user)) -> CollaboratorsResponse:
-    _require_owned_assignment(task_id, current_user.username)
+    _require_assignment_access(task_id, current_user.username)
     return CollaboratorsResponse(collaborators=crud.list_collaborators(task_id))
 
 

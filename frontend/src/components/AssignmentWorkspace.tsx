@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { Task, TasksResponse, WorkspacePage } from '../types'
 import { TASKS_KEY, isOwnedTask, setSharedData, useSetTaskLinks, useSetTaskPages, useToggleDone } from '../hooks/useTasks'
-import { useAddSubtask, useDeleteSubtask, useToggleSubtask } from '../hooks/useSubtasks'
+import { useAddSubtask, useDeleteSubtask, useSetSubtaskAssignee, useToggleSubtask } from '../hooks/useSubtasks'
 import {
   useCollaborators,
   useCreateShareLink,
@@ -149,6 +149,7 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
   const deleteSubtask = useDeleteSubtask()
+  const setSubtaskAssignee = useSetSubtaskAssignee()
 
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -197,8 +198,18 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const createShareLink = useCreateShareLink()
   const regenerateShareLink = useRegenerateShareLink()
   const revokeShareLink = useRevokeShareLink()
-  const collaboratorsQuery = useCollaborators(task.id, sharePopoverOpen && isOwner)
+  // Always enabled (not just while the owner has the Share popover open) -
+  // the mini task panel's assignee picker below needs every viewer, owner
+  // and collaborator alike, to know who's on this assignment (the backend
+  // now allows collaborator reads here too - see routers/collaboration.py's
+  // _require_assignment_access).
+  const collaboratorsQuery = useCollaborators(task.id, true)
   const removeCollaborator = useRemoveCollaborator()
+  // Who a mini task can be assigned to - the owner plus every current
+  // collaborator. Server re-validates this same set on write (see
+  // routers/subtasks.py's assignee endpoint) - this is just what the picker
+  // offers, not the actual authorization boundary.
+  const assigneeOptions = [task.username, ...(collaboratorsQuery.data?.collaborators.map((c) => c.username) ?? [])]
 
   // Get-or-create is idempotent server-side, so re-fetching every time the
   // popover opens is harmless - it just returns the existing link if one's
@@ -1023,6 +1034,24 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
                         onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
                       />
                       <span className="assignment-task-text">{s.text}</span>
+                      <select
+                        className="assignment-task-assignee"
+                        title="Assign to"
+                        value={s.assigned_username ?? ''}
+                        onChange={(e) =>
+                          setSubtaskAssignee.mutate({
+                            subtaskId: s.id,
+                            assignedUsername: e.target.value || null,
+                          })
+                        }
+                      >
+                        <option value="">Unassigned</option>
+                        {assigneeOptions.map((username) => (
+                          <option key={username} value={username}>
+                            {username === task.username ? `${username} (owner)` : username}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="button"
                         className="assignment-task-delete-btn"

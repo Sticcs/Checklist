@@ -26,6 +26,12 @@ export const ASSESSMENT_CATEGORY = 'Assessment'
 // shopping item doesn't need either, it's just a checkable line.
 export const SHOPPING_CATEGORY = 'Shopping'
 
+// Purely for DB self-description on tasks created via a custom list's own
+// add-item box (see ListPanel) - the actual routing/exclusion logic (which
+// list a task belongs to, and keeping it out of the main task list) is
+// driven by the task's `list_id` field, not this category string.
+export const LIST_ITEM_CATEGORY = 'List'
+
 // The one real deployment of this app - used only by the desktop app's
 // "Sign in with Google" link (AuthPage), which must hit the actual live
 // backend even from inside the otherwise fully-offline desktop app, since

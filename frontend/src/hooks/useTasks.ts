@@ -91,12 +91,14 @@ export function useAddTask() {
       priority,
       category,
       dueDate,
+      listId,
     }: {
       text: string
       priority: string
       category: string
       dueDate: string | null
-    }) => tasksApi.create(text, priority, category, dueDate),
+      listId?: number | null
+    }) => tasksApi.create(text, priority, category, dueDate, listId ?? null),
     onMutate: async (vars) => {
       const previous = await beginOptimisticUpdate(queryClient)
       const tempId = -Date.now()
@@ -120,6 +122,7 @@ export function useAddTask() {
         links: [],
         pages: [],
         subtasks: [],
+        list_id: vars.listId ?? null,
         clientKey,
       }
       setTasksData(queryClient, (old) => ({

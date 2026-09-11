@@ -49,6 +49,7 @@ export function useAddSubtask() {
         urgent: false,
         due_date: null,
         notes: null,
+        assigned_username: null,
         clientKey,
       }
       toast('➕ Subtask added')
@@ -140,6 +141,43 @@ export function useToggleSubtask() {
       if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
       else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to update subtask')
+    },
+  })
+}
+
+// Collaborator-accessible, same reasoning/dual-path shape as
+// useToggleSubtask above - the workspace's mini task panel is exactly where
+// this is used, by owner and collaborator alike.
+export function useSetSubtaskAssignee() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ subtaskId, assignedUsername }: { subtaskId: number; assignedUsername: string | null }) =>
+      subtasksApi.setAssignee(subtaskId, assignedUsername),
+    onMutate: async (vars) => {
+      const apply = (t: Task): Task =>
+        t.subtasks.some((s) => s.id === vars.subtaskId)
+          ? {
+              ...t,
+              subtasks: t.subtasks.map((s) =>
+                s.id === vars.subtaskId ? { ...s, assigned_username: vars.assignedUsername } : s
+              ),
+            }
+          : t
+      if (isSubtaskOwned(queryClient, vars.subtaskId)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+          old ? { tasks: old.tasks.map(apply), can_undo: true, can_redo: false } : old
+        )
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map(apply))
+      return { previous, shared: true }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to update assignee')
     },
   })
 }

@@ -57,6 +57,12 @@ class SubtaskNotesUpdate(BaseModel):
     notes: str
 
 
+class SubtaskAssigneeUpdate(BaseModel):
+    # None unassigns it. Server validates this is the assignment's owner or
+    # a current collaborator - see routers/subtasks.py.
+    assigned_username: str | None = None
+
+
 class Subtask(BaseModel):
     id: int
     task_id: int
@@ -66,6 +72,9 @@ class Subtask(BaseModel):
     urgent: bool
     due_date: str | None = None
     notes: str | None = None
+    # Who this mini task (in an Assignment workspace's own bare-bones task
+    # panel) is assigned to - see SubtaskAssigneeUpdate.
+    assigned_username: str | None = None
 
 
 class SubtaskMutationResponse(BaseModel):
@@ -80,6 +89,10 @@ class TaskCreate(BaseModel):
     priority: str
     category: str
     due_date: str | None = None
+    # Set to file this task as an item in a custom list (see routers/
+    # lists.py) instead of the main task list - the route validates it
+    # belongs to the caller and is a 'custom' (not 'shopping') list.
+    list_id: int | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -169,6 +182,10 @@ class Task(BaseModel):
     links: list[LinkItem] = []
     pages: list[WorkspacePage] = []
     subtasks: list[Subtask] = []
+    # Set for a task that's an item in a custom list (see routers/lists.py) -
+    # null for everything else, including Assessment/Shopping-category tasks
+    # (which are still routed by category alone).
+    list_id: int | None = None
 
 
 class TasksResponse(BaseModel):
@@ -195,6 +212,52 @@ class CollaboratorEntry(BaseModel):
 
 class CollaboratorsResponse(BaseModel):
     collaborators: list[CollaboratorEntry]
+
+
+# ----------------------------- Lists -----------------------------
+# Shopping and user-created lists share the same lists_table row shape (see
+# db.py's `kind` comment) and therefore the same response models.
+
+class ListEntry(BaseModel):
+    id: int
+    name: str
+    kind: str
+    position: float
+    # Whether a share link is currently active - deliberately not the token
+    # itself, which only the dedicated share-link endpoints below expose.
+    has_share_link: bool
+
+
+class ListsResponse(BaseModel):
+    lists: list[ListEntry]
+
+
+class ListRenameUpdate(BaseModel):
+    name: str
+
+
+class ListShareLinkResponse(BaseModel):
+    token: str
+    url: str
+
+
+# ----------------------------- Public (no-auth) lists -----------------------------
+# Deliberately minimal - no owner username, no other task metadata - since
+# these are served with zero authentication to anyone holding the link.
+
+class PublicListItem(BaseModel):
+    id: int
+    text: str
+    done: bool
+
+
+class PublicListResponse(BaseModel):
+    list_name: str
+    items: list[PublicListItem]
+
+
+class PublicItemDoneUpdate(BaseModel):
+    done: bool
 
 
 class MarkAllCompletedResponse(BaseModel):

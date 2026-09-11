@@ -424,8 +424,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress, links, pages, share_token) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress, :links, :pages, :share_token)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress, links, pages, share_token, list_id) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress, :links, :pages, :share_token, :list_id)"
                 ),
                 {
                     "id": t["id"],
@@ -469,6 +469,11 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     # action gets undone, since this restore replaces every
                     # task for the user wholesale.
                     "share_token": t.get("share_token"),
+                    # Same round-trip requirement as everything else above -
+                    # a custom list's items would otherwise silently fall out
+                    # of their list (list_id reset to NULL) the moment any
+                    # unrelated action gets undone.
+                    "list_id": t.get("list_id"),
                 },
             )
 
@@ -490,8 +495,8 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
         for s in state_subtasks:
             conn.execute(
                 text(
-                    "INSERT INTO subtasks (id, task_id, text, done, created_at, urgent, due_date, notes) "
-                    "VALUES (:id, :task_id, :text, :done, :created_at, :urgent, :due_date, :notes)"
+                    "INSERT INTO subtasks (id, task_id, text, done, created_at, urgent, due_date, notes, assigned_username) "
+                    "VALUES (:id, :task_id, :text, :done, :created_at, :urgent, :due_date, :notes, :assigned_username)"
                 ),
                 {
                     "id": s["id"],
@@ -507,13 +512,24 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
                     # *other* undo/redo actions, or any undo/redo at all
                     # would silently wipe every subtask's notes.
                     "notes": s.get("notes"),
+                    # Same round-trip requirement - an assignee (see
+                    # set_subtask_assignee) would otherwise silently vanish
+                    # the moment any unrelated action gets undone.
+                    "assigned_username": s.get("assigned_username"),
                 },
             )
 
 
 # ----------------------------- Task mutations -----------------------------
 
-def add_task(task_text: str, priority: str, category: str, due_date: str | None, username: str) -> dict:
+def add_task(
+    task_text: str,
+    priority: str,
+    category: str,
+    due_date: str | None,
+    username: str,
+    list_id: int | None = None,
+) -> dict:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -525,8 +541,8 @@ def add_task(task_text: str, priority: str, category: str, due_date: str | None,
         new_position = (min_position - 1) if min_position is not None else 0
         new_id = conn.execute(
             text(
-                "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, position) "
-                "VALUES (:text, 0, :priority, :category, :due_date, :created_at, :username, :position) "
+                "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, position, list_id) "
+                "VALUES (:text, 0, :priority, :category, :due_date, :created_at, :username, :position, :list_id) "
                 "RETURNING id"
             ),
             {
@@ -537,6 +553,7 @@ def add_task(task_text: str, priority: str, category: str, due_date: str | None,
                 "created_at": datetime.now().isoformat(),
                 "username": username,
                 "position": new_position,
+                "list_id": list_id,
             },
         ).scalar_one()
     log_activity(username, "added", task_text, task_id=new_id)
@@ -942,6 +959,274 @@ def remove_collaborator(task_id: int, username: str) -> None:
         )
 
 
+# ----------------------------- Lists -----------------------------
+# Shopping and user-created ("custom") lists share this table (see
+# lists_table's `kind` comment in db.py) but differ in how their member
+# tasks are found: a 'custom' list's items are tasks with list_id pointing
+# at it; the one 'shopping' list per account is found by category='Shopping'
+# instead (existing Shopping tasks, zero migration needed). Every function
+# below that touches list membership branches on `kind` for exactly this
+# reason - see delete_or_clear_list, get_public_list_items,
+# toggle_public_list_item.
+
+def get_or_create_shopping_list(username: str) -> dict:
+    """There's no single "account created" hook to seed this eagerly (guest
+    accounts never call create_user, just mint a signed cookie) - so this is
+    called by get_lists on every read instead, check-then-insert inside one
+    transaction like get_or_create_share_token already does."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM lists WHERE username = :username AND kind = 'shopping'"),
+            {"username": username},
+        ).mappings().fetchone()
+        if row:
+            return dict(row)
+        new_id = conn.execute(
+            text(
+                "INSERT INTO lists (username, name, created_at, position, kind) "
+                "VALUES (:username, 'Shopping', :created_at, 0, 'shopping') RETURNING id"
+            ),
+            {"username": username, "created_at": datetime.now().isoformat()},
+        ).scalar_one()
+        row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": new_id}).mappings().fetchone()
+    return dict(row)
+
+
+def get_lists(username: str) -> list[dict]:
+    """Shopping first (always exists, see get_or_create_shopping_list above),
+    then custom lists in creation order."""
+    shopping = get_or_create_shopping_list(username)
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT * FROM lists WHERE username = :username AND kind = 'custom' ORDER BY id ASC"),
+            {"username": username},
+        ).mappings().all()
+    return [shopping] + [dict(r) for r in rows]
+
+
+def get_list(list_id: int, username: str) -> dict | None:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT * FROM lists WHERE id = :id AND username = :username"),
+            {"id": list_id, "username": username},
+        ).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def create_list(username: str) -> dict:
+    """Always auto-named "List N" (N = current custom-list count + 1,
+    computed fresh each time - not a persistent counter, so a name can be
+    reused after its list is deleted, which is harmless). Renaming is a
+    separate action (see rename_list)."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        count = conn.execute(
+            text("SELECT COUNT(*) FROM lists WHERE username = :username AND kind = 'custom'"),
+            {"username": username},
+        ).scalar_one()
+        new_id = conn.execute(
+            text(
+                "INSERT INTO lists (username, name, created_at, position, kind) "
+                "VALUES (:username, :name, :created_at, :position, 'custom') RETURNING id"
+            ),
+            {
+                "username": username,
+                "name": f"List {count + 1}",
+                "created_at": datetime.now().isoformat(),
+                "position": count + 1,
+            },
+        ).scalar_one()
+        row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": new_id}).mappings().fetchone()
+    return dict(row)
+
+
+def rename_list(list_id: int, username: str, name: str) -> dict | None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE lists SET name = :name WHERE id = :id AND username = :username"),
+            {"name": name, "id": list_id, "username": username},
+        )
+        if result.rowcount == 0:
+            return None
+        row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": list_id}).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def delete_or_clear_list(list_id: int, username: str) -> bool:
+    """Deletes a custom list (row + every one of its tasks) outright; for the
+    built-in Shopping list, clears its items but keeps the row so its name/
+    share_token survive - see the module docstring above for why these
+    differ. Mirrors clear_all's transaction shape (subtasks, dangling
+    assigned_task_id refs, and assignment_collaborators all cleaned up the
+    same defensive way, even though nothing in the UI lets a list item
+    acquire a subtask/collaborator - a direct API call could). Returns False
+    if the list doesn't belong to `username`."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM lists WHERE id = :id AND username = :username"),
+            {"id": list_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return False
+        is_shopping = row["kind"] == "shopping"
+
+        if is_shopping:
+            item_ids = [
+                r["id"]
+                for r in conn.execute(
+                    text("SELECT id FROM tasks WHERE username = :username AND category = 'Shopping'"),
+                    {"username": username},
+                ).mappings().all()
+            ]
+        else:
+            item_ids = [
+                r["id"]
+                for r in conn.execute(
+                    text("SELECT id FROM tasks WHERE list_id = :list_id"), {"list_id": list_id}
+                ).mappings().all()
+            ]
+
+        if item_ids:
+            stmt = text("DELETE FROM subtasks WHERE task_id IN :task_ids").bindparams(
+                bindparam("task_ids", expanding=True)
+            )
+            conn.execute(stmt, {"task_ids": item_ids})
+            unassign_stmt = text(
+                "UPDATE tasks SET assigned_task_id = NULL WHERE assigned_task_id IN :task_ids AND username = :username"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(unassign_stmt, {"task_ids": item_ids, "username": username})
+            collab_stmt = text(
+                "DELETE FROM assignment_collaborators WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(collab_stmt, {"task_ids": item_ids})
+
+        if is_shopping:
+            conn.execute(
+                text("DELETE FROM tasks WHERE username = :username AND category = 'Shopping'"),
+                {"username": username},
+            )
+        else:
+            conn.execute(text("DELETE FROM tasks WHERE list_id = :list_id"), {"list_id": list_id})
+            conn.execute(
+                text("DELETE FROM lists WHERE id = :id AND username = :username"),
+                {"id": list_id, "username": username},
+            )
+    return True
+
+
+def get_or_create_list_share_token(list_id: int, username: str) -> str | None:
+    """Mirrors get_or_create_share_token (the Assignment-sharing version)
+    exactly, just against `lists` instead of `tasks`."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT share_token FROM lists WHERE id = :id AND username = :username"),
+            {"id": list_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        if row["share_token"]:
+            return row["share_token"]
+        token = secrets.token_urlsafe(24)
+        conn.execute(
+            text("UPDATE lists SET share_token = :token WHERE id = :id AND username = :username"),
+            {"token": token, "id": list_id, "username": username},
+        )
+        return token
+
+
+def regenerate_list_share_token(list_id: int, username: str) -> str | None:
+    engine = get_engine()
+    token = secrets.token_urlsafe(24)
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE lists SET share_token = :token WHERE id = :id AND username = :username"),
+            {"token": token, "id": list_id, "username": username},
+        )
+        if result.rowcount == 0:
+            return None
+    return token
+
+
+def revoke_list_share_link(list_id: int, username: str) -> bool:
+    engine = get_engine()
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE lists SET share_token = NULL WHERE id = :id AND username = :username"),
+            {"id": list_id, "username": username},
+        )
+    return result.rowcount > 0
+
+
+def get_list_by_share_token(token: str) -> dict | None:
+    """No username filter - resolves a public share link with no caller
+    session at all, used only by routers/public.py."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT * FROM lists WHERE share_token = :token"), {"token": token}
+        ).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def get_public_list_items(list_row: dict) -> list[dict]:
+    """Bare {id, text, done} only - see routers/public.py. Branches on `kind`
+    exactly like delete_or_clear_list does."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        if list_row["kind"] == "shopping":
+            rows = conn.execute(
+                text(
+                    "SELECT id, text, done FROM tasks WHERE username = :username AND category = 'Shopping' "
+                    "ORDER BY position ASC"
+                ),
+                {"username": list_row["username"]},
+            ).mappings().all()
+        else:
+            rows = conn.execute(
+                text("SELECT id, text, done FROM tasks WHERE list_id = :list_id ORDER BY position ASC"),
+                {"list_id": list_row["id"]},
+            ).mappings().all()
+    return [{"id": r["id"], "text": r["text"], "done": bool(r["done"])} for r in rows]
+
+
+def toggle_public_list_item(list_row: dict, item_id: int, done: bool) -> bool:
+    """Toggles one item's done state - but only if it actually belongs to
+    `list_row` (the same kind-branched membership rule as
+    get_public_list_items/delete_or_clear_list, baked directly into the
+    UPDATE's WHERE clause). Returns False (a no-op) if item_id doesn't
+    belong to this list - this is the entire IDOR boundary for the public,
+    unauthenticated PATCH endpoint: a stranger with a valid token for list A
+    must never be able to toggle an item that's actually in list B, or in
+    someone else's account entirely, by guessing an id.
+
+    Deliberately doesn't call undo.save_snapshot() - an anonymous public
+    visitor's toggle has nothing to do with the owner's own deliberate
+    action history, and pushing it onto their undo stack would be a
+    surprising side effect of someone else's click."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        if list_row["kind"] == "shopping":
+            result = conn.execute(
+                text(
+                    "UPDATE tasks SET done = :done WHERE id = :id AND username = :username AND category = 'Shopping'"
+                ),
+                {"done": int(done), "id": item_id, "username": list_row["username"]},
+            )
+        else:
+            result = conn.execute(
+                text("UPDATE tasks SET done = :done WHERE id = :id AND list_id = :list_id"),
+                {"done": int(done), "id": item_id, "list_id": list_row["id"]},
+            )
+    return result.rowcount > 0
+
+
 # ----------------------------- Subtask mutations -----------------------------
 
 def add_subtask(task_id: int, subtask_text: str, username: str) -> tuple[dict, bool]:
@@ -1044,6 +1329,25 @@ def set_subtask_notes(subtask_id: int, notes: str) -> dict | None:
         conn.execute(
             text("UPDATE subtasks SET notes = :notes WHERE id = :id"),
             {"notes": notes or None, "id": subtask_id},
+        )
+        row = conn.execute(
+            text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
+        ).mappings().fetchone()
+    return _subtask_dict(row) if row else None
+
+
+def set_subtask_assignee(subtask_id: int, assigned_username: str | None, username: str) -> dict | None:
+    """Who a mini task in an Assignment workspace's own bare-bones task panel
+    is assigned to - the owner, one of the assignment's current
+    collaborators, or None to unassign. Caller (routers/subtasks.py) is
+    responsible for validating assigned_username is actually the owner or a
+    current collaborator before calling this - not enforced here."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE subtasks SET assigned_username = :assigned_username WHERE id = :id"),
+            {"assigned_username": assigned_username, "id": subtask_id},
         )
         row = conn.execute(
             text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}

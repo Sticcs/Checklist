@@ -243,7 +243,24 @@ def test_collaborator_cannot_delete_reassign_or_manage_sharing(guest_client):
     assert other.post(f"/api/tasks/{task['id']}/share-link").status_code == 404
     assert other.post(f"/api/tasks/{task['id']}/share-link/regenerate").status_code == 404
     assert other.delete(f"/api/tasks/{task['id']}/share-link").status_code == 404
-    assert other.get(f"/api/tasks/{task['id']}/collaborators").status_code == 404
+
+
+def test_collaborator_can_read_but_not_manage_collaborators(guest_client):
+    # A collaborator can see who else is on the assignment (needed for the
+    # workspace's per-item assignee picker - see routers/subtasks.py's
+    # assignee endpoint) but still can't manage the share link or remove
+    # anyone but themselves - see test_collaborator_can_remove_only_themselves
+    # and the share-link assertions in
+    # test_collaborator_cannot_delete_reassign_or_manage_sharing above.
+    client, _ = guest_client
+    task = _add_task(client)
+    token = client.post(f"/api/tasks/{task['id']}/share-link").json()["token"]
+    other, other_username = _second_guest(client)
+    other.post(f"/api/assignments/join/{token}")
+
+    r = other.get(f"/api/tasks/{task['id']}/collaborators")
+    assert r.status_code == 200
+    assert [c["username"] for c in r.json()["collaborators"]] == [other_username]
 
 
 def test_stranger_cannot_access_the_assignment_at_all(guest_client):

@@ -3,6 +3,7 @@ import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { toast } from 'sonner'
 import { useAssignTask, useSetPosition, useSetTaskInProgress, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useJoinAssignment, useSharedWithMe } from '../hooks/useCollaboration'
+import { useCreateList, useLists } from '../hooks/useLists'
 import { useSettings } from '../context/SettingsContext'
 import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
@@ -17,7 +18,7 @@ import { QuoteHeader } from '../components/QuoteHeader'
 import { Scratchpad } from '../components/Scratchpad'
 import { SubtaskNotepad } from '../components/SubtaskNotepad'
 import { AssessmentsPanel } from '../components/AssessmentsPanel'
-import { ShoppingPanel } from '../components/ShoppingPanel'
+import { ListPanel } from '../components/ListPanel'
 import { AssignmentWorkspace } from '../components/AssignmentWorkspace'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
@@ -29,6 +30,8 @@ import type { Task } from '../types'
 export function TaskListPage() {
   const { data, isLoading, error } = useTasks()
   const { data: sharedData } = useSharedWithMe()
+  const { data: listsData } = useLists()
+  const createList = useCreateList()
   const joinAssignment = useJoinAssignment()
   const toggleDone = useToggleDone()
   const toggleSubtask = useToggleSubtask()
@@ -53,12 +56,12 @@ export function TaskListPage() {
   const [lastExpandedTaskId, setLastExpandedTaskId] = useState<number | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeAssignmentId, setActiveAssignmentId] = useState<number | null>(null)
-  // Switches the panel above the entry column between Assessments and the
-  // Shopping list (see the tab bar right above AssessmentsPanel/
-  // ShoppingPanel below) - both draw from the same `tasks` entity, just
-  // filtered by category, the same way Assessments already worked before
-  // Shopping existed.
-  const [entryTab, setEntryTab] = useState<'assessments' | 'shopping'>('assessments')
+  // Switches the panel above the entry column between Assessments (always
+  // present, hardcoded) and one of the user's own lists (Shopping - always
+  // present too, see useLists - plus any custom ones they've created via the
+  // "+" tab), identified by list id. 'assessments' is the only non-numeric
+  // value; every list tab is just its ListEntry.id.
+  const [entryTab, setEntryTab] = useState<'assessments' | number>('assessments')
 
   const handleStartAssignment = (taskId: number) => {
     setActiveAssignmentId(taskId)
@@ -126,13 +129,19 @@ export function TaskListPage() {
     setNotepadHidden(false)
   }, [focusedSubtaskId])
 
-  // Assessments (category === 'Assessment') and Shopping items (category
-  // === 'Shopping') both live in their own panel, not the main list -
-  // everything else about them (mutations, undo/redo, clear completed) is
-  // shared, via the same `tasks` entity and the same click-delegation
-  // handler below, just filtered into a different view.
+  // Assessments (category === 'Assessment'), Shopping items (category ===
+  // 'Shopping'), and every custom list's items (list_id set) all live in
+  // their own panel, not the main list - everything else about them
+  // (mutations, undo/redo, clear completed) is shared, via the same `tasks`
+  // entity and the same click-delegation handler below, just filtered into
+  // a different view. Excluding list_id here (not just category) matters:
+  // a custom-list item's category is just 'List' (see LIST_ITEM_CATEGORY),
+  // which on its own wouldn't be enough to keep it out of the main list.
   const mainTasks = useMemo(
-    () => tasks.filter((t) => t.category !== ASSESSMENT_CATEGORY && t.category !== SHOPPING_CATEGORY),
+    () =>
+      tasks.filter(
+        (t) => t.category !== ASSESSMENT_CATEGORY && t.category !== SHOPPING_CATEGORY && t.list_id === null
+      ),
     [tasks]
   )
   // Closest due date first; assessments with no due date sort to the end.
@@ -149,7 +158,33 @@ export function TaskListPage() {
         }),
     [tasks]
   )
-  const shoppingItems = useMemo(() => tasks.filter((t) => t.category === SHOPPING_CATEGORY), [tasks])
+
+  const lists = useMemo(() => listsData?.lists ?? [], [listsData])
+  const activeList = typeof entryTab === 'number' ? (lists.find((l) => l.id === entryTab) ?? null) : null
+  // Shopping's items are still found by category (see backend/app/crud.py's
+  // Lists section for why) - every other list's items are found by list_id.
+  const activeListItems = useMemo(() => {
+    if (!activeList) return []
+    return activeList.kind === 'shopping'
+      ? tasks.filter((t) => t.category === SHOPPING_CATEGORY)
+      : tasks.filter((t) => t.list_id === activeList.id)
+  }, [tasks, activeList])
+
+  // A list tab that's still selected after its list was deleted elsewhere
+  // (another session, or this one) falls back to Assessments instead of
+  // showing a blank/broken panel - same "don't leave a stale selection
+  // around" reasoning as the categoryFilter-invalidation effect below.
+  useEffect(() => {
+    if (typeof entryTab === 'number' && !lists.some((l) => l.id === entryTab)) {
+      setEntryTab('assessments')
+    }
+  }, [entryTab, lists])
+
+  const handleCreateList = () => {
+    createList.mutate(undefined, {
+      onSuccess: (list) => setEntryTab(list.id),
+    })
+  }
 
   const availableCategories = useMemo(
     () => Array.from(new Set(mainTasks.map((t) => t.category))).sort(),
@@ -487,38 +522,57 @@ export function TaskListPage() {
               )}
             </AnimatePresence>
           </div>
-          <div className="entry-tabs">
-            <button
-              type="button"
-              className={entryTab === 'assessments' ? 'entry-tab active' : 'entry-tab'}
-              onClick={() => setEntryTab('assessments')}
-            >
-              📚 Assessments
-            </button>
-            <button
-              type="button"
-              className={entryTab === 'shopping' ? 'entry-tab active' : 'entry-tab'}
-              onClick={() => setEntryTab('shopping')}
-            >
-              🛒 Shopping
-            </button>
+          {/* Tabs + the panel below wrapped together (not siblings of the
+              entry-column flex stack directly) so the tab row can sit flush
+              against the panel's top edge instead of having entry-column's
+              own uniform 1.5rem gap between them - the "tabs pop out of the
+              panel" look wants zero gap there specifically, not everywhere
+              in this column. */}
+          <div className="entry-tabbed-panel">
+            <div className="entry-tabs">
+              <button
+                type="button"
+                className={entryTab === 'assessments' ? 'entry-tab active' : 'entry-tab'}
+                onClick={() => setEntryTab('assessments')}
+              >
+                📚 Assessments
+              </button>
+              {lists.map((list) => (
+                <button
+                  key={list.id}
+                  type="button"
+                  className={entryTab === list.id ? 'entry-tab active' : 'entry-tab'}
+                  onClick={() => setEntryTab(list.id)}
+                >
+                  {list.kind === 'shopping' ? '🛒' : '📋'} {list.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="entry-tab entry-tab-add"
+                title="Create a new list"
+                onClick={handleCreateList}
+              >
+                +
+              </button>
+            </div>
+            {entryTab === 'assessments' ? (
+              <AssessmentsPanel
+                assessments={assessments}
+                shared={sharedTasks}
+                focusedTaskId={focusedTaskId}
+                todayIso={todayIso}
+                selectedAssessmentId={selectedAssessmentId}
+                highlightedAssessmentIds={highlightedAssessmentIds}
+                onStart={handleStartAssignment}
+                onOpenShared={handleOpenSharedAssignment}
+                onShowParentTask={highlightParentTask}
+                compact={compactView}
+              />
+            ) : (
+              activeList && <ListPanel list={activeList} items={activeListItems} />
+            )}
           </div>
-          {entryTab === 'assessments' ? (
-            <AssessmentsPanel
-              assessments={assessments}
-              shared={sharedTasks}
-              focusedTaskId={focusedTaskId}
-              todayIso={todayIso}
-              selectedAssessmentId={selectedAssessmentId}
-              highlightedAssessmentIds={highlightedAssessmentIds}
-              onStart={handleStartAssignment}
-              onOpenShared={handleOpenSharedAssignment}
-              onShowParentTask={highlightParentTask}
-              compact={compactView}
-            />
-          ) : (
-            <ShoppingPanel items={shoppingItems} />
-          )}
         </div>
 
         <div className="task-list-column">

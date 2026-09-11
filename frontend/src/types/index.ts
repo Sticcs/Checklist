@@ -14,6 +14,10 @@ export interface Subtask {
   urgent: boolean
   due_date: string | null
   notes: string | null
+  // Who this mini task (in an Assignment workspace's own bare-bones task
+  // panel) is assigned to - the owner's own username, one of the
+  // assignment's collaborators, or null for unassigned.
+  assigned_username: string | null
   // Client-only, never sent by the server: set on an optimistically-inserted
   // subtask and carried forward when its temp id is swapped for the real
   // one, so the React key stays stable across that swap instead of
@@ -56,6 +60,10 @@ export interface Task {
   links: LinkItem[]
   pages: WorkspacePage[]
   subtasks: Subtask[]
+  // Set for a task that's an item in a custom list (see ListEntry below) -
+  // null for everything else, including Assessment/Shopping-category tasks
+  // (which are still routed by category alone).
+  list_id: number | null
   clientKey?: string
 }
 
@@ -146,4 +154,27 @@ export interface ShareLink {
 export interface Collaborator {
   username: string
   added_at: string
+}
+
+// Shopping and user-created ("custom") lists share this shape - see
+// backend/app/db.py's lists_table `kind` comment.
+export interface ListEntry {
+  id: number
+  name: string
+  kind: 'custom' | 'shopping'
+  position: number
+  has_share_link: boolean
+}
+
+// The bare item shape served by the public, no-login list endpoints -
+// deliberately minimal, no owner/priority/category/due-date.
+export interface PublicListItem {
+  id: number
+  text: string
+  done: boolean
+}
+
+export interface PublicListResponse {
+  list_name: string
+  items: PublicListItem[]
 }
