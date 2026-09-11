@@ -32,7 +32,18 @@ def get_public_list(token: str) -> PublicListResponse:
 @router.patch("/{token}/items/{item_id}", response_model=PublicListResponse)
 def update_public_list_item(token: str, item_id: int, body: PublicItemDoneUpdate) -> PublicListResponse:
     list_row = _require_list(token)
-    crud.toggle_public_list_item(list_row, item_id, body.done)
+    changed_text = crud.toggle_public_list_item(list_row, item_id, body.done)
+    # changed_text is only non-None for a real false->true/true->false flip
+    # that actually belonged to this list - guards the notification against
+    # both the IDOR no-op case and a repeated PATCH with the same body (this
+    # endpoint has no auth/rate-limiting, so that's the realistic spam path).
+    if changed_text is not None and body.done:
+        crud.create_notification(
+            list_row["username"],
+            "item_checked",
+            f'Someone checked off "{changed_text}" in "{list_row["name"]}"',
+            actor_username=None,
+        )
     # Return the fresh list either way - a no-op toggle (item_id didn't
     # actually belong to this list) just gets back the unchanged list rather
     # than an error, so a stranger probing ids learns nothing about whether

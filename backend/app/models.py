@@ -264,6 +264,23 @@ class MarkAllCompletedResponse(BaseModel):
     updated_count: int
 
 
+# ----------------------------- Notifications -----------------------------
+
+class NotificationEntry(BaseModel):
+    id: int
+    kind: str
+    message: str
+    actor_username: str | None
+    task_id: int | None
+    created_at: str
+    read: bool
+
+
+class NotificationsResponse(BaseModel):
+    notifications: list[NotificationEntry]
+    unread_count: int
+
+
 class ClearResponse(BaseModel):
     deleted_count: int
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-const QUOTES = ['Stay locked in.', 'September is coming.', 'Trust the data.', 'Focus.', 'Execute.']
+const QUOTES = ['Stay locked in.', 'Trust the data.', 'Focus.', 'Execute.']
 
 export function QuoteHeader() {
   const [index, setIndex] = useState(0)

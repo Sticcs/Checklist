@@ -114,6 +114,18 @@ def toggle_done(
     owner_task = _require_task_access(task_id, current_user.username)
     task = crud.set_done(task_id, body.done, owner_task["username"])
     task["subtasks"] = crud.get_subtasks(task_id)
+    # Notify the owner when a collaborator (not the owner themselves) checks
+    # something off - gated on a real false->true transition (owner_task's
+    # prior "done" is already in hand, no extra query needed) so repeatedly
+    # marking an already-done item doesn't spam a new notification per call.
+    if current_user.username != owner_task["username"] and body.done and not owner_task["done"]:
+        crud.create_notification(
+            owner_task["username"],
+            "item_checked",
+            f'{current_user.username} checked off "{owner_task["text"]}"',
+            actor_username=current_user.username,
+            task_id=task_id,
+        )
     return task
 
 

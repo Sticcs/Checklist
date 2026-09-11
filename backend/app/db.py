@@ -165,6 +165,24 @@ activity_log_table = Table(
     Column("task_id", Integer, nullable=True),
 )
 
+# username is the recipient, not the actor - actor_username is who actually
+# did it (null for an anonymous public-link visitor). Unlike activity_log
+# (always logged under the task owner's username), notifications need to be
+# addressable to whoever should see them, which for "your access was
+# revoked" or "you were assigned this" is someone other than the task owner.
+notifications_table = Table(
+    "notifications",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("username", String, nullable=False),
+    Column("kind", String, nullable=False),
+    Column("message", Text, nullable=False),
+    Column("actor_username", String, nullable=True),
+    Column("task_id", Integer, nullable=True),
+    Column("created_at", String, nullable=False),
+    Column("read_at", String, nullable=True),
+)
+
 _engine = None
 
 

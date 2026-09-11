@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { tasksApi } from '../api/tasks'
 import { ApiError } from '../api/client'
 import type { LinkItem, Task, TasksResponse, WorkspacePage } from '../types'
-import { pushUndoSnapshot } from './undoRedoStack'
+import { pushUndoSnapshot, discardLastPushedSnapshot } from './undoRedoStack'
 import { markDirty } from './saveState'
 import { STATS_KEY } from './useStats'
 import { SHOPPING_CATEGORY } from '../constants'
@@ -508,7 +508,21 @@ export function useDeleteTask() {
       toast('🗑️ Task deleted')
       return { previous }
     },
-    onError: (_err, _id, ctx) => {
+    onError: (err, _id, ctx) => {
+      if (err instanceof ApiError && err.status === 404) {
+        // Already gone server-side (a double-click, another tab, a
+        // cascading delete from clearing/removing its list) - the
+        // optimistic removal was actually correct, so leave it removed
+        // instead of reviving a ghost the server has no record of. The
+        // route 404s before crud.delete_task/save_snapshot ever runs, so
+        // the undo snapshot pushed for this delete has no server-side
+        // counterpart either - discarded here so the mirror doesn't end up
+        // one entry ahead of the server's real stack (see
+        // discardLastPushedSnapshot's comment).
+        discardLastPushedSnapshot()
+        queryClient.invalidateQueries({ queryKey: TASKS_KEY })
+        return
+      }
       rollback(queryClient, ctx?.previous)
       toast.error('Failed to delete task')
     },

@@ -46,6 +46,17 @@ export function popRedo(current: TasksResponse): TasksResponse | undefined {
   return next
 }
 
+// Called when a just-pushed snapshot turns out to have no real counterpart
+// on the server (e.g. deleting a task that was already gone - the route
+// 404s before crud.delete_task/undo.save_snapshot ever runs) - removes it
+// so the mirror doesn't end up permanently one entry ahead of the server's
+// real stack. Deliberately distinct from popUndo: this discards the push
+// outright rather than "undoing" it (which would move it onto the redo
+// stack, implying there's something real to redo back to).
+export function discardLastPushedSnapshot(): void {
+  undoStack.pop()
+}
+
 export function undoStackHasMore(): boolean {
   return undoStack.length > 0
 }

@@ -95,6 +95,17 @@ def remove_collaborator(
     if not is_owner and username != current_user.username:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only remove yourself")
     crud.remove_collaborator(task_id, username)
+    if is_owner and username != current_user.username:
+        # Only the owner revoking someone else's access - never a self-leave.
+        # task_id is deliberately omitted: crud.get_task_for_user for the
+        # removed collaborator returns None from this point on, so an
+        # "open this" link built from it would just 404.
+        crud.create_notification(
+            username,
+            "access_revoked",
+            f'{current_user.username} removed your access to "{task["text"]}"',
+            actor_username=current_user.username,
+        )
 
 
 @router.post("/api/assignments/join/{token}", response_model=Task)

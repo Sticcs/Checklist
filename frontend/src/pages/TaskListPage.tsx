@@ -479,6 +479,7 @@ export function TaskListPage() {
           canRedo={data?.can_redo ?? false}
           hasCompletedTasks={hasAnyCompletedTasks}
           onClose={() => setSidebarOpen(false)}
+          onOpenTask={setActiveAssignmentId}
         />
       </motion.div>
 

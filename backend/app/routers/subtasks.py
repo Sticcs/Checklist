@@ -46,7 +46,21 @@ def toggle_subtask_done(
     subtask_id: int, body: SubtaskDoneUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> SubtaskMutationResponse:
     task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
+    # Read before the toggle - set_subtask_done doesn't return the prior
+    # value, and the item_checked notification below needs to gate on a
+    # real false->true transition (see toggle_done's matching comment).
+    prior_done = crud.get_subtask_done(subtask_id)
     subtask, parent_done = crud.set_subtask_done(subtask_id, task_id, body.done, owner_username)
+    if subtask is not None and current_user.username != owner_username and body.done and not prior_done:
+        owner_task = crud.get_task(task_id, owner_username)
+        parent_text = owner_task["text"] if owner_task else ""
+        crud.create_notification(
+            owner_username,
+            "item_checked",
+            f'{current_user.username} checked off "{subtask["text"]}" in "{parent_text}"',
+            actor_username=current_user.username,
+            task_id=task_id,
+        )
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
 
 
@@ -98,6 +112,15 @@ def update_subtask_assignee(
     subtask = crud.set_subtask_assignee(subtask_id, assignee, owner_username)
     task = crud.get_task(task_id, owner_username)
     parent_done = bool(task["done"]) if task else False
+    if subtask is not None and assignee is not None and assignee != current_user.username:
+        parent_text = task["text"] if task else ""
+        crud.create_notification(
+            assignee,
+            "subtask_assigned",
+            f'{current_user.username} assigned you "{subtask["text"]}" in "{parent_text}"',
+            actor_username=current_user.username,
+            task_id=task_id,
+        )
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
 
 

@@ -1661,6 +1661,17 @@ body[data-theme='dark'] .entry-hint-step {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* Matches .assessments-list - without this, a long Shopping/custom list
+     has no bound on its own height, so it keeps growing .assessments-panel
+     (ListPanel reuses that class) past the fixed height content-area's grid
+     gives it, pushing the whole entry column (and the task list next to it)
+     taller than the viewport instead of scrolling in place. Harmless on
+     PublicListPage's unbounded card (the only other place this class is
+     used) - flex:1 there is a no-op outside a flex container, and
+     overflow-y:auto never clips without a height constraint to overflow. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .shopping-item {
@@ -3429,6 +3440,122 @@ body[data-theme='dark'] .assessment-card.compact:hover {
 
 .compact-menu-popover button:hover {
   background: rgba(128, 128, 128, 0.15);
+}
+
+.notification-bell {
+  position: relative;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: #e0393e;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.1rem;
+  text-align: center;
+}
+
+.notification-panel {
+  /* top/left set inline (NotificationBell.tsx) from the bell button's own
+     bounding rect - this is portaled into <body>, so it can't rely on a
+     positioned ancestor the way an absolute popover normally would. */
+  position: fixed;
+  z-index: 50;
+  width: 20rem;
+  max-width: min(90vw, 20rem);
+  max-height: 24rem;
+  overflow-y: auto;
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.notification-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.notification-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notification-section-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.notification-mark-all {
+  border: none;
+  background: none;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  padding: 0;
+}
+
+.notification-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 0.4rem 0.4rem;
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+
+.notification-entry:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.notification-entry.unread {
+  background: rgba(120, 190, 255, 0.14);
+}
+
+.notification-entry-icon {
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.notification-entry-text {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.notification-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.notification-entry-time {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
 }
 
 /* Subtasks mount/unmount on hover (see TaskCard's AnimatePresence, driven by

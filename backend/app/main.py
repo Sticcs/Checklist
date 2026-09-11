@@ -5,7 +5,19 @@ from fastapi.responses import FileResponse
 
 from app.db import init_db
 from app.paths import resource_path
-from app.routers import activity, auth, collaboration, data, lists, public, stats, subtasks, tasks, undo_redo
+from app.routers import (
+    activity,
+    auth,
+    collaboration,
+    data,
+    lists,
+    notifications,
+    public,
+    stats,
+    subtasks,
+    tasks,
+    undo_redo,
+)
 
 
 @asynccontextmanager
@@ -23,6 +35,7 @@ app.include_router(collaboration.router)
 app.include_router(lists.router)
 app.include_router(public.router)
 app.include_router(activity.router)
+app.include_router(notifications.router)
 app.include_router(stats.router)
 app.include_router(undo_redo.router)
 app.include_router(data.router)

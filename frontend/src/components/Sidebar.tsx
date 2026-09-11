@@ -16,6 +16,7 @@ import { DownloadAppButton } from './DownloadAppButton'
 import { DataBackupButtons } from './DataBackupButtons'
 import { WebsiteSyncButtons } from './WebsiteSyncButtons'
 import { AutosaveIndicator } from './AutosaveIndicator'
+import { NotificationBell } from './NotificationBell'
 import type { SortBy } from '../utils/sortTasks'
 
 export type StatusFilter = 'All' | 'Active' | 'Completed'
@@ -36,6 +37,7 @@ interface Props {
   canRedo: boolean
   hasCompletedTasks: boolean
   onClose: () => void
+  onOpenTask: (taskId: number) => void
 }
 
 const ACTIVITY_META: Record<string, { icon: string; label: string }> = {
@@ -68,6 +70,7 @@ export function Sidebar({
   canRedo,
   hasCompletedTasks,
   onClose,
+  onOpenTask,
 }: Props) {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -128,6 +131,7 @@ export function Sidebar({
             <button type="button" className="icon-btn theme-toggle" onClick={toggleTheme} title="Toggle theme">
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
+            <NotificationBell onOpenTask={onOpenTask} />
             <button
               type="button"
               className="icon-btn"

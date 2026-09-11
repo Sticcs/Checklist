@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { subtasksApi } from '../api/subtasks'
 import { ApiError } from '../api/client'
 import { TASKS_KEY, isOwnedTask, beginSharedOptimisticUpdate, setSharedData, rollbackShared } from './useTasks'
-import { pushUndoSnapshot } from './undoRedoStack'
+import { pushUndoSnapshot, discardLastPushedSnapshot } from './undoRedoStack'
 import { markDirty } from './saveState'
 import { addToOutbox } from '../lib/offlineOutbox'
 import type { Task, TasksResponse } from '../types'
@@ -335,7 +335,15 @@ export function useDeleteSubtask() {
       setSharedData(queryClient, (old) => old.map((t) => applySubtaskDelete(t, subtaskId)))
       return { previous, shared: true }
     },
-    onError: (_err, _id, ctx) => {
+    onError: (err, _id, ctx) => {
+      if (err instanceof ApiError && err.status === 404) {
+        // Same reasoning as useDeleteTask's onError - already gone
+        // server-side, so the optimistic removal was correct; reviving it
+        // would just show a ghost until the next reload.
+        if (!ctx?.shared) discardLastPushedSnapshot()
+        queryClient.invalidateQueries({ queryKey: TASKS_KEY })
+        return
+      }
       if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
       else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to delete subtask')

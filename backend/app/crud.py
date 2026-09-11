@@ -273,6 +273,20 @@ def get_subtask_owning_task_id(subtask_id: int) -> int | None:
     return row["task_id"] if row else None
 
 
+def get_subtask_done(subtask_id: int) -> bool | None:
+    """The subtask's *current* done value, read before a toggle - used by
+    routers/subtasks.py's toggle_subtask_done to gate the item_checked
+    notification on a real false->true transition, not just "the request
+    body said done=true" (set_subtask_done itself doesn't return the prior
+    value). None if the subtask doesn't exist."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT done FROM subtasks WHERE id = :id"), {"id": subtask_id}
+        ).mappings().fetchone()
+    return bool(row["done"]) if row else None
+
+
 # ----------------------------- Activity log -----------------------------
 
 def log_activity(username: str, action: str, detail: str, task_id: int | None = None) -> None:
@@ -345,6 +359,102 @@ def get_activity_log(username: str, limit: int = 15) -> list[dict]:
             {"username": username, "limit": limit},
         ).mappings().all()
     return [dict(r) for r in rows]
+
+
+# --------------------------- Notifications ---------------------------
+# Unlike activity_log (always keyed by the task owner's username, a per-
+# resource history), notifications are addressed to whoever should actually
+# see them - which for "your access was revoked" or "you were assigned
+# this" is someone other than the task's owner. Callers (see the route-layer
+# trigger points in routers/tasks.py, routers/subtasks.py,
+# routers/collaboration.py, routers/public.py) are responsible for deciding
+# who the recipient is and gating on "actor != recipient" - nothing here
+# enforces that.
+
+def create_notification(
+    username: str,
+    kind: str,
+    message: str,
+    actor_username: str | None = None,
+    task_id: int | None = None,
+) -> None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO notifications (username, kind, message, actor_username, task_id, created_at) "
+                "VALUES (:username, :kind, :message, :actor_username, :task_id, :created_at)"
+            ),
+            {
+                "username": username,
+                "kind": kind,
+                "message": message,
+                "actor_username": actor_username,
+                "task_id": task_id,
+                "created_at": datetime.now().isoformat(),
+            },
+        )
+
+
+def list_notifications(username: str, limit: int = 30) -> list[dict]:
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT * FROM notifications WHERE username = :username "
+                "ORDER BY id DESC LIMIT :limit"
+            ),
+            {"username": username, "limit": limit},
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def unread_notification_count(username: str) -> int:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT COUNT(*) AS n FROM notifications WHERE username = :username AND read_at IS NULL"
+            ),
+            {"username": username},
+        ).mappings().fetchone()
+    return int(row["n"]) if row else 0
+
+
+def mark_notification_read(notification_id: int, username: str) -> bool:
+    """Scoped by username so one user can never mark another's notification
+    read. Returns whether a row actually matched (for the route's 404)."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        result = conn.execute(
+            text(
+                "UPDATE notifications SET read_at = :read_at "
+                "WHERE id = :id AND username = :username AND read_at IS NULL"
+            ),
+            {"read_at": datetime.now().isoformat(), "id": notification_id, "username": username},
+        )
+        if result.rowcount > 0:
+            return True
+        # Already read, or belongs to someone else, or doesn't exist -
+        # distinguish "already read" (not an error) from "not yours/doesn't
+        # exist" (404) by checking existence+ownership separately.
+        exists = conn.execute(
+            text("SELECT 1 FROM notifications WHERE id = :id AND username = :username"),
+            {"id": notification_id, "username": username},
+        ).fetchone()
+        return exists is not None
+
+
+def mark_all_notifications_read(username: str) -> None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE notifications SET read_at = :read_at "
+                "WHERE username = :username AND read_at IS NULL"
+            ),
+            {"read_at": datetime.now().isoformat(), "username": username},
+        )
 
 
 def get_stats(username: str) -> dict:
@@ -1196,15 +1306,22 @@ def get_public_list_items(list_row: dict) -> list[dict]:
     return [{"id": r["id"], "text": r["text"], "done": bool(r["done"])} for r in rows]
 
 
-def toggle_public_list_item(list_row: dict, item_id: int, done: bool) -> bool:
+def toggle_public_list_item(list_row: dict, item_id: int, done: bool) -> str | None:
     """Toggles one item's done state - but only if it actually belongs to
     `list_row` (the same kind-branched membership rule as
-    get_public_list_items/delete_or_clear_list, baked directly into the
-    UPDATE's WHERE clause). Returns False (a no-op) if item_id doesn't
-    belong to this list - this is the entire IDOR boundary for the public,
+    get_public_list_items/delete_or_clear_list, baked directly into every
+    query's WHERE clause). This is the entire IDOR boundary for the public,
     unauthenticated PATCH endpoint: a stranger with a valid token for list A
     must never be able to toggle an item that's actually in list B, or in
     someone else's account entirely, by guessing an id.
+
+    Returns the item's text if this call produced a real false->true or
+    true->false change - None if item_id didn't belong to this list, or if
+    it was already in the requested state (a repeated PATCH with the same
+    body). routers/public.py uses a non-None result to decide whether to
+    fire an item_checked notification - a no-op PATCH (the public
+    endpoint's only realistic spam vector, since it has no auth/rate
+    limiting) shouldn't create one.
 
     Deliberately doesn't call undo.save_snapshot() - an anonymous public
     visitor's toggle has nothing to do with the owner's own deliberate
@@ -1213,18 +1330,32 @@ def toggle_public_list_item(list_row: dict, item_id: int, done: bool) -> bool:
     engine = get_engine()
     with engine.begin() as conn:
         if list_row["kind"] == "shopping":
-            result = conn.execute(
+            current = conn.execute(
+                text(
+                    "SELECT text, done FROM tasks WHERE id = :id AND username = :username AND category = 'Shopping'"
+                ),
+                {"id": item_id, "username": list_row["username"]},
+            ).mappings().fetchone()
+        else:
+            current = conn.execute(
+                text("SELECT text, done FROM tasks WHERE id = :id AND list_id = :list_id"),
+                {"id": item_id, "list_id": list_row["id"]},
+            ).mappings().fetchone()
+        if current is None:
+            return None
+        if list_row["kind"] == "shopping":
+            conn.execute(
                 text(
                     "UPDATE tasks SET done = :done WHERE id = :id AND username = :username AND category = 'Shopping'"
                 ),
                 {"done": int(done), "id": item_id, "username": list_row["username"]},
             )
         else:
-            result = conn.execute(
+            conn.execute(
                 text("UPDATE tasks SET done = :done WHERE id = :id AND list_id = :list_id"),
                 {"done": int(done), "id": item_id, "list_id": list_row["id"]},
             )
-    return result.rowcount > 0
+    return current["text"] if bool(current["done"]) != done else None
 
 
 # ----------------------------- Subtask mutations -----------------------------

@@ -178,3 +178,20 @@ export interface PublicListResponse {
   list_name: string
   items: PublicListItem[]
 }
+
+export type NotificationKind = 'item_checked' | 'subtask_assigned' | 'access_revoked'
+
+export interface NotificationEntry {
+  id: number
+  kind: NotificationKind
+  message: string
+  actor_username: string | null
+  task_id: number | null
+  created_at: string
+  read: boolean
+}
+
+export interface NotificationsResponse {
+  notifications: NotificationEntry[]
+  unread_count: number
+}

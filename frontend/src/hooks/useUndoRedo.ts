@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { undoApi } from '../api/undo'
+import { ApiError } from '../api/client'
 import { TASKS_KEY } from './useTasks'
 import { STATS_KEY } from './useStats'
-import { popRedo, popUndo, redoStackHasMore, undoStackHasMore } from './undoRedoStack'
+import { popRedo, popUndo, redoStackHasMore, undoStackHasMore, resetUndoRedoStacks } from './undoRedoStack'
 import { markDirty } from './saveState'
 import type { TasksResponse } from '../types'
 
@@ -57,8 +58,18 @@ export function useUndo() {
       markDirty()
       toast('↩️ Undid last action')
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.applied && ctx.current) queryClient.setQueryData(TASKS_KEY, ctx.current)
+      if (err instanceof ApiError) {
+        // The mirror thought there was something to undo, but the server's
+        // real stack disagreed (e.g. an earlier action's snapshot never
+        // actually landed server-side - see useDeleteTask's 404 handling)
+        // - rather than leave the mirror silently wrong until the next
+        // reload, drop it so the next click round-trips to the server
+        // instead of applying another possibly-mismatched snapshot.
+        resetUndoRedoStacks()
+        queryClient.invalidateQueries({ queryKey: TASKS_KEY })
+      }
       toast.error('Nothing to undo')
     },
   })
@@ -94,8 +105,13 @@ export function useRedo() {
       markDirty()
       toast('↪️ Redid last action')
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.applied && ctx.current) queryClient.setQueryData(TASKS_KEY, ctx.current)
+      if (err instanceof ApiError) {
+        // See the matching comment in useUndo's onError.
+        resetUndoRedoStacks()
+        queryClient.invalidateQueries({ queryKey: TASKS_KEY })
+      }
       toast.error('Nothing to redo')
     },
   })
