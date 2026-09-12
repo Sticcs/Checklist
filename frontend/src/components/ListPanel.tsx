@@ -55,6 +55,35 @@ export function ListPanel({ list, items }: Props) {
     return () => document.removeEventListener('click', handler)
   }, [menuOpen])
 
+  // Same idea for the share popover - without this it had no way to close
+  // on its own (menuOpen's handler above only ever watches while the
+  // tricolon menu itself is open, which this isn't), leaving it stuck open
+  // until you dug back into "⋮" and pressed Share again just to toggle it
+  // off. menuRef still works here since the share popover renders inside
+  // the same .list-menu container.
+  useEffect(() => {
+    if (!sharePopoverOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setSharePopoverOpen(false)
+    }
+    // Registered a tick late (not on this same render's effect pass) -
+    // opening this popover happens via the "Share" button inside the
+    // tricolon menu, whose onClick also closes that menu in the same
+    // click (setMenuOpen(false)). That unmounts the Share button itself
+    // mid-click, and the still-bubbling click event then reaches document
+    // with a target that's already been removed from menuRef's tree -
+    // Node.contains() on a detached node returns false, so an
+    // immediately-attached listener would see its own opening click as
+    // "outside" and close the popover instantly. Deferring the
+    // addEventListener call past the current click (which has already
+    // fully finished bubbling by the next tick) avoids catching it at all.
+    const id = window.setTimeout(() => document.addEventListener('click', handler), 0)
+    return () => {
+      window.clearTimeout(id)
+      document.removeEventListener('click', handler)
+    }
+  }, [sharePopoverOpen])
+
   // Reset any stale draft/link state whenever the active list itself
   // changes (switching tabs reuses this same component instance).
   useEffect(() => {
