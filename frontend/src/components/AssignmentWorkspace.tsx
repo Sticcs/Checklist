@@ -212,6 +212,10 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   // routers/subtasks.py's assignee endpoint) - this is just what the picker
   // offers, not the actual authorization boundary.
   const assigneeOptions = [task.username, ...(collaboratorsQuery.data?.collaborators.map((c) => c.username) ?? [])]
+  // With nobody else on the assignment, the picker can only ever offer
+  // "the owner" - not a real choice, so it's hidden entirely rather than
+  // shown as a dropdown with one option that does nothing useful.
+  const hasCollaborators = (collaboratorsQuery.data?.collaborators.length ?? 0) > 0
 
   // Get-or-create is idempotent server-side, so re-fetching every time the
   // popover opens is harmless - it just returns the existing link if one's
@@ -1059,24 +1063,26 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
                         onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
                       />
                       <span className="assignment-task-text">{s.text}</span>
-                      <select
-                        className="assignment-task-assignee"
-                        title="Assign to"
-                        value={s.assigned_username ?? ''}
-                        onChange={(e) =>
-                          setSubtaskAssignee.mutate({
-                            subtaskId: s.id,
-                            assignedUsername: e.target.value || null,
-                          })
-                        }
-                      >
-                        <option value="">Unassigned</option>
-                        {assigneeOptions.map((username) => (
-                          <option key={username} value={username}>
-                            {username === task.username ? `${username} (owner)` : username}
-                          </option>
-                        ))}
-                      </select>
+                      {hasCollaborators && (
+                        <select
+                          className="assignment-task-assignee"
+                          title="Assign to"
+                          value={s.assigned_username ?? ''}
+                          onChange={(e) =>
+                            setSubtaskAssignee.mutate({
+                              subtaskId: s.id,
+                              assignedUsername: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">Unassigned</option>
+                          {assigneeOptions.map((username) => (
+                            <option key={username} value={username}>
+                              {username === task.username ? `${username} (owner)` : username}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <button
                         type="button"
                         className="assignment-task-delete-btn"

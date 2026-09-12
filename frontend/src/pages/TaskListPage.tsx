@@ -9,7 +9,7 @@ import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useIsMobileLayout } from '../hooks/useIsMobileLayout'
 import { useWebsiteLinkStatus } from '../hooks/useData'
-import { useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
+import { useEscapeBlurHotkey, useSubtaskFocusHotkey, useUndoRedoHotkeys } from '../hooks/useHotkeys'
 import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
 import { useOfflineSync } from '../hooks/useOfflineSync'
 import { AddTaskForm } from '../components/AddTaskForm'
@@ -412,6 +412,7 @@ export function TaskListPage() {
     onConsumeLatest: () => setLatestTaskId(null),
   })
   useUndoRedoHotkeys()
+  useEscapeBlurHotkey()
   useDueDateNotifications(tasks)
 
   const activeAssignmentTask = activeAssignmentId !== null ? (tasksById.get(activeAssignmentId) ?? null) : null
@@ -480,6 +481,7 @@ export function TaskListPage() {
           hasCompletedTasks={hasAnyCompletedTasks}
           onClose={() => setSidebarOpen(false)}
           onOpenTask={setActiveAssignmentId}
+          onHighlightTask={highlightParentTask}
         />
       </motion.div>
 

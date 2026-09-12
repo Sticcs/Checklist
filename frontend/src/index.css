@@ -1281,6 +1281,20 @@ button:disabled {
   text-align: center;
 }
 
+.public-list-home-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.public-list-home-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 .auth-title {
   text-align: center;
   margin: 0 0 1.5rem;
@@ -1404,6 +1418,35 @@ body[data-theme='dark'] .entry-hint-step {
   text-transform: uppercase;
   letter-spacing: 0.4px;
   opacity: 0.8;
+}
+
+.option-row-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.option-row-header .option-row-label {
+  margin: 0;
+}
+
+.option-row-back-btn {
+  flex-shrink: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.option-row-back-btn:hover {
+  background: rgba(128, 128, 128, 0.28);
+  color: var(--text-primary);
 }
 
 .option-row-buttons {
@@ -3189,6 +3232,23 @@ body[data-theme='dark'] .assignment-add-link-btn {
   padding: 0.15rem 0.5rem;
   font-size: 0.7rem;
   cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  /* iOS Safari auto-zooms the whole page in when a focused form control's
+     computed font-size is under 16px - this select (0.7rem = 11.2px
+     normally) is exactly that, so tapping it on a phone snapped the entire
+     viewport to a zoomed-in scale instead of just opening the picker,
+     reading as the whole screen "shifting." 16px is the minimum that keeps
+     Safari from doing that; scoped to narrow viewports so desktop's
+     compact sizing is untouched. Placed after the base rule above (same
+     specificity) so the cascade actually picks this one on mobile instead
+     of silently losing to whichever rule happens to be declared later in
+     the file. */
+  .assignment-task-assignee,
+  .assignment-task-add-form input {
+    font-size: 16px;
+  }
 }
 
 .assignment-task-delete-btn {

@@ -22,6 +22,7 @@ const DUE_KEYS: Record<DuePreset, string> = {
 const FLASH_MS = 320
 
 type Step = 'category' | 'priority' | 'due' | 'confirm'
+const STEP_ORDER: Step[] = ['category', 'priority', 'due', 'confirm']
 
 // Rendered via a portal straight into <body> (same pattern as
 // ExpandOverlay.tsx) - .task-entry-panel, this overlay's DOM ancestor if it
@@ -235,6 +236,30 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     resetAll()
   }
 
+  // One step back - category/priority/due/confirm each fall back to
+  // whichever came before them. Category itself has nothing earlier in the
+  // wizard, so going back from there exits to the main task list instead -
+  // but (unlike Escape/cancelOverlay) keeps the typed text, since "back"
+  // reads as a lighter action than an explicit cancel.
+  const goBack = () => {
+    setFlashValue(null)
+    if (step === 'priority') {
+      setStep('category')
+    } else if (step === 'due') {
+      setStep('priority')
+    } else if (step === 'confirm') {
+      setStep('due')
+    } else {
+      setTextLocked(false)
+      setCategory(null)
+      setCustomCategory('')
+      setPriority(null)
+      setDuePreset(null)
+      setCustomDueDate('')
+      setStep('category')
+    }
+  }
+
   // Hotkeys only engage once the overlay is open, mapped to whichever step
   // is currently visible (matches the button row actually on screen) - and
   // focus isn't inside a text input, so there's no "first keystroke eaten
@@ -251,8 +276,25 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
         return
       }
 
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goBack()
+        return
+      }
+
       const key = e.key.toLowerCase()
-      if (step === 'category') {
+      const currentIndex = STEP_ORDER.indexOf(step)
+
+      // Every group's hotkeys work once you've reached (or passed) that
+      // step - never before (picking a due-date preset before priority is
+      // even chosen would leave the flow half-filled). Category/priority/
+      // due hotkeys never collide with each other (letters vs letters vs
+      // digits), so this checks all three unconditionally rather than
+      // gating strictly on "whichever step is currently visible" - which is
+      // what lets a hotkey for an earlier step work as a "jump back and
+      // re-pick" shortcut from any later step, without a dedicated key list
+      // per step.
+      if (currentIndex >= STEP_ORDER.indexOf('category')) {
         for (const [cat, hotkey] of Object.entries(CAT_KEYS)) {
           if (hotkey && hotkey.toLowerCase() === key) {
             e.preventDefault()
@@ -260,7 +302,8 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
             return
           }
         }
-      } else if (step === 'priority') {
+      }
+      if (currentIndex >= STEP_ORDER.indexOf('priority')) {
         for (const [pri, hotkey] of Object.entries(PRI_KEYS)) {
           if (hotkey.toLowerCase() === key) {
             e.preventDefault()
@@ -268,7 +311,8 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
             return
           }
         }
-      } else if (step === 'due') {
+      }
+      if (currentIndex >= STEP_ORDER.indexOf('due')) {
         for (const [preset, hotkey] of Object.entries(DUE_KEYS)) {
           if (hotkey === key) {
             e.preventDefault()
@@ -276,7 +320,8 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
             return
           }
         }
-      } else if (step === 'confirm' && e.key === 'Enter') {
+      }
+      if (step === 'confirm' && e.key === 'Enter') {
         e.preventDefault()
         submit()
       }
@@ -356,7 +401,12 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
               <AnimatePresence mode="wait">
                 {step === 'category' && (
                   <motion.div key="category-row" className="option-row" {...sectionMotion}>
-                    <p className="option-row-label">Category</p>
+                    <div className="option-row-header">
+                      <button type="button" className="option-row-back-btn" title="Back to task list" onClick={goBack}>
+                        ‹
+                      </button>
+                      <p className="option-row-label">Category</p>
+                    </div>
                     <div className="option-row-buttons">
                       {CATEGORIES.map((cat) => (
                         <button
@@ -389,7 +439,12 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
 
                 {step === 'priority' && (
                   <motion.div key="priority-row" className="option-row" {...sectionMotion}>
-                    <p className="option-row-label">Priority</p>
+                    <div className="option-row-header">
+                      <button type="button" className="option-row-back-btn" title="Back to category" onClick={goBack}>
+                        ‹
+                      </button>
+                      <p className="option-row-label">Priority</p>
+                    </div>
                     <div className="option-row-buttons">
                       {PRIORITIES.map((pri) => (
                         <button
@@ -408,7 +463,12 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
 
                 {step === 'due' && (
                   <motion.div key="due-row" className="option-row" {...sectionMotion}>
-                    <p className="option-row-label">Due</p>
+                    <div className="option-row-header">
+                      <button type="button" className="option-row-back-btn" title="Back to priority" onClick={goBack}>
+                        ‹
+                      </button>
+                      <p className="option-row-label">Due</p>
+                    </div>
                     <div className="option-row-buttons">
                       {DUE_PRESET_ORDER.map((preset) => (
                         <button
@@ -436,7 +496,12 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
 
                 {step === 'confirm' && (
                   <motion.div key="confirm-row" className="task-entry-confirm-row" {...sectionMotion}>
-                    <p className="option-row-label">Ready to add “{text.trim()}”</p>
+                    <div className="option-row-header">
+                      <button type="button" className="option-row-back-btn" title="Back to due date" onClick={goBack}>
+                        ‹
+                      </button>
+                      <p className="option-row-label">Ready to add “{text.trim()}”</p>
+                    </div>
                     <button type="button" className="task-entry-confirm-btn" onClick={() => submit()}>
                       ✓ Enter
                     </button>

@@ -8,11 +8,17 @@ import type { NotificationEntry } from '../types'
 
 interface Props {
   // Opens the AssignmentWorkspace for this task id (see TaskListPage's
-  // setActiveAssignmentId) - every notification kind that carries a task_id
-  // is assignment-related (item_checked/subtask_assigned only ever fire on
-  // Assessment-category tasks - see the backend trigger points), so this is
-  // always the right thing to do when one is present.
+  // setActiveAssignmentId) - every persisted notification kind that carries
+  // a task_id is assignment-related (item_checked/subtask_assigned only
+  // ever fire on Assessment-category tasks - see the backend trigger
+  // points), so this is always the right thing to do for those. The "due
+  // tomorrow" section can point at a plain task too, which needs
+  // onHighlightTask instead - see openTaskAndClose below.
   onOpenTask: (taskId: number) => void
+  // Highlights/scrolls to a plain (non-assignment) task in the main list
+  // (see TaskListPage's highlightParentTask) - opening the workspace for a
+  // task that isn't actually an Assessment would show the wrong UI.
+  onHighlightTask: (taskId: number) => void
 }
 
 const KIND_ICON: Record<string, string> = {
@@ -21,7 +27,7 @@ const KIND_ICON: Record<string, string> = {
   access_revoked: '🚫',
 }
 
-export function NotificationBell({ onOpenTask }: Props) {
+export function NotificationBell({ onOpenTask, onHighlightTask }: Props) {
   const [open, setOpen] = useState(false)
   const [panelPos, setPanelPos] = useState({ top: 0, left: 0 })
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -67,8 +73,9 @@ export function NotificationBell({ onOpenTask }: Props) {
     }
   }
 
-  const openTaskAndClose = (taskId: number) => {
-    onOpenTask(taskId)
+  const openDueTomorrowAndClose = (entry: { taskId: number; isAssignment: boolean }) => {
+    if (entry.isAssignment) onOpenTask(entry.taskId)
+    else onHighlightTask(entry.taskId)
     setOpen(false)
   }
 
@@ -106,7 +113,7 @@ export function NotificationBell({ onOpenTask }: Props) {
                     key={entry.id}
                     type="button"
                     className="notification-entry"
-                    onClick={() => openTaskAndClose(entry.taskId)}
+                    onClick={() => openDueTomorrowAndClose(entry)}
                   >
                     <span className="notification-entry-icon">⏰</span>
                     <span className="notification-entry-text">{entry.text}</span>

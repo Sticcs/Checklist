@@ -57,6 +57,41 @@ export function useSubtaskFocusHotkey({ focusedTaskId, latestTaskId, lastExpande
   }, [focusedTaskId, latestTaskId, lastExpandedTaskId, onConsumeLatest])
 }
 
+// Escape exits whatever text box you're currently typing in - a plain
+// blur, nothing more (it doesn't clear or discard what you typed). Applies
+// app-wide (the quick-add input, subtask/list-item add boxes, notes/pages
+// editors, inline edit forms, AddTaskForm's own custom-category/date
+// fields inside its overlay) since it's driven by isTypingElement rather
+// than any one component.
+//
+// The blur itself is deferred to a macrotask (setTimeout 0) rather than run
+// synchronously inside this handler - this listener is registered at
+// TaskListPage's mount, earlier than component-local Escape handlers that
+// only attach once their own overlay opens (e.g. AddTaskForm's), and
+// native bubble-phase listeners on the same event fire in registration
+// order. Blurring synchronously here would change document.activeElement
+// *before* those later handlers run their own isTypingElement check,
+// making them see focus as already gone and fall through to whatever
+// their "not typing" branch does (AddTaskForm's Escape branch cancels the
+// whole overlay and wipes the typed text - exactly what this hook exists
+// to avoid). queueMicrotask alone wasn't a long enough deferral in testing
+// (something else - likely React's own scheduling - was still running a
+// microtask in between the two listeners); setTimeout reliably lands after
+// every same-tick handler has read the real focus state first.
+export function useEscapeBlurHotkey() {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const active = document.activeElement
+      if (!isTypingElement(active)) return
+      window.setTimeout(() => (active as HTMLElement).blur(), 0)
+    }
+
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+}
+
 // Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes - the standard
 // desktop-app convention. Gated on isTypingElement so it doesn't hijack a
 // text input's own native undo (e.g. reverting your last keystroke in the

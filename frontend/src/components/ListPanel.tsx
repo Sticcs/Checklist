@@ -12,6 +12,7 @@ import {
 } from '../hooks/useLists'
 import { LIST_ITEM_CATEGORY, SHOPPING_CATEGORY } from '../constants'
 import { useDraftText } from '../hooks/useDraftText'
+import { copyTextToClipboard, formatAsOutline } from '../utils/copyAsText'
 
 interface Props {
   list: ListEntry
@@ -112,6 +113,16 @@ export function ListPanel({ list, items }: Props) {
     }
   }
 
+  const handleCopyAsText = async () => {
+    const text = formatAsOutline(
+      list.name,
+      items.map((i) => i.text)
+    )
+    const ok = await copyTextToClipboard(text)
+    if (ok) toast.success('Copied to clipboard')
+    else toast.error('Could not copy to clipboard')
+  }
+
   return (
     <div className="assessments-panel">
       <div className="list-panel-header">
@@ -162,6 +173,15 @@ export function ListPanel({ list, items }: Props) {
                 }}
               >
                 🔗 Share
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  void handleCopyAsText()
+                }}
+              >
+                📄 Copy as text
               </button>
               <button type="button" onClick={handleDelete}>
                 🗑️ {list.kind === 'shopping' ? 'Clear all' : 'Delete'}

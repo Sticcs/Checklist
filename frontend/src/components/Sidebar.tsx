@@ -38,6 +38,7 @@ interface Props {
   hasCompletedTasks: boolean
   onClose: () => void
   onOpenTask: (taskId: number) => void
+  onHighlightTask: (taskId: number) => void
 }
 
 const ACTIVITY_META: Record<string, { icon: string; label: string }> = {
@@ -71,6 +72,7 @@ export function Sidebar({
   hasCompletedTasks,
   onClose,
   onOpenTask,
+  onHighlightTask,
 }: Props) {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -131,7 +133,7 @@ export function Sidebar({
             <button type="button" className="icon-btn theme-toggle" onClick={toggleTheme} title="Toggle theme">
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
-            <NotificationBell onOpenTask={onOpenTask} />
+            <NotificationBell onOpenTask={onOpenTask} onHighlightTask={onHighlightTask} />
             <button
               type="button"
               className="icon-btn"

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { toast } from 'sonner'
 import type { Task } from '../types'
 import { PRIORITIES } from '../constants'
 import { useDeleteTask, useEditTask, useSetTaskUrgent, useToggleDone } from '../hooks/useTasks'
 import { daysUntil } from '../utils/dueDatePresets'
+import { copyTextToClipboard, formatAsOutline } from '../utils/copyAsText'
 import { DateInput } from './DateInput'
 
 interface Props {
@@ -51,10 +53,14 @@ export function AssessmentCard({
 
   const overdue = !!task.due_date && !task.done && task.due_date < todayIso
   const daysToDue = task.due_date ? daysUntil(task.due_date, todayIso) : null
-  // The assignment workspace's textbox writes back to this same notes
-  // field - non-empty means the user has already put something down there,
-  // so the button should read "Continue" rather than "Start" over it.
-  const hasStarted = Boolean(task.notes && task.notes.trim().length > 0)
+  // task.notes is only ever the seed for the workspace's first page (see
+  // AssignmentWorkspace's defaultFirstPage) - once the workspace is open,
+  // edits land in task.pages instead, so notes alone goes stale the moment
+  // real work starts. Checking both is what makes "Continue" show up
+  // instead of "Start" for an assignment that already has content.
+  const hasStarted = Boolean(
+    (task.notes && task.notes.trim().length > 0) || task.pages.some((p) => p.content.trim().length > 0)
+  )
 
   const [compactMenuOpen, setCompactMenuOpen] = useState(false)
   const compactMenuRef = useRef<HTMLDivElement>(null)
@@ -87,6 +93,16 @@ export function AssessmentCard({
     setEditPriority(task.priority)
     setEditDueDate(task.due_date ?? '')
     setEditing(true)
+  }
+
+  const handleCopyAsText = async () => {
+    const text = formatAsOutline(
+      task.text,
+      task.subtasks.map((s) => s.text)
+    )
+    const ok = await copyTextToClipboard(text)
+    if (ok) toast.success('Copied to clipboard')
+    else toast.error('Could not copy to clipboard')
   }
 
   const saveEdit = (e: React.FormEvent) => {
@@ -197,6 +213,16 @@ export function AssessmentCard({
                 )}
                 <button
                   type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setCompactMenuOpen(false)
+                    void handleCopyAsText()
+                  }}
+                >
+                  📄 Copy as text
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setCompactMenuOpen(false)
                     startEditing()
@@ -289,6 +315,9 @@ export function AssessmentCard({
               onClick={() => setTaskUrgent.mutate({ id: task.id, urgent: !task.urgent })}
             >
               🔥
+            </button>
+            <button type="button" className="icon-btn" title="Copy as text" onClick={() => void handleCopyAsText()}>
+              📄
             </button>
             <button type="button" className="icon-btn" onClick={startEditing}>
               ✏️

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
+import { toast } from 'sonner'
 import type { Task } from '../types'
 import { CATEGORIES, PRIORITIES } from '../constants'
 import { useSettings } from '../context/SettingsContext'
@@ -20,6 +21,7 @@ import {
   useToggleSubtask,
 } from '../hooks/useSubtasks'
 import { daysUntil } from '../utils/dueDatePresets'
+import { copyTextToClipboard, formatAsOutline } from '../utils/copyAsText'
 import { DateInput } from './DateInput'
 import { useDraftText, readPendingDraft, writePendingDraft, clearPendingDraft } from '../hooks/useDraftText'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
@@ -278,6 +280,16 @@ export function TaskCard({
     setEditing(true)
   }
 
+  const handleCopyAsText = async () => {
+    const text = formatAsOutline(
+      task.text,
+      task.subtasks.map((s) => s.text)
+    )
+    const ok = await copyTextToClipboard(text)
+    if (ok) toast.success('Copied to clipboard')
+    else toast.error('Could not copy to clipboard')
+  }
+
   const saveEdit = (e: React.FormEvent) => {
     e.preventDefault()
     // Close immediately - the mutation is optimistic, so there's no need to
@@ -381,6 +393,15 @@ export function TaskCard({
             </button>
             {compactMenuOpen && (
               <div className="compact-menu-popover" data-focus-exempt>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompactMenuOpen(false)
+                    void handleCopyAsText()
+                  }}
+                >
+                  📄 Copy as text
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -509,6 +530,17 @@ export function TaskCard({
               }}
             >
               📌
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Copy as text"
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleCopyAsText()
+              }}
+            >
+              📄
             </button>
             <button
               type="button"

@@ -49,6 +49,13 @@ export function PublicListPage({ token }: Props) {
   return (
     <div className="public-list-page">
       <div className="public-list-card">
+        {/* A plain <a>, not client-side navigation - this page is rendered
+            standalone outside the normal app tree (see main.tsx), so a full
+            reload to "/" is the only way back into it, landing on the login
+            page or the app itself if a session cookie already exists. */}
+        <a href="/" className="public-list-home-link">
+          ← Checklist
+        </a>
         {status === 'loading' && <p className="status-message">Loading…</p>}
         {status === 'error' && (
           <p className="status-message error" role="alert">
