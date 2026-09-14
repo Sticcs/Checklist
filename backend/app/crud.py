@@ -728,6 +728,20 @@ def set_position(task_id: int, position: float, username: str) -> dict | None:
     return get_task(task_id, username)
 
 
+def set_task_list_id(task_id: int, list_id: int, username: str) -> dict | None:
+    """Moves a task into a different 'main'/'custom' list - the router
+    (see routers/tasks.py's /list) has already checked list_id belongs to
+    this user and is a real, list_id-addressable list before calling this."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tasks SET list_id = :list_id WHERE id = :id AND username = :username"),
+            {"list_id": list_id, "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
 def set_task_urgent(task_id: int, urgent: bool, username: str) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()

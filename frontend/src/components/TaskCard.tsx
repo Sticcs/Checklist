@@ -6,13 +6,16 @@ import { CATEGORIES, PRIORITIES } from '../constants'
 import { useSettings } from '../context/SettingsContext'
 import { useFormattableEditable } from '../context/FormattingContext'
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
+import { useLists } from '../hooks/useLists'
 import {
   useDeleteTask,
   useEditTask,
+  useMoveTask,
   useSetPinned,
   useSetTaskNotes,
   useToggleDone,
 } from '../hooks/useTasks'
+import { MoveToMenu } from './MoveToMenu'
 import {
   useAddSubtask,
   useDeleteSubtask,
@@ -83,6 +86,10 @@ export function TaskCard({
   // tracks hover as real state instead.
   const [hovered, setHovered] = useState(false)
   const [compactMenuOpen, setCompactMenuOpen] = useState(false)
+  // Compact mode's "⋮" is a single popover (not the reveal row's row of
+  // separate icon buttons, see MoveToMenu below), so "Move to" nests inside
+  // it as a second screen instead of its own floating popover-on-a-popover.
+  const [compactMoveOpen, setCompactMoveOpen] = useState(false)
   const compactMenuRef = useRef<HTMLDivElement>(null)
 
   // Closes the compact-row's "⋮" menu on any click outside it - same pattern
@@ -96,12 +103,21 @@ export function TaskCard({
     return () => document.removeEventListener('click', handler)
   }, [compactMenuOpen])
 
+  useEffect(() => {
+    if (!compactMenuOpen) setCompactMoveOpen(false)
+  }, [compactMenuOpen])
+
   const { urgentWindowDays } = useSettings()
 
   const setPinned = useSetPinned()
   const toggleDone = useToggleDone()
   const editTask = useEditTask()
   const deleteTask = useDeleteTask()
+  const moveTask = useMoveTask()
+  const { data: listsData } = useLists()
+  const moveTargets = (listsData?.lists ?? []).filter(
+    (l) => (l.kind === 'main' || l.kind === 'custom') && l.id !== task.list_id
+  )
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
   const setSubtaskUrgent = useSetSubtaskUrgent()
@@ -393,33 +409,86 @@ export function TaskCard({
             </button>
             {compactMenuOpen && (
               <div className="compact-menu-popover" data-focus-exempt>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompactMenuOpen(false)
-                    void handleCopyAsText()
-                  }}
-                >
-                  📄 Copy as text
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompactMenuOpen(false)
-                    startEditing()
-                  }}
-                >
-                  ✏️ Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompactMenuOpen(false)
-                    deleteTask.mutate(task.id)
-                  }}
-                >
-                  🗑️ Delete
-                </button>
+                {compactMoveOpen ? (
+                  <>
+                    {/* stopPropagation here (and on the "Move to..." button
+                        below) - not just cosmetic. Without it, this click's
+                        own re-render swaps out the button subtree under
+                        e.target before the still-bubbling native event
+                        reaches the document-level close-on-outside-click
+                        listener above; contains() on a now-detached node
+                        reads as "outside" and closes the whole popover
+                        instead of just switching screens. Same race as
+                        ListMenu's share-popover fix, different remedy: that
+                        one deferred the listener's own attachment, this one
+                        just keeps the triggering click from reaching it. */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setCompactMoveOpen(false)
+                      }}
+                    >
+                      ‹ Back
+                    </button>
+                    {moveTargets.map((list) => (
+                      <button
+                        key={list.id}
+                        type="button"
+                        onClick={() => {
+                          setCompactMenuOpen(false)
+                          moveTask.mutate(
+                            { id: task.id, listId: list.id },
+                            { onSuccess: () => toast(`📋 Moved to "${list.name}"`) }
+                          )
+                        }}
+                      >
+                        📋 {list.name}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompactMenuOpen(false)
+                        void handleCopyAsText()
+                      }}
+                    >
+                      📄 Copy as text
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompactMenuOpen(false)
+                        startEditing()
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+                    {moveTargets.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setCompactMoveOpen(true)
+                        }}
+                      >
+                        ↪️ Move to...
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompactMenuOpen(false)
+                        deleteTask.mutate(task.id)
+                      }}
+                    >
+                      🗑️ Delete
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -553,6 +622,7 @@ export function TaskCard({
             >
               ✏️
             </button>
+            <MoveToMenu taskId={task.id} currentListId={task.list_id} />
             <button
               type="button"
               className="icon-btn"

@@ -462,6 +462,26 @@ export function useSetDueDate() {
   })
 }
 
+export function useMoveTask() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, listId }: { id: number; listId: number }) => tasksApi.setListId(id, listId),
+    onMutate: async (vars) => {
+      const previous = await beginOptimisticUpdate(queryClient)
+      setTasksData(queryClient, (old) => ({
+        tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, list_id: vars.listId } : t)),
+        can_undo: true,
+        can_redo: false,
+      }))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      rollback(queryClient, ctx?.previous)
+      toast.error('Failed to move task')
+    },
+  })
+}
+
 // Deliberately doesn't go through beginOptimisticUpdate: notes autosave on a
 // debounce while typing, and pushing an undo-stack snapshot on every save
 // (see undoRedoStack.ts) would flood the 20-entry stack with near-identical

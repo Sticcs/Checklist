@@ -4,6 +4,7 @@ import { useAddTask, useDeleteTask, useToggleDone } from '../hooks/useTasks'
 import { LIST_ITEM_CATEGORY, SHOPPING_CATEGORY } from '../constants'
 import { useDraftText } from '../hooks/useDraftText'
 import { ListMenu } from './ListMenu'
+import { MoveToMenu } from './MoveToMenu'
 
 interface Props {
   list: ListEntry
@@ -67,6 +68,10 @@ export function ListPanel({ list, items }: Props) {
                 onChange={() => toggleDone.mutate({ id: item.id, done: !item.done })}
               />
               <span className={item.done ? 'task-text done' : 'task-text'}>{item.text}</span>
+              {/* Shopping items are found by category, not list_id - never a
+                  valid move source or target (see MoveToMenu/the backend's
+                  _require_movable_list), so this never renders there. */}
+              {list.kind !== 'shopping' && <MoveToMenu taskId={item.id} currentListId={list.id} />}
               <button
                 type="button"
                 className="icon-btn"

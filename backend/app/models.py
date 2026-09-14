@@ -155,6 +155,14 @@ class TaskDueDateUpdate(BaseModel):
     due_date: str | None = None
 
 
+class TaskListIdUpdate(BaseModel):
+    # The 'main' or 'custom' list (see routers/tasks.py's /list) to move
+    # this task into - always a real list, never null, since "move to" only
+    # ever offers other real lists as targets (see TaskListPage's
+    # rightPanelLists), not a way to detach a task from every list.
+    list_id: int
+
+
 class TaskAssignUpdate(BaseModel):
     # The id of the plain task this (assessment) task should be filed
     # under, or None to unassign it - see routers/tasks.py's /assign.

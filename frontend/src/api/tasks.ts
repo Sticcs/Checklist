@@ -22,6 +22,7 @@ export const tasksApi = {
   setLinks: (id: number, links: LinkItem[]) => api.patch<Task>(`/tasks/${id}/links`, { links }),
   setPages: (id: number, pages: WorkspacePage[]) => api.patch<Task>(`/tasks/${id}/pages`, { pages }),
   setDueDate: (id: number, due_date: string | null) => api.patch<Task>(`/tasks/${id}/due-date`, { due_date }),
+  setListId: (id: number, list_id: number) => api.patch<Task>(`/tasks/${id}/list`, { list_id }),
   assign: (id: number, assigned_task_id: number | null) =>
     api.patch<Task>(`/tasks/${id}/assign`, { assigned_task_id }),
   remove: (id: number) => api.delete<void>(`/tasks/${id}`),

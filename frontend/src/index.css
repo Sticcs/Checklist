@@ -488,7 +488,8 @@ body[data-theme='dark'] .offline-banner-sending {
   padding: 0.2rem 0.4rem;
 }
 
-.list-menu {
+.list-menu,
+.move-to-menu {
   position: relative;
   flex-shrink: 0;
 }

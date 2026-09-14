@@ -13,6 +13,7 @@ from app.models import (
     TaskDueDateUpdate,
     TaskInProgressUpdate,
     TaskLinksUpdate,
+    TaskListIdUpdate,
     TaskNotesUpdate,
     TaskPagesUpdate,
     TaskPinnedUpdate,
@@ -31,6 +32,17 @@ def _require_task(task_id: int, username: str) -> dict:
     if task is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found")
     return task
+
+
+def _require_movable_list(list_id: int, username: str) -> dict:
+    """A task's list_id may only point at a 'main' or 'custom' list owned
+    by the caller - the built-in 'shopping' list is never a valid target,
+    since its items are found by category alone (see crud.py's Lists
+    section), not list_id."""
+    target_list = crud.get_list(list_id, username)
+    if target_list is None or target_list["kind"] not in ("main", "custom"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
+    return target_list
 
 
 def _require_task_access(task_id: int, username: str) -> dict:
@@ -77,12 +89,7 @@ def create_task(body: TaskCreate, current_user: CurrentUser = Depends(get_curren
     if not text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Task text is required")
     if body.list_id is not None:
-        # Must belong to the caller and be a 'main' or 'custom' list - the
-        # built-in 'shopping' list is never targeted by list_id (its items
-        # are found by category alone, see crud.py's Lists section).
-        target_list = crud.get_list(body.list_id, current_user.username)
-        if target_list is None or target_list["kind"] not in ("main", "custom"):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
+        _require_movable_list(body.list_id, current_user.username)
     task = crud.add_task(
         text, body.priority, body.category, body.due_date, current_user.username, list_id=body.list_id
     )
@@ -145,6 +152,17 @@ def reposition_task(
 ) -> Task:
     _require_task(task_id, current_user.username)
     task = crud.set_position(task_id, body.position, current_user.username)
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/list", response_model=Task)
+def move_task(
+    task_id: int, body: TaskListIdUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    _require_task(task_id, current_user.username)
+    _require_movable_list(body.list_id, current_user.username)
+    task = crud.set_task_list_id(task_id, body.list_id, current_user.username)
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 

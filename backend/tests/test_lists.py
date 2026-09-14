@@ -182,6 +182,47 @@ def test_create_task_accepts_the_main_list_id(guest_client):
     assert r.json()["list_id"] == main["id"]
 
 
+def test_move_task_to_another_list(guest_client):
+    client, _ = guest_client
+    main = _main(client.get("/api/lists").json()["lists"])
+    other_list = client.post("/api/lists").json()
+    task = client.post(
+        "/api/tasks", json={"text": "x", "priority": "Medium", "category": "General", "list_id": main["id"]}
+    ).json()
+
+    r = client.patch(f"/api/tasks/{task['id']}/list", json={"list_id": other_list["id"]})
+    assert r.status_code == 200
+    assert r.json()["list_id"] == other_list["id"]
+
+    tasks = client.get("/api/tasks").json()["tasks"]
+    moved = next(t for t in tasks if t["id"] == task["id"])
+    assert moved["list_id"] == other_list["id"]
+
+
+def test_move_task_rejects_a_list_you_dont_own(client):
+    client.post("/api/auth/guest")
+    task = client.post(
+        "/api/tasks", json={"text": "x", "priority": "Medium", "category": "General"}
+    ).json()
+    other, _ = _second_guest(client)
+    other_list = other.post("/api/lists").json()
+
+    r = client.patch(f"/api/tasks/{task['id']}/list", json={"list_id": other_list["id"]})
+    assert r.status_code == 404
+
+
+def test_move_task_rejects_the_shopping_list_id(guest_client):
+    client, _ = guest_client
+    main = _main(client.get("/api/lists").json()["lists"])
+    shopping = _shopping(client.get("/api/lists").json()["lists"])
+    task = client.post(
+        "/api/tasks", json={"text": "x", "priority": "Medium", "category": "General", "list_id": main["id"]}
+    ).json()
+
+    r = client.patch(f"/api/tasks/{task['id']}/list", json={"list_id": shopping["id"]})
+    assert r.status_code == 404
+
+
 def test_list_items_do_not_appear_via_shared_with_me_or_other_users(client):
     client.post("/api/auth/guest")
     created = client.post("/api/lists").json()
