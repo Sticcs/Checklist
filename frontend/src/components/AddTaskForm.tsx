@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CATEGORIES, CAT_KEYS, LIST_ITEM_CATEGORY, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '../constants'
+import { ASSESSMENT_CATEGORY, CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '../constants'
 import { computeDueDate, DUE_PRESET_ORDER, type DuePreset } from '../utils/dueDatePresets'
 import { isTypingElement } from '../utils/isTypingElement'
 import { useAddTask } from '../hooks/useTasks'
@@ -60,15 +60,14 @@ function TaskEntryVignetteOverlay({ onCancel, children }: { onCancel: () => void
 interface Props {
   onAdded?: (taskId: number) => void
   hasTasks?: boolean
-  // When set (a custom list's id, i.e. the main task-list column's active
-  // tab isn't "List 1"), typing + Enter adds straight to that list instead
-  // of opening the category/priority/due wizard - custom lists are bare
-  // (checkbox + text only), so there's nothing for the wizard to ask.
-  // null/undefined means the normal "List 1" flow.
-  targetListId?: number | null
+  // The right-panel tab a new task should be filed under - every list goes
+  // through the same wizard below (see ListMenu/is_simple: only *display*
+  // differs between a rich and a simple list, not how items get added to
+  // it). null/undefined means "no active list yet."
+  listId?: number | null
 }
 
-export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
+export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
   // Mirrored to localStorage (see useDraftText) so text you're mid-typing
   // survives an accidental reload or a dropped connection instead of just
   // vanishing - restored automatically the next time this form mounts.
@@ -144,21 +143,6 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
     ;(document.activeElement as HTMLElement | null)?.blur()
   }
 
-  // The targetListId fast path - adds straight to that list, no wizard.
-  // Mirrors ListPanel's own add-item form (same category/priority/dueDate
-  // used for every custom-list item) rather than opening the category/
-  // priority/due overlay, which has nothing meaningful to ask about a bare
-  // list item.
-  const submitToList = () => {
-    const value = text.trim()
-    if (!value || targetListId === null) return
-    setText('')
-    addTask.mutate(
-      { text: value, priority: 'Medium', category: LIST_ITEM_CATEGORY, dueDate: null, listId: targetListId },
-      { onSuccess: (task) => onAdded?.(task.id) }
-    )
-  }
-
   // Accepts an optional freshly-typed custom date so Enter-to-submit inside
   // the date field itself (see DateInput's onEnter below) can go straight
   // through with the value just read off the DOM, without waiting on
@@ -175,7 +159,7 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
     // for however long the request took, with nothing left to do.
     resetAll()
     addTask.mutate(
-      { text: text.trim(), priority, category: finalCategory, dueDate },
+      { text: text.trim(), priority, category: finalCategory, dueDate, listId },
       {
         onSuccess: (task) => onAdded?.(task.id),
       }
@@ -249,10 +233,6 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
   const handleTextKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter' || text.trim() === '') return
     e.preventDefault()
-    if (targetListId !== null) {
-      submitToList()
-      return
-    }
     if (!textLocked) lockText()
   }
 
@@ -321,6 +301,7 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
       // per step.
       if (currentIndex >= STEP_ORDER.indexOf('category')) {
         for (const [cat, hotkey] of Object.entries(CAT_KEYS)) {
+          if (!(categoryChoices as readonly string[]).includes(cat)) continue
           if (hotkey && hotkey.toLowerCase() === key) {
             e.preventDefault()
             pickCategory(cat)
@@ -355,7 +336,7 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textLocked, step, category, priority, duePreset, customDueDate, customCategory, text])
+  }, [textLocked, step, category, priority, duePreset, customDueDate, customCategory, text, listId])
 
   const hint = (() => {
     if (text.trim() === '' && !textLocked) {
@@ -363,9 +344,8 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
       // task exists it isn't the user's "first" task anymore, and an empty
       // box doesn't need a prompt at all.
       if (hasTasks) return null
-      return targetListId !== null ? 'Start typing to add the first item here.' : 'Start typing to enter your first task.'
+      return listId !== null ? 'Start typing to add the first item here.' : 'Start typing to enter your first task.'
     }
-    if (targetListId !== null) return 'Press Enter to add it to this list.'
     if (!textLocked) return 'Press Enter (or the green button) to continue.'
     return null
   })()
@@ -388,12 +368,19 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
     return selected ? `${baseClass} btn-primary` : baseClass
   }
 
+  // Adding to a specific list (List 1 or any custom list) can't also offer
+  // Assessment/Shopping as a category - picking either would make the item
+  // "escape" into a different panel entirely (see TaskListPage's mainTasks
+  // filter, which excludes both categories regardless of list_id) instead
+  // of appearing in the list you were just adding to.
+  const categoryChoices = listId !== null ? CATEGORIES.filter((c) => c !== ASSESSMENT_CATEGORY && c !== SHOPPING_CATEGORY) : CATEGORIES
+
   return (
     <div className="add-task-form">
       <div className="task-entry-row">
         <input
           className="task-text-input"
-          placeholder={targetListId !== null ? 'Add an item to this list...' : 'E.g., Review Big O time complexity'}
+          placeholder={listId !== null ? 'Add an item to this list...' : 'E.g., Review Big O time complexity'}
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
           onKeyDown={handleTextKeyDown}
@@ -407,7 +394,7 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
           className="task-entry-enter-btn"
           title="Enter"
           disabled={text.trim() === '' || textLocked}
-          onClick={targetListId !== null ? submitToList : lockText}
+          onClick={lockText}
         >
           ➤
         </button>
@@ -434,7 +421,7 @@ export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
                       <p className="option-row-label">Category</p>
                     </div>
                     <div className="option-row-buttons">
-                      {CATEGORIES.map((cat) => (
+                      {categoryChoices.map((cat) => (
                         <button
                           key={cat}
                           type="button"

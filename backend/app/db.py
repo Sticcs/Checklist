@@ -145,13 +145,28 @@ lists_table = Table(
     # a response model a non-owner could reach.
     Column("share_token", String, nullable=True),
     # 'custom' (a user-created list via the "+" tab - its items are tasks
-    # with list_id pointing at this row) or 'shopping' (the one, permanent,
+    # with list_id pointing at this row), 'main' (the one, permanent,
+    # lazily-created-per-account row backing the user's original "List 1" -
+    # see crud.get_or_create_main_list), or 'shopping' (the one, permanent,
     # lazily-created-per-account row backing the built-in Shopping tab -
     # its items are tasks with category='Shopping', never list_id; see
-    # crud.get_or_create_shopping_list). This lets Shopping and custom lists
-    # share one rename/delete/share code path, branching on `kind` only
-    # where their membership rule or delete semantics genuinely differ.
+    # crud.get_or_create_shopping_list). This lets all three share one
+    # rename/delete/share code path, branching on `kind` only where their
+    # membership rule or delete semantics genuinely differ (which 'main'
+    # never does - it's identical to 'custom' there).
     Column("kind", String, nullable=False, server_default="custom"),
+    # Rich (the default - full TaskCard UI: priority, due date, subtasks,
+    # drag-reorder) or simple (bare checkbox+text, the UI every list had
+    # before this column existed). A pure display-mode toggle - converting
+    # either direction never touches the underlying tasks' data, so
+    # converting back just makes whatever priority/due-date/subtasks were
+    # already there reappear. Only a simple list can generate a public
+    # share link (see routers/lists.py) - the public view only ever
+    # exposes bare {id, text, done}, so a rich list's extra fields would
+    # never actually reach a visitor anyway. Shopping is always simple
+    # (forced at creation in get_or_create_shopping_list, backfilled for
+    # existing rows below) - not user-toggleable.
+    Column("is_simple", Integer, nullable=False, server_default=text("0")),
 )
 
 activity_log_table = Table(
@@ -309,6 +324,17 @@ def init_db() -> None:
     if "assigned_username" not in existing_subtask_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE subtasks ADD COLUMN assigned_username TEXT"))
+
+    existing_list_columns = {c["name"] for c in inspector.get_columns("lists")}
+    if "is_simple" not in existing_list_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE lists ADD COLUMN is_simple INTEGER NOT NULL DEFAULT 0"))
+            # Shopping is always simple, including every account's existing
+            # Shopping row that predates this column - everything else
+            # (custom lists, and the 'main' list once it starts getting
+            # lazily created) correctly stays rich by default via the
+            # column's own DEFAULT 0 above, no backfill needed for those.
+            conn.execute(text("UPDATE lists SET is_simple = 1 WHERE kind = 'shopping'"))
 
     existing_activity_columns = {c["name"] for c in inspector.get_columns("activity_log")}
     if "task_id" not in existing_activity_columns:

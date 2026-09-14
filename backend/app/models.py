@@ -226,6 +226,10 @@ class ListEntry(BaseModel):
     # Whether a share link is currently active - deliberately not the token
     # itself, which only the dedicated share-link endpoints below expose.
     has_share_link: bool
+    # Rich (full TaskCard UI) or simple (bare checkbox+text) - see
+    # lists_table's is_simple column comment. Only a simple list can be
+    # shared (see routers/lists.py's create_share_link).
+    is_simple: bool
 
 
 class ListsResponse(BaseModel):
@@ -234,6 +238,10 @@ class ListsResponse(BaseModel):
 
 class ListRenameUpdate(BaseModel):
     name: str
+
+
+class ListSimpleUpdate(BaseModel):
+    is_simple: bool
 
 
 class ListShareLinkResponse(BaseModel):

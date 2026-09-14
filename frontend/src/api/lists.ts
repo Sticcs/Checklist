@@ -5,6 +5,8 @@ export const listsApi = {
   list: () => api.get<{ lists: ListEntry[] }>('/lists'),
   create: () => api.post<ListEntry>('/lists'),
   rename: (id: number, name: string) => api.patch<ListEntry>(`/lists/${id}`, { name }),
+  setSimple: (id: number, isSimple: boolean) =>
+    api.patch<ListEntry>(`/lists/${id}/simple`, { is_simple: isSimple }),
   remove: (id: number) => api.delete<void>(`/lists/${id}`),
   createShareLink: (id: number) => api.post<ShareLink>(`/lists/${id}/share-link`),
   regenerateShareLink: (id: number) => api.post<ShareLink>(`/lists/${id}/share-link/regenerate`),

@@ -1094,8 +1094,8 @@ def get_or_create_shopping_list(username: str) -> dict:
             return dict(row)
         new_id = conn.execute(
             text(
-                "INSERT INTO lists (username, name, created_at, position, kind) "
-                "VALUES (:username, 'Shopping', :created_at, 0, 'shopping') RETURNING id"
+                "INSERT INTO lists (username, name, created_at, position, kind, is_simple) "
+                "VALUES (:username, 'Shopping', :created_at, 0, 'shopping', 1) RETURNING id"
             ),
             {"username": username, "created_at": datetime.now().isoformat()},
         ).scalar_one()
@@ -1103,17 +1103,60 @@ def get_or_create_shopping_list(username: str) -> dict:
     return dict(row)
 
 
+def get_or_create_main_list(username: str) -> dict:
+    """The user's original, always-present task list ("List 1") - used to be
+    a hardcoded bucket (every task with list_id IS NULL and a non-
+    Assessment/Shopping category), now a real `lists` row like any other so
+    it can be renamed/shared/deleted the same way. Lazily created exactly
+    like get_or_create_shopping_list above, with one addition: every call
+    also backfills any of this user's orphaned tasks (list_id IS NULL,
+    still not Assessment/Shopping) into whichever row this returns - a
+    no-op once nothing's orphaned, but it transparently sweeps up both the
+    one-time legacy migration (existing pre-this-feature tasks) *and* any
+    future source of orphans (import_data's INSERT never sets list_id)
+    without ever risking a second 'main' row: creation is gated purely on
+    whether a kind='main' row already exists, not on whether orphans are
+    currently present, so re-running this after an import just re-attaches
+    the new orphans to the same list instead of spawning a duplicate."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM lists WHERE username = :username AND kind = 'main'"),
+            {"username": username},
+        ).mappings().fetchone()
+        if row is None:
+            new_id = conn.execute(
+                text(
+                    "INSERT INTO lists (username, name, created_at, position, kind) "
+                    "VALUES (:username, 'List 1', :created_at, 0, 'main') RETURNING id"
+                ),
+                {"username": username, "created_at": datetime.now().isoformat()},
+            ).scalar_one()
+            row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": new_id}).mappings().fetchone()
+        conn.execute(
+            text(
+                "UPDATE tasks SET list_id = :id WHERE username = :username AND list_id IS NULL "
+                "AND category NOT IN ('Assessment', 'Shopping')"
+            ),
+            {"id": row["id"], "username": username},
+        )
+    return dict(row)
+
+
 def get_lists(username: str) -> list[dict]:
-    """Shopping first (always exists, see get_or_create_shopping_list above),
-    then custom lists in creation order."""
+    """Shopping first (always exists), then the main list (always exists,
+    always second - see get_or_create_main_list above for why this can't
+    just be sorted alongside the customs by id/position), then custom
+    lists in creation order."""
     shopping = get_or_create_shopping_list(username)
+    main = get_or_create_main_list(username)
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(
             text("SELECT * FROM lists WHERE username = :username AND kind = 'custom' ORDER BY id ASC"),
             {"username": username},
         ).mappings().all()
-    return [shopping] + [dict(r) for r in rows]
+    return [shopping, main] + [dict(r) for r in rows]
 
 
 def get_list(list_id: int, username: str) -> dict | None:
@@ -1130,12 +1173,11 @@ def create_list(username: str) -> dict:
     """Always auto-named "List N" (N = current custom-list count + 2,
     computed fresh each time - not a persistent counter, so a name can be
     reused after its list is deleted, which is harmless). The +2 (not +1)
-    is deliberate: "List 1" is reserved for the frontend's own main task
-    list (see TaskListPage's mainTab) - that one isn't a row in this table
-    at all (it's just every task with list_id IS NULL), so the first
-    *custom* list a user creates has to start at "List 2" to avoid two
-    tabs both named "List 1". Renaming is a separate action (see
-    rename_list)."""
+    is deliberate: "List 1" is always taken by this user's `kind='main'`
+    row (see get_or_create_main_list) before their first *custom* list
+    exists, so counting only kind='custom' rows and adding 2 is what skips
+    past that already-claimed name - the first custom list becomes "List
+    2". Renaming is a separate action (see rename_list)."""
     engine = get_engine()
     with engine.begin() as conn:
         count = conn.execute(
@@ -1171,15 +1213,39 @@ def rename_list(list_id: int, username: str, name: str) -> dict | None:
     return dict(row) if row else None
 
 
+def set_list_simple(list_id: int, username: str, is_simple: bool) -> dict | None:
+    """Toggles a list between rich (the default - full TaskCard UI) and
+    simple (bare checkbox+text) - a pure display-mode flag, never touches
+    the tasks themselves (see lists_table's is_simple column comment).
+    Callers must separately enforce that Shopping's own row never gets
+    toggled off simple (routers/lists.py doesn't expose the option in its
+    UI for kind='shopping', but nothing here re-checks that server-side
+    since there's no user-facing path that would call this against it)."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE lists SET is_simple = :is_simple WHERE id = :id AND username = :username"),
+            {"is_simple": int(is_simple), "id": list_id, "username": username},
+        )
+        if result.rowcount == 0:
+            return None
+        row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": list_id}).mappings().fetchone()
+    return dict(row) if row else None
+
+
 def delete_or_clear_list(list_id: int, username: str) -> bool:
-    """Deletes a custom list (row + every one of its tasks) outright; for the
-    built-in Shopping list, clears its items but keeps the row so its name/
-    share_token survive - see the module docstring above for why these
-    differ. Mirrors clear_all's transaction shape (subtasks, dangling
-    assigned_task_id refs, and assignment_collaborators all cleaned up the
-    same defensive way, even though nothing in the UI lets a list item
-    acquire a subtask/collaborator - a direct API call could). Returns False
-    if the list doesn't belong to `username`."""
+    """Deletes a custom list (row + every one of its tasks) outright; for
+    Shopping and the main list ("List 1") - the two kinds that always exist
+    exactly once per account and get silently re-created the moment
+    they're missing (see get_or_create_shopping_list/get_or_create_main_list)
+    - clears items but keeps the row instead, so a "delete" on either one
+    doesn't just respawn an empty list a moment later on the next page
+    load, which would make the action pointless. Mirrors clear_all's
+    transaction shape (subtasks, dangling assigned_task_id refs, and
+    assignment_collaborators all cleaned up the same defensive way, even
+    though nothing in the UI lets a list item acquire a subtask/
+    collaborator - a direct API call could). Returns False if the list
+    doesn't belong to `username`."""
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -1190,6 +1256,7 @@ def delete_or_clear_list(list_id: int, username: str) -> bool:
         if row is None:
             return False
         is_shopping = row["kind"] == "shopping"
+        keep_row = row["kind"] in ("shopping", "main")
 
         if is_shopping:
             item_ids = [
@@ -1228,6 +1295,8 @@ def delete_or_clear_list(list_id: int, username: str) -> bool:
             )
         else:
             conn.execute(text("DELETE FROM tasks WHERE list_id = :list_id"), {"list_id": list_id})
+
+        if not keep_row:
             conn.execute(
                 text("DELETE FROM lists WHERE id = :id AND username = :username"),
                 {"id": list_id, "username": username},

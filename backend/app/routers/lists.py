@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app import crud
 from app.config import settings
-from app.models import ListEntry, ListRenameUpdate, ListShareLinkResponse, ListsResponse
+from app.models import ListEntry, ListRenameUpdate, ListShareLinkResponse, ListSimpleUpdate, ListsResponse
 from app.paths import is_desktop_build
 from app.security import CurrentUser, get_current_user
 
@@ -26,6 +26,7 @@ def _entry(row: dict) -> ListEntry:
         kind=row["kind"],
         position=row["position"],
         has_share_link=bool(row.get("share_token")),
+        is_simple=bool(row.get("is_simple")),
     )
 
 
@@ -56,6 +57,16 @@ def rename_list(
     return _entry(row)
 
 
+@router.patch("/{list_id}/simple", response_model=ListEntry)
+def set_list_simple(
+    list_id: int, body: ListSimpleUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> ListEntry:
+    row = crud.set_list_simple(list_id, current_user.username, body.is_simple)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
+    return _entry(row)
+
+
 @router.delete("/{list_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_list(list_id: int, current_user: CurrentUser = Depends(get_current_user)) -> None:
     # Deletes a custom list outright (row + its tasks); for the built-in
@@ -65,11 +76,26 @@ def delete_list(list_id: int, current_user: CurrentUser = Depends(get_current_us
         raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
 
 
+def _require_simple_list(list_id: int, username: str) -> dict:
+    # Only a simple list can be shared - the public view only ever exposes
+    # bare {id, text, done} (see routers/public.py), so a rich list's extra
+    # fields (priority, due date, subtasks) would never actually reach a
+    # visitor anyway; gating this up front is clearer than silently
+    # dropping them.
+    list_row = crud.get_list(list_id, username)
+    if list_row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
+    if not list_row["is_simple"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only simple lists can be shared")
+    return list_row
+
+
 @router.post("/{list_id}/share-link", response_model=ListShareLinkResponse)
 def create_share_link(
     list_id: int, current_user: CurrentUser = Depends(get_current_user)
 ) -> ListShareLinkResponse:
     _require_desktop_disabled()
+    _require_simple_list(list_id, current_user.username)
     token = crud.get_or_create_list_share_token(list_id, current_user.username)
     if token is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
@@ -81,6 +107,7 @@ def regenerate_share_link(
     list_id: int, current_user: CurrentUser = Depends(get_current_user)
 ) -> ListShareLinkResponse:
     _require_desktop_disabled()
+    _require_simple_list(list_id, current_user.username)
     token = crud.regenerate_list_share_token(list_id, current_user.username)
     if token is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")

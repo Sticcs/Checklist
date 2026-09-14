@@ -111,6 +111,8 @@ def test_anonymous_public_list_toggle_notifies_the_owner(guest_client):
     item = client.post(
         "/api/tasks", json={"text": "Milk", "priority": "Medium", "category": "General", "list_id": created["id"]}
     ).json()
+    # Only a simple list can be shared - lists default to rich now.
+    client.patch(f"/api/lists/{created['id']}/simple", json={"is_simple": True})
     token = client.post(f"/api/lists/{created['id']}/share-link").json()["token"]
 
     anon = _fresh_anonymous_client()
@@ -131,6 +133,8 @@ def test_repeated_anonymous_toggle_does_not_spam(guest_client):
     item = client.post(
         "/api/tasks", json={"text": "Milk", "priority": "Medium", "category": "General", "list_id": created["id"]}
     ).json()
+    # Only a simple list can be shared - lists default to rich now.
+    client.patch(f"/api/lists/{created['id']}/simple", json={"is_simple": True})
     token = client.post(f"/api/lists/{created['id']}/share-link").json()["token"]
 
     anon = _fresh_anonymous_client()

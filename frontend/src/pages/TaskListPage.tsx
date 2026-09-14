@@ -21,6 +21,7 @@ import { Scratchpad } from '../components/Scratchpad'
 import { SubtaskNotepad } from '../components/SubtaskNotepad'
 import { AssessmentsPanel } from '../components/AssessmentsPanel'
 import { ListPanel } from '../components/ListPanel'
+import { ListMenu } from '../components/ListMenu'
 import { AssignmentWorkspace } from '../components/AssignmentWorkspace'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
@@ -62,16 +63,12 @@ export function TaskListPage() {
   // The left panel now only ever shows these two, both permanent/hardcoded
   // - custom lists moved to the main column's own tabs (see mainTab) below.
   const [entryTab, setEntryTab] = useState<'assessments' | 'shopping'>('assessments')
-  // The main task-list column's own tab: 'list1' is the original, full-
-  // featured task list (search/filter/sort/subtasks/etc, unchanged from
-  // before this became a "tab" at all - it's every task with list_id NULL
-  // and category outside Assessment/Shopping, same as mainTasks below
-  // always was) - every other value is a bare custom list's id, rendered
-  // the same ListPanel the left panel used to show them in. Not a
-  // ListEntry.id itself for 'list1' since it isn't a real `lists` row -
-  // see crud.create_list's +2 offset for why custom-list numbering starts
-  // at "List 2" to avoid colliding with this one.
-  const [mainTab, setMainTab] = useState<'list1' | number>('list1')
+  // The main task-list column's own tab - a real ListEntry.id, or null
+  // before the first list has loaded/been picked. The list this points at
+  // decides both what renders (rich TaskCard UI if !is_simple, the same
+  // bare ListPanel the left column used to show custom lists in if
+  // is_simple) and where AddTaskForm files a new task.
+  const [mainTab, setMainTab] = useState<number | null>(null)
 
   const handleStartAssignment = (taskId: number) => {
     setActiveAssignmentId(taskId)
@@ -139,20 +136,62 @@ export function TaskListPage() {
     setNotepadHidden(false)
   }, [focusedSubtaskId])
 
-  // Assessments (category === 'Assessment'), Shopping items (category ===
-  // 'Shopping'), and every custom list's items (list_id set) all live in
-  // their own panel, not the main list - everything else about them
-  // (mutations, undo/redo, clear completed) is shared, via the same `tasks`
-  // entity and the same click-delegation handler below, just filtered into
-  // a different view. Excluding list_id here (not just category) matters:
-  // a custom-list item's category is just 'List' (see LIST_ITEM_CATEGORY),
-  // which on its own wouldn't be enough to keep it out of the main list.
+  const lists = useMemo(() => listsData?.lists ?? [], [listsData])
+  const shoppingList = useMemo(() => lists.find((l) => l.kind === 'shopping') ?? null, [lists])
+  const mainList = useMemo(() => lists.find((l) => l.kind === 'main') ?? null, [lists])
+  const customLists = useMemo(() => lists.filter((l) => l.kind === 'custom'), [lists])
+  // Fixed order matching get_lists' own [shopping, main, ...customs]
+  // assembly (minus shopping, which lives in the left panel) - the main
+  // list is always the first right-panel tab, never sorted against customs
+  // by id/position.
+  const rightPanelLists = useMemo(
+    () => (mainList ? [mainList, ...customLists] : customLists),
+    [mainList, customLists]
+  )
+  // Shopping's items are still found by category (see backend/app/crud.py's
+  // Lists section for why).
+  const shoppingItems = useMemo(() => tasks.filter((t) => t.category === SHOPPING_CATEGORY), [tasks])
+
+  const activeRightList = useMemo(
+    () => rightPanelLists.find((l) => l.id === mainTab) ?? null,
+    [rightPanelLists, mainTab]
+  )
+
+  // A tab that's no longer selectable - its list was deleted elsewhere
+  // (another session, or this one), or nothing's been picked yet - falls
+  // back to the first right-panel list instead of showing a blank/broken
+  // panel. `mainList` always existing (auto-recreated, see
+  // crud.get_or_create_main_list) means this can only stay null in the
+  // narrow window before the first GET /api/lists response lands.
+  useEffect(() => {
+    if (!rightPanelLists.some((l) => l.id === mainTab)) {
+      setMainTab(rightPanelLists[0]?.id ?? null)
+    }
+  }, [mainTab, rightPanelLists])
+
+  const handleCreateList = () => {
+    createList.mutate(undefined, {
+      onSuccess: (list) => setMainTab(list.id),
+    })
+  }
+
+  // Every item filed under whichever list is the active right-panel tab -
+  // list_id-scoped now that "List 1" is a real list, not a hardcoded
+  // list_id===null bucket. The category exclusion is defense-in-depth: a
+  // task's category (not its list_id) is what actually decides whether
+  // it's an Assessment/Shopping item, and those never carry a real list's
+  // list_id in practice, but nothing else enforces that here.
   const mainTasks = useMemo(
     () =>
-      tasks.filter(
-        (t) => t.category !== ASSESSMENT_CATEGORY && t.category !== SHOPPING_CATEGORY && t.list_id === null
-      ),
-    [tasks]
+      activeRightList === null
+        ? []
+        : tasks.filter(
+            (t) =>
+              t.category !== ASSESSMENT_CATEGORY &&
+              t.category !== SHOPPING_CATEGORY &&
+              t.list_id === activeRightList.id
+          ),
+    [tasks, activeRightList]
   )
   // Closest due date first; assessments with no due date sort to the end.
   const assessments = useMemo(
@@ -168,35 +207,6 @@ export function TaskListPage() {
         }),
     [tasks]
   )
-
-  const lists = useMemo(() => listsData?.lists ?? [], [listsData])
-  const shoppingList = useMemo(() => lists.find((l) => l.kind === 'shopping') ?? null, [lists])
-  const customLists = useMemo(() => lists.filter((l) => l.kind === 'custom'), [lists])
-  // Shopping's items are still found by category (see backend/app/crud.py's
-  // Lists section for why).
-  const shoppingItems = useMemo(() => tasks.filter((t) => t.category === SHOPPING_CATEGORY), [tasks])
-
-  const activeMainList = typeof mainTab === 'number' ? (customLists.find((l) => l.id === mainTab) ?? null) : null
-  const activeMainListItems = useMemo(() => {
-    if (!activeMainList) return []
-    return tasks.filter((t) => t.list_id === activeMainList.id)
-  }, [tasks, activeMainList])
-
-  // A list tab that's still selected after its list was deleted elsewhere
-  // (another session, or this one) falls back to "List 1" instead of
-  // showing a blank/broken panel - same "don't leave a stale selection
-  // around" reasoning as the categoryFilter-invalidation effect below.
-  useEffect(() => {
-    if (typeof mainTab === 'number' && !customLists.some((l) => l.id === mainTab)) {
-      setMainTab('list1')
-    }
-  }, [mainTab, customLists])
-
-  const handleCreateList = () => {
-    createList.mutate(undefined, {
-      onSuccess: (list) => setMainTab(list.id),
-    })
-  }
 
   const availableCategories = useMemo(
     () => Array.from(new Set(mainTasks.map((t) => t.category))).sort(),
@@ -500,8 +510,8 @@ export function TaskListPage() {
             <QuoteHeader />
             <AddTaskForm
               onAdded={(id) => setLatestTaskId(id)}
-              hasTasks={mainTab === 'list1' ? mainTasks.length > 0 : activeMainListItems.length > 0}
-              targetListId={mainTab === 'list1' ? null : mainTab}
+              hasTasks={mainTasks.length > 0}
+              listId={activeRightList?.id ?? null}
             />
           </div>
           <div
@@ -588,21 +598,13 @@ export function TaskListPage() {
         <div className="task-list-column">
           {/* Same "tabs + panel wrapped together, flush against each other"
               shape as the left column's entry-tabbed-panel (see its own
-              comment) - "List 1" (the original, full-featured task list -
-              search/filter/sort/subtasks/drag-reorder, all unchanged) is
-              always first and un-deletable; every other tab is a bare
-              custom list, the same ListPanel the left column used to show
-              them in before this move. */}
+              comment). Every right-panel list - the main list ("List 1")
+              included - looks and behaves identically: rich, TaskCard-based
+              UI by default, or the bare ListPanel UI once converted to
+              "simple" (see ListEntry.is_simple / ListMenu's toggle). */}
           <div className="entry-tabbed-panel">
             <div className="entry-tabs">
-              <button
-                type="button"
-                className={mainTab === 'list1' ? 'entry-tab active' : 'entry-tab'}
-                onClick={() => setMainTab('list1')}
-              >
-                ✅ List 1
-              </button>
-              {customLists.map((list) => (
+              {rightPanelLists.map((list) => (
                 <button
                   key={list.id}
                   type="button"
@@ -621,8 +623,12 @@ export function TaskListPage() {
                 +
               </button>
             </div>
-            {mainTab === 'list1' ? (
+            {activeRightList && activeRightList.is_simple ? (
+              <ListPanel list={activeRightList} items={tasks.filter((t) => t.list_id === activeRightList.id)} />
+            ) : (
               <div className="assessments-panel">
+                {activeRightList && <ListMenu list={activeRightList} items={mainTasks} />}
+
                 {isLoading && <p className="status-message">Loading...</p>}
                 {error && (
                   <p className="status-message error" role="alert">
@@ -710,8 +716,6 @@ export function TaskListPage() {
                   {filtered.length === 0 && <p className="status-message">No tasks match your filters yet.</p>}
                 </div>
               </div>
-            ) : (
-              activeMainList && <ListPanel list={activeMainList} items={activeMainListItems} />
             )}
           </div>
         </div>

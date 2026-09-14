@@ -156,14 +156,17 @@ export interface Collaborator {
   added_at: string
 }
 
-// Shopping and user-created ("custom") lists share this shape - see
-// backend/app/db.py's lists_table `kind` comment.
+// Shopping, the user's main list, and every user-created ("custom") list
+// share this shape - see backend/app/db.py's lists_table `kind` comment.
 export interface ListEntry {
   id: number
   name: string
-  kind: 'custom' | 'shopping'
+  kind: 'custom' | 'shopping' | 'main'
   position: number
   has_share_link: boolean
+  // Rich (full TaskCard UI - priority, due date, subtasks) or simple (bare
+  // checkbox+text). Only a simple list can be shared - see ListMenu.tsx.
+  is_simple: boolean
 }
 
 // The bare item shape served by the public, no-login list endpoints -

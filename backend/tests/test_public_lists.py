@@ -14,12 +14,21 @@ def _shopping(lists):
     return next(l for l in lists if l["kind"] == "shopping")
 
 
+def _make_simple(client, list_id):
+    """Custom/main lists default to rich now - only a simple list can be
+    shared (see routers/lists.py's _require_simple_list). Shopping is
+    already simple by default, so tests against it skip this."""
+    r = client.patch(f"/api/lists/{list_id}/simple", json={"is_simple": True})
+    assert r.status_code == 200
+
+
 def test_public_get_works_with_zero_cookies(guest_client):
     client, _ = guest_client
     created = client.post("/api/lists").json()
     client.post(
         "/api/tasks", json={"text": "Milk", "priority": "Medium", "category": "General", "list_id": created["id"]}
     )
+    _make_simple(client, created["id"])
     token = client.post(f"/api/lists/{created['id']}/share-link").json()["token"]
 
     anon = _fresh_anonymous_client()
@@ -40,6 +49,7 @@ def test_public_patch_toggles_without_auth(guest_client):
     item = client.post(
         "/api/tasks", json={"text": "Milk", "priority": "Medium", "category": "General", "list_id": created["id"]}
     ).json()
+    _make_simple(client, created["id"])
     token = client.post(f"/api/lists/{created['id']}/share-link").json()["token"]
 
     anon = _fresh_anonymous_client()
@@ -72,6 +82,7 @@ def test_invalid_token_404s(client):
 def test_revoked_token_404s(guest_client):
     client, _ = guest_client
     created = client.post("/api/lists").json()
+    _make_simple(client, created["id"])
     token = client.post(f"/api/lists/{created['id']}/share-link").json()["token"]
     client.delete(f"/api/lists/{created['id']}/share-link")
 
@@ -86,6 +97,7 @@ def test_idor_custom_list_cannot_toggle_item_from_another_list(guest_client):
     item_b = client.post(
         "/api/tasks", json={"text": "In B", "priority": "Medium", "category": "General", "list_id": list_b["id"]}
     ).json()
+    _make_simple(client, list_a["id"])
     token_a = client.post(f"/api/lists/{list_a['id']}/share-link").json()["token"]
 
     anon = _fresh_anonymous_client()

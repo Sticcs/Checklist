@@ -43,6 +43,17 @@ export function useRenameList() {
   })
 }
 
+export function useSetListSimple() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, isSimple }: { id: number; isSimple: boolean }) => listsApi.setSimple(id, isSimple),
+    onSuccess: (list) => {
+      setListsData(queryClient, (old) => old.map((l) => (l.id === list.id ? list : l)))
+    },
+    onError: () => toast.error('Failed to change list type'),
+  })
+}
+
 export function useDeleteList() {
   const queryClient = useQueryClient()
   return useMutation({
