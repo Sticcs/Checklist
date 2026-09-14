@@ -488,8 +488,7 @@ body[data-theme='dark'] .offline-banner-sending {
   padding: 0.2rem 0.4rem;
 }
 
-.list-menu,
-.move-to-menu {
+.list-menu {
   position: relative;
   flex-shrink: 0;
 }
@@ -3518,6 +3517,26 @@ body[data-theme='dark'] .assessment-card.compact:hover {
 
 .compact-menu-popover button:hover {
   background: rgba(128, 128, 128, 0.15);
+}
+
+/* MoveToMenu's popover is portaled into <body> (see its own comment for
+   why) - this invisible full-viewport layer is what catches an "outside"
+   click to close it, since there's no longer a shared DOM ancestor to run
+   the usual document-click-listener/contains() check against. Declared
+   after .compact-menu-popover above (not just alongside .list-menu) so its
+   position: fixed actually wins - same specificity, later-in-file rule
+   wins the cascade, and .move-to-popover also carries .compact-menu-popover
+   as a class (for its shared button/box styling), which would otherwise
+   silently override position back to absolute. */
+.move-to-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.move-to-popover {
+  position: fixed;
+  z-index: 51;
 }
 
 .notification-bell {
