@@ -1127,10 +1127,15 @@ def get_list(list_id: int, username: str) -> dict | None:
 
 
 def create_list(username: str) -> dict:
-    """Always auto-named "List N" (N = current custom-list count + 1,
+    """Always auto-named "List N" (N = current custom-list count + 2,
     computed fresh each time - not a persistent counter, so a name can be
-    reused after its list is deleted, which is harmless). Renaming is a
-    separate action (see rename_list)."""
+    reused after its list is deleted, which is harmless). The +2 (not +1)
+    is deliberate: "List 1" is reserved for the frontend's own main task
+    list (see TaskListPage's mainTab) - that one isn't a row in this table
+    at all (it's just every task with list_id IS NULL), so the first
+    *custom* list a user creates has to start at "List 2" to avoid two
+    tabs both named "List 1". Renaming is a separate action (see
+    rename_list)."""
     engine = get_engine()
     with engine.begin() as conn:
         count = conn.execute(
@@ -1144,7 +1149,7 @@ def create_list(username: str) -> dict:
             ),
             {
                 "username": username,
-                "name": f"List {count + 1}",
+                "name": f"List {count + 2}",
                 "created_at": datetime.now().isoformat(),
                 "position": count + 1,
             },

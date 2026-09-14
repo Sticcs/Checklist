@@ -672,11 +672,28 @@ body[data-theme='dark'] .assessment-card.done {
 }
 
 .task-list-column {
+  display: flex;
+  flex-direction: column;
   height: calc(100vh - 3rem);
+  /* Same reasoning as .entry-column's own min-width:0 - this column now
+     has its own .entry-tabs row (List 1 + every custom list), which can
+     grow wider than the grid's 1.4fr share as more lists get created. */
+  min-width: 0;
+}
+
+/* The scrolling used to happen on .task-list-column itself (the whole
+   column, tabs included, scrolled as one block) - now that the tab row
+   needs to stay put while only the list beneath it scrolls (matching the
+   left column's AssessmentsPanel/ListPanel), these are the properties that
+   used to live there, moved onto just the part that scrolls. */
+.task-list-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;
 }
+
 
 /* ----------------------------- Sidebar ----------------------------- */
 .sidebar-credits {

@@ -28,19 +28,22 @@ def test_shopping_list_get_or_create_is_idempotent(guest_client):
     assert shopping1["id"] == shopping2["id"]
 
 
-def test_create_list_defaults_to_list_1_then_list_2(guest_client):
+def test_create_list_defaults_to_list_2_then_list_3(guest_client):
+    # Starts at 2, not 1 - "List 1" is reserved for the frontend's own main
+    # task list, which isn't a row in this table at all (see create_list's
+    # docstring in crud.py).
     client, _ = guest_client
     first = client.post("/api/lists")
     assert first.status_code == 201
-    assert first.json()["name"] == "List 1"
+    assert first.json()["name"] == "List 2"
     assert first.json()["kind"] == "custom"
 
     second = client.post("/api/lists")
-    assert second.json()["name"] == "List 2"
+    assert second.json()["name"] == "List 3"
 
     r = client.get("/api/lists")
     names = [l["name"] for l in r.json()["lists"]]
-    assert names == ["Shopping", "List 1", "List 2"]
+    assert names == ["Shopping", "List 2", "List 3"]
 
 
 def test_deleted_custom_list_name_can_be_reused(guest_client):
@@ -48,7 +51,7 @@ def test_deleted_custom_list_name_can_be_reused(guest_client):
     first = client.post("/api/lists").json()
     client.delete(f"/api/lists/{first['id']}")
     second = client.post("/api/lists").json()
-    assert second["name"] == "List 1"
+    assert second["name"] == "List 2"
 
 
 def test_rename_list(guest_client):

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '../constants'
+import { CATEGORIES, CAT_KEYS, LIST_ITEM_CATEGORY, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '../constants'
 import { computeDueDate, DUE_PRESET_ORDER, type DuePreset } from '../utils/dueDatePresets'
 import { isTypingElement } from '../utils/isTypingElement'
 import { useAddTask } from '../hooks/useTasks'
@@ -60,9 +60,15 @@ function TaskEntryVignetteOverlay({ onCancel, children }: { onCancel: () => void
 interface Props {
   onAdded?: (taskId: number) => void
   hasTasks?: boolean
+  // When set (a custom list's id, i.e. the main task-list column's active
+  // tab isn't "List 1"), typing + Enter adds straight to that list instead
+  // of opening the category/priority/due wizard - custom lists are bare
+  // (checkbox + text only), so there's nothing for the wizard to ask.
+  // null/undefined means the normal "List 1" flow.
+  targetListId?: number | null
 }
 
-export function AddTaskForm({ onAdded, hasTasks }: Props) {
+export function AddTaskForm({ onAdded, hasTasks, targetListId = null }: Props) {
   // Mirrored to localStorage (see useDraftText) so text you're mid-typing
   // survives an accidental reload or a dropped connection instead of just
   // vanishing - restored automatically the next time this form mounts.
@@ -136,6 +142,21 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
     setTextLocked(true)
     setStep('category')
     ;(document.activeElement as HTMLElement | null)?.blur()
+  }
+
+  // The targetListId fast path - adds straight to that list, no wizard.
+  // Mirrors ListPanel's own add-item form (same category/priority/dueDate
+  // used for every custom-list item) rather than opening the category/
+  // priority/due overlay, which has nothing meaningful to ask about a bare
+  // list item.
+  const submitToList = () => {
+    const value = text.trim()
+    if (!value || targetListId === null) return
+    setText('')
+    addTask.mutate(
+      { text: value, priority: 'Medium', category: LIST_ITEM_CATEGORY, dueDate: null, listId: targetListId },
+      { onSuccess: (task) => onAdded?.(task.id) }
+    )
   }
 
   // Accepts an optional freshly-typed custom date so Enter-to-submit inside
@@ -228,6 +249,10 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
   const handleTextKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter' || text.trim() === '') return
     e.preventDefault()
+    if (targetListId !== null) {
+      submitToList()
+      return
+    }
     if (!textLocked) lockText()
   }
 
@@ -338,8 +363,9 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
       // task exists it isn't the user's "first" task anymore, and an empty
       // box doesn't need a prompt at all.
       if (hasTasks) return null
-      return 'Start typing to enter your first task.'
+      return targetListId !== null ? 'Start typing to add the first item here.' : 'Start typing to enter your first task.'
     }
+    if (targetListId !== null) return 'Press Enter to add it to this list.'
     if (!textLocked) return 'Press Enter (or the green button) to continue.'
     return null
   })()
@@ -367,7 +393,7 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
       <div className="task-entry-row">
         <input
           className="task-text-input"
-          placeholder="E.g., Review Big O time complexity"
+          placeholder={targetListId !== null ? 'Add an item to this list...' : 'E.g., Review Big O time complexity'}
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
           onKeyDown={handleTextKeyDown}
@@ -381,7 +407,7 @@ export function AddTaskForm({ onAdded, hasTasks }: Props) {
           className="task-entry-enter-btn"
           title="Enter"
           disabled={text.trim() === '' || textLocked}
-          onClick={lockText}
+          onClick={targetListId !== null ? submitToList : lockText}
         >
           ➤
         </button>

@@ -59,12 +59,19 @@ export function TaskListPage() {
   const [lastExpandedTaskId, setLastExpandedTaskId] = useState<number | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeAssignmentId, setActiveAssignmentId] = useState<number | null>(null)
-  // Switches the panel above the entry column between Assessments (always
-  // present, hardcoded) and one of the user's own lists (Shopping - always
-  // present too, see useLists - plus any custom ones they've created via the
-  // "+" tab), identified by list id. 'assessments' is the only non-numeric
-  // value; every list tab is just its ListEntry.id.
-  const [entryTab, setEntryTab] = useState<'assessments' | number>('assessments')
+  // The left panel now only ever shows these two, both permanent/hardcoded
+  // - custom lists moved to the main column's own tabs (see mainTab) below.
+  const [entryTab, setEntryTab] = useState<'assessments' | 'shopping'>('assessments')
+  // The main task-list column's own tab: 'list1' is the original, full-
+  // featured task list (search/filter/sort/subtasks/etc, unchanged from
+  // before this became a "tab" at all - it's every task with list_id NULL
+  // and category outside Assessment/Shopping, same as mainTasks below
+  // always was) - every other value is a bare custom list's id, rendered
+  // the same ListPanel the left panel used to show them in. Not a
+  // ListEntry.id itself for 'list1' since it isn't a real `lists` row -
+  // see crud.create_list's +2 offset for why custom-list numbering starts
+  // at "List 2" to avoid colliding with this one.
+  const [mainTab, setMainTab] = useState<'list1' | number>('list1')
 
   const handleStartAssignment = (taskId: number) => {
     setActiveAssignmentId(taskId)
@@ -163,29 +170,31 @@ export function TaskListPage() {
   )
 
   const lists = useMemo(() => listsData?.lists ?? [], [listsData])
-  const activeList = typeof entryTab === 'number' ? (lists.find((l) => l.id === entryTab) ?? null) : null
+  const shoppingList = useMemo(() => lists.find((l) => l.kind === 'shopping') ?? null, [lists])
+  const customLists = useMemo(() => lists.filter((l) => l.kind === 'custom'), [lists])
   // Shopping's items are still found by category (see backend/app/crud.py's
-  // Lists section for why) - every other list's items are found by list_id.
-  const activeListItems = useMemo(() => {
-    if (!activeList) return []
-    return activeList.kind === 'shopping'
-      ? tasks.filter((t) => t.category === SHOPPING_CATEGORY)
-      : tasks.filter((t) => t.list_id === activeList.id)
-  }, [tasks, activeList])
+  // Lists section for why).
+  const shoppingItems = useMemo(() => tasks.filter((t) => t.category === SHOPPING_CATEGORY), [tasks])
+
+  const activeMainList = typeof mainTab === 'number' ? (customLists.find((l) => l.id === mainTab) ?? null) : null
+  const activeMainListItems = useMemo(() => {
+    if (!activeMainList) return []
+    return tasks.filter((t) => t.list_id === activeMainList.id)
+  }, [tasks, activeMainList])
 
   // A list tab that's still selected after its list was deleted elsewhere
-  // (another session, or this one) falls back to Assessments instead of
+  // (another session, or this one) falls back to "List 1" instead of
   // showing a blank/broken panel - same "don't leave a stale selection
   // around" reasoning as the categoryFilter-invalidation effect below.
   useEffect(() => {
-    if (typeof entryTab === 'number' && !lists.some((l) => l.id === entryTab)) {
-      setEntryTab('assessments')
+    if (typeof mainTab === 'number' && !customLists.some((l) => l.id === mainTab)) {
+      setMainTab('list1')
     }
-  }, [entryTab, lists])
+  }, [mainTab, customLists])
 
   const handleCreateList = () => {
     createList.mutate(undefined, {
-      onSuccess: (list) => setEntryTab(list.id),
+      onSuccess: (list) => setMainTab(list.id),
     })
   }
 
@@ -489,7 +498,11 @@ export function TaskListPage() {
         <div className="entry-column">
           <div className="task-entry-panel">
             <QuoteHeader />
-            <AddTaskForm onAdded={(id) => setLatestTaskId(id)} hasTasks={mainTasks.length > 0} />
+            <AddTaskForm
+              onAdded={(id) => setLatestTaskId(id)}
+              hasTasks={mainTab === 'list1' ? mainTasks.length > 0 : activeMainListItems.length > 0}
+              targetListId={mainTab === 'list1' ? null : mainTab}
+            />
           </div>
           <div
             className="bottom-panels-row"
@@ -545,23 +558,12 @@ export function TaskListPage() {
               >
                 📚 Assessments
               </button>
-              {lists.map((list) => (
-                <button
-                  key={list.id}
-                  type="button"
-                  className={entryTab === list.id ? 'entry-tab active' : 'entry-tab'}
-                  onClick={() => setEntryTab(list.id)}
-                >
-                  {list.kind === 'shopping' ? '🛒' : '📋'} {list.name}
-                </button>
-              ))}
               <button
                 type="button"
-                className="entry-tab entry-tab-add"
-                title="Create a new list"
-                onClick={handleCreateList}
+                className={entryTab === 'shopping' ? 'entry-tab active' : 'entry-tab'}
+                onClick={() => setEntryTab('shopping')}
               >
-                +
+                🛒 {shoppingList?.name ?? 'Shopping'}
               </button>
             </div>
             {entryTab === 'assessments' ? (
@@ -578,95 +580,140 @@ export function TaskListPage() {
                 compact={compactView}
               />
             ) : (
-              activeList && <ListPanel list={activeList} items={activeListItems} />
+              shoppingList && <ListPanel list={shoppingList} items={shoppingItems} />
             )}
           </div>
         </div>
 
         <div className="task-list-column">
-          {isLoading && <p className="status-message">Loading...</p>}
-          {error && (
-            <p className="status-message error" role="alert">
-              Failed to load tasks
-            </p>
-          )}
-
-          <ProgressBar done={doneCount} total={mainTasks.length} />
-
-          {mainTasks.length > 0 && (
-            <p className="complete-hint">💡 Ctrl/Cmd+click a task to mark it complete</p>
-          )}
-
-          {compactView && filtered.length > 0 && (
-            <div className="compact-row compact-header-row">
-              <span className="compact-header-checkbox-spacer" />
-              <span className="compact-row-title">Title</span>
-              <span className="compact-row-due">Due Date</span>
-              <span className="compact-star-btn">Importance</span>
-              <span className="compact-row-actions" />
+          {/* Same "tabs + panel wrapped together, flush against each other"
+              shape as the left column's entry-tabbed-panel (see its own
+              comment) - "List 1" (the original, full-featured task list -
+              search/filter/sort/subtasks/drag-reorder, all unchanged) is
+              always first and un-deletable; every other tab is a bare
+              custom list, the same ListPanel the left column used to show
+              them in before this move. */}
+          <div className="entry-tabbed-panel">
+            <div className="entry-tabs">
+              <button
+                type="button"
+                className={mainTab === 'list1' ? 'entry-tab active' : 'entry-tab'}
+                onClick={() => setMainTab('list1')}
+              >
+                ✅ List 1
+              </button>
+              {customLists.map((list) => (
+                <button
+                  key={list.id}
+                  type="button"
+                  className={mainTab === list.id ? 'entry-tab active' : 'entry-tab'}
+                  onClick={() => setMainTab(list.id)}
+                >
+                  📋 {list.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="entry-tab entry-tab-add"
+                title="Create a new list"
+                onClick={handleCreateList}
+              >
+                +
+              </button>
             </div>
-          )}
+            {mainTab === 'list1' ? (
+              <div className="assessments-panel">
+                {isLoading && <p className="status-message">Loading...</p>}
+                {error && (
+                  <p className="status-message error" role="alert">
+                    Failed to load tasks
+                  </p>
+                )}
 
-          {/* The list container (and its AnimatePresence) stays mounted even
-              when `filtered` is empty, so a just-deleted last item still gets
-              to play its exit animation - swapping it out for the "no
-              tasks" message the instant the array emptied (the previous
-              approach) unmounted AnimatePresence along with it, skipping
-              the animation entirely. The empty-state message is additive,
-              not a replacement. */}
-          {sortBy === 'Manual' ? (
-            <Reorder.Group
-              as="ul"
-              axis="y"
-              className="task-list"
-              values={manualOrder}
-              onReorder={setManualOrder}
-            >
-              <AnimatePresence>
-                {manualOrder.map((task) => (
-                  <TaskCard
-                    key={task.clientKey ?? task.id}
-                    task={task}
-                    focused={focusedTaskId === task.id}
-                    todayIso={todayIso}
-                    onExpandSubtasks={setLastExpandedTaskId}
-                    draggable
-                    onDragEnd={persistPosition}
-                    focusedSubtaskId={focusedSubtaskId}
-                    notepadHidden={notepadHidden}
-                    onToggleNotepad={() => setNotepadHidden((h) => !h)}
-                    assignedCount={assignedCounts.get(task.id) ?? 0}
-                    onShowAssignments={highlightAssignments}
-                    compact={compactView}
-                    highlighted={highlightedMainTaskIds.has(task.id)}
-                  />
-                ))}
-              </AnimatePresence>
-            </Reorder.Group>
-          ) : (
-            <ul className="task-list">
-              <AnimatePresence>
-                {filtered.map((task) => (
-                  <TaskCard
-                    key={task.clientKey ?? task.id}
-                    task={task}
-                    focused={focusedTaskId === task.id}
-                    todayIso={todayIso}
-                    onExpandSubtasks={setLastExpandedTaskId}
-                    focusedSubtaskId={focusedSubtaskId}
-                    notepadHidden={notepadHidden}
-                    onToggleNotepad={() => setNotepadHidden((h) => !h)}
-                    assignedCount={assignedCounts.get(task.id) ?? 0}
-                    onShowAssignments={highlightAssignments}
-                    compact={compactView}
-                    highlighted={highlightedMainTaskIds.has(task.id)}
-                  />
-                ))}
-              </AnimatePresence>
-            </ul>
-          )}
+                <div className="task-list-scroll">
+                  <ProgressBar done={doneCount} total={mainTasks.length} />
 
-          {filtered.length === 0 && <p className="status-message">No tasks match your filters yet.</p>}
+                  {mainTasks.length > 0 && (
+                    <p className="complete-hint">💡 Ctrl/Cmd+click a task to mark it complete</p>
+                  )}
+
+                  {compactView && filtered.length > 0 && (
+                    <div className="compact-row compact-header-row">
+                      <span className="compact-header-checkbox-spacer" />
+                      <span className="compact-row-title">Title</span>
+                      <span className="compact-row-due">Due Date</span>
+                      <span className="compact-star-btn">Importance</span>
+                      <span className="compact-row-actions" />
+                    </div>
+                  )}
+
+                  {/* The list container (and its AnimatePresence) stays
+                      mounted even when `filtered` is empty, so a just-
+                      deleted last item still gets to play its exit
+                      animation - swapping it out for the "no tasks"
+                      message the instant the array emptied (the previous
+                      approach) unmounted AnimatePresence along with it,
+                      skipping the animation entirely. The empty-state
+                      message is additive, not a replacement. */}
+                  {sortBy === 'Manual' ? (
+                    <Reorder.Group
+                      as="ul"
+                      axis="y"
+                      className="task-list"
+                      values={manualOrder}
+                      onReorder={setManualOrder}
+                    >
+                      <AnimatePresence>
+                        {manualOrder.map((task) => (
+                          <TaskCard
+                            key={task.clientKey ?? task.id}
+                            task={task}
+                            focused={focusedTaskId === task.id}
+                            todayIso={todayIso}
+                            onExpandSubtasks={setLastExpandedTaskId}
+                            draggable
+                            onDragEnd={persistPosition}
+                            focusedSubtaskId={focusedSubtaskId}
+                            notepadHidden={notepadHidden}
+                            onToggleNotepad={() => setNotepadHidden((h) => !h)}
+                            assignedCount={assignedCounts.get(task.id) ?? 0}
+                            onShowAssignments={highlightAssignments}
+                            compact={compactView}
+                            highlighted={highlightedMainTaskIds.has(task.id)}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </Reorder.Group>
+                  ) : (
+                    <ul className="task-list">
+                      <AnimatePresence>
+                        {filtered.map((task) => (
+                          <TaskCard
+                            key={task.clientKey ?? task.id}
+                            task={task}
+                            focused={focusedTaskId === task.id}
+                            todayIso={todayIso}
+                            onExpandSubtasks={setLastExpandedTaskId}
+                            focusedSubtaskId={focusedSubtaskId}
+                            notepadHidden={notepadHidden}
+                            onToggleNotepad={() => setNotepadHidden((h) => !h)}
+                            assignedCount={assignedCounts.get(task.id) ?? 0}
+                            onShowAssignments={highlightAssignments}
+                            compact={compactView}
+                            highlighted={highlightedMainTaskIds.has(task.id)}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </ul>
+                  )}
+
+                  {filtered.length === 0 && <p className="status-message">No tasks match your filters yet.</p>}
+                </div>
+              </div>
+            ) : (
+              activeMainList && <ListPanel list={activeMainList} items={activeMainListItems} />
+            )}
+          </div>
         </div>
       </div>
 
