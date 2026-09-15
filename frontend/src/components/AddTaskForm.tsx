@@ -153,13 +153,21 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
     if (duePreset === 'Custom' && effectiveCustomDate === '') return
     const finalCategory = category === 'Custom' ? customCategory.trim() || 'General' : category
     const dueDate = computeDueDate(duePreset, effectiveCustomDate || null)
+    // Assessment/Shopping items never belong to a right-panel list - they
+    // live in their own category-routed panels (see TaskListPage's
+    // assessments/shoppingItems filters), regardless of which list tab
+    // happened to be active when this was typed. Attaching listId to one
+    // anyway wouldn't move it anywhere visible, just leave it pointing at a
+    // list it has no business being scoped to.
+    const effectiveListId =
+      finalCategory === ASSESSMENT_CATEGORY || finalCategory === SHOPPING_CATEGORY ? null : listId
     // Collapse the overlay immediately - the mutation is optimistic, so the
     // task itself already appears in the list right away too. Waiting for
     // the server round trip here just left the buttons sitting on screen
     // for however long the request took, with nothing left to do.
     resetAll()
     addTask.mutate(
-      { text: text.trim(), priority, category: finalCategory, dueDate, listId },
+      { text: text.trim(), priority, category: finalCategory, dueDate, listId: effectiveListId },
       {
         onSuccess: (task) => onAdded?.(task.id),
       }
@@ -301,7 +309,6 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
       // per step.
       if (currentIndex >= STEP_ORDER.indexOf('category')) {
         for (const [cat, hotkey] of Object.entries(CAT_KEYS)) {
-          if (!(categoryChoices as readonly string[]).includes(cat)) continue
           if (hotkey && hotkey.toLowerCase() === key) {
             e.preventDefault()
             pickCategory(cat)
@@ -368,13 +375,6 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
     return selected ? `${baseClass} btn-primary` : baseClass
   }
 
-  // Adding to a specific list (List 1 or any custom list) can't also offer
-  // Assessment/Shopping as a category - picking either would make the item
-  // "escape" into a different panel entirely (see TaskListPage's mainTasks
-  // filter, which excludes both categories regardless of list_id) instead
-  // of appearing in the list you were just adding to.
-  const categoryChoices = listId !== null ? CATEGORIES.filter((c) => c !== ASSESSMENT_CATEGORY && c !== SHOPPING_CATEGORY) : CATEGORIES
-
   return (
     <div className="add-task-form">
       <div className="task-entry-row">
@@ -421,7 +421,7 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
                       <p className="option-row-label">Category</p>
                     </div>
                     <div className="option-row-buttons">
-                      {categoryChoices.map((cat) => (
+                      {CATEGORIES.map((cat) => (
                         <button
                           key={cat}
                           type="button"
