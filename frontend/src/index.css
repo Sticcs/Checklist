@@ -1466,6 +1466,26 @@ body[data-theme='dark'] .entry-hint-step {
   color: var(--text-primary);
 }
 
+/* Pushed to the row's far right via margin-left: auto - .option-row-header
+   is otherwise just the back button + label, both flex-start. */
+.option-row-skip-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+}
+
+.option-row-skip-btn:hover {
+  background: rgba(128, 128, 128, 0.28);
+  color: var(--text-primary);
+}
+
 .option-row-buttons {
   display: flex;
   flex-wrap: wrap;

@@ -147,12 +147,24 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
   // the date field itself (see DateInput's onEnter below) can go straight
   // through with the value just read off the DOM, without waiting on
   // customDueDate state to catch up first.
+  //
+  // Doubles as the Skip button/hotkey's handler: whichever of
+  // category/priority/duePreset hasn't been picked yet just falls back to a
+  // sensible default (General/Medium/No date) instead of blocking - the
+  // confirm step's own "✓ Enter" button calls this exact same function with
+  // every field already set, so this one function covers "finish now" from
+  // any step, not just the last one.
   const submit = (customDateOverride?: string) => {
-    if (!category || !priority || !duePreset) return
+    const effectiveCategory = category ?? 'General'
+    const finalCategory = effectiveCategory === 'Custom' ? customCategory.trim() || 'General' : effectiveCategory
+    const effectivePriority = priority ?? 'Medium'
+    const effectiveDuePreset = duePreset ?? 'No date'
     const effectiveCustomDate = customDateOverride ?? customDueDate
-    if (duePreset === 'Custom' && effectiveCustomDate === '') return
-    const finalCategory = category === 'Custom' ? customCategory.trim() || 'General' : category
-    const dueDate = computeDueDate(duePreset, effectiveCustomDate || null)
+    // Still respected even when skipping - an explicit "Custom" due-date
+    // pick with nothing typed yet isn't a gap to default over, it's an
+    // in-progress choice the skip shouldn't silently discard.
+    if (effectiveDuePreset === 'Custom' && effectiveCustomDate === '') return
+    const dueDate = computeDueDate(effectiveDuePreset, effectiveCustomDate || null)
     // Assessment/Shopping items never belong to a right-panel list - they
     // live in their own category-routed panels (see TaskListPage's
     // assessments/shoppingItems filters), regardless of which list tab
@@ -167,7 +179,7 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
     // for however long the request took, with nothing left to do.
     resetAll()
     addTask.mutate(
-      { text: text.trim(), priority, category: finalCategory, dueDate, listId: effectiveListId },
+      { text: text.trim(), priority: effectivePriority, category: finalCategory, dueDate, listId: effectiveListId },
       {
         onSuccess: (task) => onAdded?.(task.id),
       }
@@ -241,7 +253,18 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
   const handleTextKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter' || text.trim() === '') return
     e.preventDefault()
-    if (!textLocked) lockText()
+    if (textLocked) return
+    // stopPropagation matters here, not just preventDefault - React commits
+    // this lockText() state update and runs the wizard's own keydown effect
+    // (attaching its document-level listener) synchronously enough that,
+    // without this, the SAME native Enter keydown keeps bubbling past this
+    // input and reaches that brand-new listener before the event finishes -
+    // instantly triggering the Skip hotkey and submitting with every field
+    // defaulted, on the very keystroke that was only meant to open the
+    // wizard. Same class of same-tick race as the ListMenu/TaskCard popover
+    // bugs elsewhere in this app; stopPropagation is the direct fix.
+    e.stopPropagation()
+    lockText()
   }
 
   const cancelOverlay = () => {
@@ -295,6 +318,16 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
         return
       }
 
+      // Skip: finish the add now, filling in a default for anything not
+      // yet picked (see submit's own comment) - works from any step, not
+      // just confirm, so it's the wizard-wide "I don't want to pick the
+      // rest" shortcut the visible ⏭ Skip buttons below also trigger.
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        submit()
+        return
+      }
+
       const key = e.key.toLowerCase()
       const currentIndex = STEP_ORDER.indexOf(step)
 
@@ -333,10 +366,6 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
             return
           }
         }
-      }
-      if (step === 'confirm' && e.key === 'Enter') {
-        e.preventDefault()
-        submit()
       }
     }
 
@@ -419,6 +448,14 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
                         ‹
                       </button>
                       <p className="option-row-label">Category</p>
+                      <button
+                        type="button"
+                        className="option-row-skip-btn"
+                        title="Add now with defaults for anything unpicked"
+                        onClick={() => submit()}
+                      >
+                        ⏭ Skip [Enter]
+                      </button>
                     </div>
                     <div className="option-row-buttons">
                       {CATEGORIES.map((cat) => (
@@ -457,6 +494,14 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
                         ‹
                       </button>
                       <p className="option-row-label">Priority</p>
+                      <button
+                        type="button"
+                        className="option-row-skip-btn"
+                        title="Add now with defaults for anything unpicked"
+                        onClick={() => submit()}
+                      >
+                        ⏭ Skip [Enter]
+                      </button>
                     </div>
                     <div className="option-row-buttons">
                       {PRIORITIES.map((pri) => (
@@ -481,6 +526,14 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
                         ‹
                       </button>
                       <p className="option-row-label">Due</p>
+                      <button
+                        type="button"
+                        className="option-row-skip-btn"
+                        title="Add now with defaults for anything unpicked"
+                        onClick={() => submit()}
+                      >
+                        ⏭ Skip [Enter]
+                      </button>
                     </div>
                     <div className="option-row-buttons">
                       {DUE_PRESET_ORDER.map((preset) => (
