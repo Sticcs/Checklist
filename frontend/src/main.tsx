@@ -11,6 +11,18 @@ import { FormattingProvider } from './context/FormattingContext.tsx'
 import { PublicListPage } from './pages/PublicListPage.tsx'
 import { PENDING_JOIN_TOKEN_KEY } from './constants'
 
+// Prod-only, and guarded on the API existing at all (older/embedded
+// WebViews - the desktop app's pywebview shell in particular - may lack
+// it) - registering this is what makes Chrome/Android offer "Add to Home
+// Screen" as a real install (see public/sw.js for why it does nothing
+// beyond existing). Skipped in dev so Vite's own HMR/module graph isn't
+// fighting a service worker's fetch interception.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
 const root = createRoot(document.getElementById('root')!)
 
 // A public, no-login shared list is a wholly different page, not a route
