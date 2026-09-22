@@ -143,28 +143,22 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
     ;(document.activeElement as HTMLElement | null)?.blur()
   }
 
-  // Accepts an optional freshly-typed custom date so Enter-to-submit inside
-  // the date field itself (see DateInput's onEnter below) can go straight
-  // through with the value just read off the DOM, without waiting on
-  // customDueDate state to catch up first.
-  //
   // Doubles as the Skip button/hotkey's handler: whichever of
   // category/priority/duePreset hasn't been picked yet just falls back to a
   // sensible default (General/Medium/No date) instead of blocking - the
   // confirm step's own "✓ Enter" button calls this exact same function with
   // every field already set, so this one function covers "finish now" from
   // any step, not just the last one.
-  const submit = (customDateOverride?: string) => {
+  const submit = () => {
     const effectiveCategory = category ?? 'General'
     const finalCategory = effectiveCategory === 'Custom' ? customCategory.trim() || 'General' : effectiveCategory
     const effectivePriority = priority ?? 'Medium'
     const effectiveDuePreset = duePreset ?? 'No date'
-    const effectiveCustomDate = customDateOverride ?? customDueDate
     // Still respected even when skipping - an explicit "Custom" due-date
     // pick with nothing typed yet isn't a gap to default over, it's an
     // in-progress choice the skip shouldn't silently discard.
-    if (effectiveDuePreset === 'Custom' && effectiveCustomDate === '') return
-    const dueDate = computeDueDate(effectiveDuePreset, effectiveCustomDate || null)
+    if (effectiveDuePreset === 'Custom' && customDueDate === '') return
+    const dueDate = computeDueDate(effectiveDuePreset, customDueDate || null)
     // Assessment/Shopping items never belong to a right-panel list - they
     // live in their own category-routed panels (see TaskListPage's
     // assessments/shoppingItems filters), regardless of which list tab
@@ -553,8 +547,15 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
                         className="custom-input"
                         value={customDueDate}
                         autoFocus
-                        onCommit={() => {}}
-                        onEnter={commitCustomDue}
+                        // Mobile's native date picker commits via blur/change
+                        // when you tap "Done" - it never fires a real keydown
+                        // Enter, so routing this only through onEnter (the
+                        // old code below) left mobile permanently stuck on
+                        // this step. DateInput's own onKeyDown already calls
+                        // onCommit(next) unconditionally before onEnter?.(next)
+                        // on a real Enter too, so onCommit alone covers both
+                        // paths - no onEnter prop needed here at all now.
+                        onCommit={commitCustomDue}
                       />
                     )}
                   </motion.div>

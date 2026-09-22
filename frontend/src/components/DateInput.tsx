@@ -36,8 +36,18 @@ export function DateInput({ value, onCommit, onEnter, className, autoFocus }: Pr
         onCommit(e.target.value)
       }}
       onKeyDown={(e) => {
+        // stopPropagation on both branches - not just preventDefault. A
+        // caller embedding this inside a bigger keyboard-driven flow (e.g.
+        // AddTaskForm's wizard, which treats *any* Enter/Escape as its own
+        // "finish now"/"cancel the whole thing" hotkey once text is locked)
+        // would otherwise see this same keypress twice: once handled here
+        // (committing/closing just this date field), and once more by its
+        // own document-level listener a beat later - silently submitting
+        // early or wiping the whole in-progress entry, neither of which
+        // this field's own Enter/Escape was meant to trigger.
         if (e.key === 'Enter') {
           e.preventDefault()
+          e.stopPropagation()
           const next = e.currentTarget.value
           committedRef.current = true
           onCommit(next)
@@ -45,6 +55,7 @@ export function DateInput({ value, onCommit, onEnter, className, autoFocus }: Pr
           e.currentTarget.blur()
         } else if (e.key === 'Escape') {
           e.preventDefault()
+          e.stopPropagation()
           e.currentTarget.blur()
         }
       }}
