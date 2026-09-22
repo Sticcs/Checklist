@@ -8,6 +8,7 @@ from app.paths import resource_path
 from app.routers import (
     activity,
     auth,
+    chat,
     collaboration,
     data,
     lists,
@@ -32,6 +33,7 @@ app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(subtasks.router)
 app.include_router(collaboration.router)
+app.include_router(chat.router)
 app.include_router(lists.router)
 app.include_router(public.router)
 app.include_router(activity.router)

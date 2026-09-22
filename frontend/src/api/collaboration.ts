@@ -12,4 +12,7 @@ export const collaborationApi = {
   join: (token: string) => api.post<Task>(`/assignments/join/${encodeURIComponent(token)}`),
   sharedWithMe: () => api.get<Task[]>('/tasks/shared-with-me'),
   getTask: (taskId: number) => api.get<Task>(`/tasks/${taskId}`),
+  // POST, not GET - it has a side effect (records a heartbeat) each call,
+  // matching the backend's own reasoning (see routers/collaboration.py).
+  touchPresence: (taskId: number) => api.post<{ online: string[] }>(`/tasks/${taskId}/presence`),
 }

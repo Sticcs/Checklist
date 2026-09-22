@@ -307,24 +307,69 @@ export function AssessmentCard({
                 🔗
               </button>
             )}
-            <button
-              type="button"
-              className={task.urgent ? 'icon-btn btn-primary' : 'icon-btn'}
-              aria-pressed={task.urgent}
-              title={task.urgent ? 'Unmark urgent' : 'Mark urgent'}
-              onClick={() => setTaskUrgent.mutate({ id: task.id, urgent: !task.urgent })}
-            >
-              🔥
-            </button>
-            <button type="button" className="icon-btn" title="Copy as text" onClick={() => void handleCopyAsText()}>
-              📄
-            </button>
-            <button type="button" className="icon-btn" onClick={startEditing}>
-              ✏️
-            </button>
-            <button type="button" className="icon-btn" onClick={() => deleteTask.mutate(task.id)}>
-              🗑️
-            </button>
+            {/* 🔥/📄/✏️/🗑️ consolidated into the same "⋮" popover already
+                used for compact mode (compactMenuOpen/compactMenuRef,
+                declared once above and reused as-is here - only one of
+                these two branches ever renders per card, so there's no
+                state-sharing risk). 🔗 stays outside, on its own. */}
+            <div className="compact-row-actions" ref={compactMenuRef}>
+              <button
+                type="button"
+                className="compact-menu-btn"
+                aria-expanded={compactMenuOpen}
+                title="More actions"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setCompactMenuOpen((open) => !open)
+                }}
+              >
+                ⋮
+              </button>
+              {compactMenuOpen && (
+                <div className="compact-menu-popover" data-focus-exempt>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setCompactMenuOpen(false)
+                      setTaskUrgent.mutate({ id: task.id, urgent: !task.urgent })
+                    }}
+                  >
+                    {task.urgent ? '🔥 Unmark urgent' : '🔥 Mark urgent'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setCompactMenuOpen(false)
+                      void handleCopyAsText()
+                    }}
+                  >
+                    📄 Copy as text
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setCompactMenuOpen(false)
+                      startEditing()
+                    }}
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setCompactMenuOpen(false)
+                      deleteTask.mutate(task.id)
+                    }}
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

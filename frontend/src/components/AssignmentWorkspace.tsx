@@ -6,6 +6,7 @@ import type { Task, TasksResponse, WorkspacePage } from '../types'
 import { TASKS_KEY, isOwnedTask, setSharedData, useSetTaskLinks, useSetTaskPages, useToggleDone } from '../hooks/useTasks'
 import { useAddSubtask, useDeleteSubtask, useSetSubtaskAssignee, useToggleSubtask } from '../hooks/useSubtasks'
 import {
+  useAssignmentPresence,
   useCollaborators,
   useCreateShareLink,
   useRegenerateShareLink,
@@ -20,6 +21,7 @@ import { useFormattableEditable, useFormattingContext, type FormatKind } from '.
 import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
 import { useDraftText, readPendingDraft, writePendingDraft, clearPendingDraft } from '../hooks/useDraftText'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { ChatButton } from './ChatButton'
 
 const NEW_DOC_URL = 'https://docs.google.com/document/u/0/create?usp=docs_home&ths=true'
 
@@ -216,6 +218,12 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   // "the owner" - not a real choice, so it's hidden entirely rather than
   // shown as a dropdown with one option that does nothing useful.
   const hasCollaborators = (collaboratorsQuery.data?.collaborators.length ?? 0) > 0
+
+  // "Who's online right now" - see useAssignmentPresence's own comment for
+  // why this is a separate poll (same 20s cadence) rather than folded into
+  // pollQuery above.
+  const presenceQuery = useAssignmentPresence(task.id)
+  const onlineUsers = presenceQuery.data?.online ?? []
 
   // Get-or-create is idempotent server-side, so re-fetching every time the
   // popover opens is harmless - it just returns the existing link if one's
@@ -636,9 +644,20 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
         <span className="assignment-workspace-back-icon">←</span>
       </button>
 
+      <ChatButton taskId={task.id} currentUsername={user?.username} />
+
       <div className="assignment-workspace-main">
         <div className="assignment-top-actions">
           <div className="assignment-top-actions-left">
+            {onlineUsers.length > 0 && (
+              <div className="assignment-presence-row" title={onlineUsers.join(', ')}>
+                {onlineUsers.map((username) => (
+                  <span key={username} className="assignment-presence-avatar" title={username}>
+                    {username.slice(0, 1)}
+                  </span>
+                ))}
+              </div>
+            )}
             {task.assigned_task_id !== null && (
               <button
                 type="button"
@@ -1053,7 +1072,16 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
                       transition={{ duration: 0.18, ease: 'easeOut' }}
-                      className={s.done ? 'assignment-task-row done' : 'assignment-task-row'}
+                      className={[
+                        'assignment-task-row',
+                        s.done && 'done',
+                        // A standing reminder, not a one-shot flash - keeps
+                        // pulsing for as long as this stays assigned to the
+                        // current viewer and unchecked (see glow-pulse-green).
+                        !s.done && s.assigned_username === user?.username && 'assigned-to-me',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
                     >
                       <input
                         type="checkbox"

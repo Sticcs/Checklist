@@ -222,6 +222,32 @@ class CollaboratorsResponse(BaseModel):
     collaborators: list[CollaboratorEntry]
 
 
+class PresenceResponse(BaseModel):
+    # Every username currently active on this assignment, including the
+    # caller themself - see presence.py's heartbeat/online_users.
+    online: list[str]
+
+
+# ----------------------------- Assignment chat -----------------------------
+# One shared group channel per assignment (task_id) - deliberately separate
+# models from Task, same reasoning as the collaboration models above.
+
+class ChatMessageCreate(BaseModel):
+    text: str
+
+
+class ChatMessageEntry(BaseModel):
+    id: int
+    username: str
+    text: str
+    created_at: str
+
+
+class ChatMessagesResponse(BaseModel):
+    messages: list[ChatMessageEntry]
+    unread_count: int
+
+
 # ----------------------------- Lists -----------------------------
 # Shopping and user-created lists share the same lists_table row shape (see
 # db.py's `kind` comment) and therefore the same response models.

@@ -130,6 +130,31 @@ assignment_collaborators_table = Table(
     Column("added_at", String, nullable=False),
 )
 
+assignment_messages_table = Table(
+    "assignment_messages",
+    metadata,
+    # One shared group channel per assignment (task_id) - no FK, same
+    # reasoning as assignment_collaborators above.
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("task_id", Integer, nullable=False),
+    Column("username", String, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("created_at", String, nullable=False),
+)
+
+assignment_message_reads_table = Table(
+    "assignment_message_reads",
+    metadata,
+    # Tracks how far into assignment_messages each viewer has read, for the
+    # chat button's unread badge - one row per (task_id, username), deduped
+    # app-side (crud.mark_chat_read) rather than a DB uniqueness constraint,
+    # same convention as assignment_collaborators.
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("task_id", Integer, nullable=False),
+    Column("username", String, nullable=False),
+    Column("last_read_message_id", Integer, nullable=False),
+)
+
 lists_table = Table(
     "lists",
     metadata,

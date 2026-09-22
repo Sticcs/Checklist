@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app import crud
+from app import crud, presence
 from app.config import settings
-from app.models import CollaboratorsResponse, ShareLinkResponse, Task
+from app.models import CollaboratorsResponse, PresenceResponse, ShareLinkResponse, Task
 from app.paths import is_desktop_build
 from app.security import CurrentUser, get_current_user
 
@@ -25,12 +25,15 @@ def _require_owned_assignment(task_id: int, username: str) -> dict:
 
 def _require_assignment_access(task_id: int, username: str) -> dict:
     """Like _require_owned_assignment, but also allows a current collaborator
-    - not just the owner. Used only for read access (who's on this
-    assignment) - share-link management and collaborator removal stay
-    owner-only via _require_owned_assignment above. Letting a collaborator
-    see who else is on the assignment is intentional: the workspace's
+    - not just the owner. Originally read-only (who's on this assignment) -
+    share-link management and collaborator removal stay owner-only via
+    _require_owned_assignment above - but now also gates presence heartbeats
+    and chat send/read below, both of which have side effects despite being
+    "just" collaborator-level access; the point is owner-vs-collaborator
+    parity, not read-vs-write. Letting a collaborator see who else is on the
+    assignment (and chat/presence with them) is intentional: the workspace's
     per-item assignee picker (see routers/subtasks.py's assignee endpoint)
-    needs every viewer, not just the owner, to see this list."""
+    already needs every viewer, not just the owner, to see this list."""
     task = crud.get_task_for_user(task_id, username)
     if task is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found")
@@ -79,6 +82,19 @@ def revoke_share_link(task_id: int, current_user: CurrentUser = Depends(get_curr
 def get_collaborators(task_id: int, current_user: CurrentUser = Depends(get_current_user)) -> CollaboratorsResponse:
     _require_assignment_access(task_id, current_user.username)
     return CollaboratorsResponse(collaborators=crud.list_collaborators(task_id))
+
+
+@router.post("/api/tasks/{task_id}/presence", response_model=PresenceResponse)
+def touch_presence(task_id: int, current_user: CurrentUser = Depends(get_current_user)) -> PresenceResponse:
+    # POST, not GET - it has a side effect (records a heartbeat) each call,
+    # matching every other "record something" endpoint in this app (share-
+    # link create, join, notifications/read). AssignmentWorkspace calls this
+    # on the same ~20s cadence as its own task-data poll, so a single call
+    # both reports "I'm here" and answers "who else is here" - see
+    # presence.py for why an in-memory dict (not a DB table) is fine here.
+    _require_assignment_access(task_id, current_user.username)
+    presence.heartbeat(task_id, current_user.username)
+    return PresenceResponse(online=presence.online_users(task_id))
 
 
 @router.delete("/api/tasks/{task_id}/collaborators/{username}", status_code=status.HTTP_204_NO_CONTENT)

@@ -881,6 +881,11 @@ def delete_task(task_id: int, username: str) -> None:
         conn.execute(
             text("DELETE FROM assignment_collaborators WHERE task_id = :id"), {"id": task_id}
         )
+        # Same cleanup, for the assignment's chat (see the Assignment chat
+        # section above) - otherwise a deleted assignment's messages sit
+        # around forever as orphaned dead weight.
+        conn.execute(text("DELETE FROM assignment_messages WHERE task_id = :id"), {"id": task_id})
+        conn.execute(text("DELETE FROM assignment_message_reads WHERE task_id = :id"), {"id": task_id})
     log_activity(username, "deleted", task_text, task_id=task_id)
 
 
@@ -911,6 +916,15 @@ def clear_completed(username: str) -> int:
                 "DELETE FROM assignment_collaborators WHERE task_id IN :task_ids"
             ).bindparams(bindparam("task_ids", expanding=True))
             conn.execute(collab_stmt, {"task_ids": done_ids})
+            # Same cleanup, for the assignment's chat - see delete_task.
+            messages_stmt = text(
+                "DELETE FROM assignment_messages WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(messages_stmt, {"task_ids": done_ids})
+            reads_stmt = text(
+                "DELETE FROM assignment_message_reads WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(reads_stmt, {"task_ids": done_ids})
         conn.execute(
             text("DELETE FROM tasks WHERE done = 1 AND username = :username"), {"username": username}
         )
@@ -934,6 +948,21 @@ def clear_all(username: str) -> int:
         conn.execute(
             text(
                 "DELETE FROM assignment_collaborators WHERE task_id IN "
+                "(SELECT id FROM tasks WHERE username = :username)"
+            ),
+            {"username": username},
+        )
+        # Same cleanup, for the assignment's chat - see delete_task.
+        conn.execute(
+            text(
+                "DELETE FROM assignment_messages WHERE task_id IN "
+                "(SELECT id FROM tasks WHERE username = :username)"
+            ),
+            {"username": username},
+        )
+        conn.execute(
+            text(
+                "DELETE FROM assignment_message_reads WHERE task_id IN "
                 "(SELECT id FROM tasks WHERE username = :username)"
             ),
             {"username": username},
@@ -1081,6 +1110,100 @@ def remove_collaborator(task_id: int, username: str) -> None:
             text("DELETE FROM assignment_collaborators WHERE task_id = :task_id AND username = :username"),
             {"task_id": task_id, "username": username},
         )
+
+
+# --------------------------- Assignment chat ---------------------------
+# One shared group channel per assignment - no undo.save_snapshot() calls
+# anywhere here, unlike most mutations in this file: chat messages aren't
+# part of `tasks`/`subtasks` state, which is all undo/redo ever restores.
+
+def create_chat_message(task_id: int, username: str, message_text: str) -> dict:
+    engine = get_engine()
+    with engine.begin() as conn:
+        new_id = conn.execute(
+            text(
+                "INSERT INTO assignment_messages (task_id, username, text, created_at) "
+                "VALUES (:task_id, :username, :text, :created_at) RETURNING id"
+            ),
+            {
+                "task_id": task_id,
+                "username": username,
+                "text": message_text,
+                "created_at": datetime.now().isoformat(),
+            },
+        ).scalar_one()
+        row = conn.execute(
+            text("SELECT * FROM assignment_messages WHERE id = :id"), {"id": new_id}
+        ).mappings().fetchone()
+    return dict(row)
+
+
+def list_chat_messages(task_id: int, limit: int = 200) -> list[dict]:
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT * FROM assignment_messages WHERE task_id = :task_id "
+                "ORDER BY id ASC LIMIT :limit"
+            ),
+            {"task_id": task_id, "limit": limit},
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def unread_chat_count(task_id: int, username: str) -> int:
+    """Excludes the caller's own messages - otherwise sending a message
+    would immediately show as "1 unread" to the sender themself."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        last_read = conn.execute(
+            text(
+                "SELECT last_read_message_id FROM assignment_message_reads "
+                "WHERE task_id = :task_id AND username = :username"
+            ),
+            {"task_id": task_id, "username": username},
+        ).scalar_one_or_none() or 0
+        row = conn.execute(
+            text(
+                "SELECT COUNT(*) AS n FROM assignment_messages "
+                "WHERE task_id = :task_id AND id > :last_read AND username != :username"
+            ),
+            {"task_id": task_id, "last_read": last_read, "username": username},
+        ).mappings().fetchone()
+    return int(row["n"]) if row else 0
+
+
+def mark_chat_read(task_id: int, username: str) -> None:
+    """Dedupes before inserting - same convention as add_collaborator, no
+    DB uniqueness constraint on (task_id, username) here either."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        max_id = conn.execute(
+            text("SELECT COALESCE(MAX(id), 0) FROM assignment_messages WHERE task_id = :task_id"),
+            {"task_id": task_id},
+        ).scalar_one()
+        existing = conn.execute(
+            text(
+                "SELECT id FROM assignment_message_reads WHERE task_id = :task_id AND username = :username"
+            ),
+            {"task_id": task_id, "username": username},
+        ).fetchone()
+        if existing:
+            conn.execute(
+                text(
+                    "UPDATE assignment_message_reads SET last_read_message_id = :max_id "
+                    "WHERE task_id = :task_id AND username = :username"
+                ),
+                {"max_id": max_id, "task_id": task_id, "username": username},
+            )
+        else:
+            conn.execute(
+                text(
+                    "INSERT INTO assignment_message_reads (task_id, username, last_read_message_id) "
+                    "VALUES (:task_id, :username, :max_id)"
+                ),
+                {"task_id": task_id, "username": username, "max_id": max_id},
+            )
 
 
 # ----------------------------- Lists -----------------------------
@@ -1301,6 +1424,20 @@ def delete_or_clear_list(list_id: int, username: str) -> bool:
                 "DELETE FROM assignment_collaborators WHERE task_id IN :task_ids"
             ).bindparams(bindparam("task_ids", expanding=True))
             conn.execute(collab_stmt, {"task_ids": item_ids})
+            # Same defensive cleanup, for the assignment's chat - see
+            # delete_task. A list item can't actually be an Assessment
+            # today (Assessment/Shopping tasks never get a list_id), but
+            # the collaborator cleanup above is already this defensive
+            # against a direct API call bypassing the UI, so chat gets the
+            # same treatment for consistency.
+            messages_stmt = text(
+                "DELETE FROM assignment_messages WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(messages_stmt, {"task_ids": item_ids})
+            reads_stmt = text(
+                "DELETE FROM assignment_message_reads WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(reads_stmt, {"task_ids": item_ids})
 
         if is_shopping:
             conn.execute(

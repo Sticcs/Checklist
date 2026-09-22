@@ -156,6 +156,18 @@ export interface Collaborator {
   added_at: string
 }
 
+export interface ChatMessage {
+  id: number
+  username: string
+  text: string
+  created_at: string
+}
+
+export interface ChatMessagesResponse {
+  messages: ChatMessage[]
+  unread_count: number
+}
+
 // Shopping, the user's main list, and every user-created ("custom") list
 // share this shape - see backend/app/db.py's lists_table `kind` comment.
 export interface ListEntry {

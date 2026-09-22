@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db, undo
+from app import db, presence, undo
 from app.config import settings
 from app.main import app
 
@@ -21,6 +21,11 @@ def client(tmp_path, monkeypatch):
     # The undo/redo stacks are process-global (keyed by username); clear them
     # so state can't leak between tests that happen to reuse a username.
     undo._stacks.clear()
+    # Same reasoning for presence - process-global, keyed by task_id, and
+    # every test DB's autoincrement restarts from 1, so a stale entry from
+    # an earlier test could otherwise make an unrelated task look "already
+    # online" in a completely different test.
+    presence._last_seen.clear()
 
     with TestClient(app) as c:
         yield c
