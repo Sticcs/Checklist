@@ -5,6 +5,7 @@ import { useAssignTask, useSetPosition, useSetTaskInProgress, useTasks, useToggl
 import { useJoinAssignment, useSharedWithMe } from '../hooks/useCollaboration'
 import { useCreateList, useLists } from '../hooks/useLists'
 import { useSettings } from '../context/SettingsContext'
+import { useAuth } from '../context/AuthContext'
 import { useToggleSubtask } from '../hooks/useSubtasks'
 import { useIsDesktopApp } from '../hooks/useIsDesktopApp'
 import { useIsMobileLayout } from '../hooks/useIsMobileLayout'
@@ -23,6 +24,7 @@ import { AssessmentsPanel } from '../components/AssessmentsPanel'
 import { ListPanel } from '../components/ListPanel'
 import { ListMenu } from '../components/ListMenu'
 import { AssignmentWorkspace } from '../components/AssignmentWorkspace'
+import { ChatLauncher } from '../components/ChatLauncher'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
@@ -42,6 +44,7 @@ export function TaskListPage() {
   const assignTask = useAssignTask()
   const setTaskInProgress = useSetTaskInProgress()
   const { compactView } = useSettings()
+  const { user } = useAuth()
   const isDesktopApp = useIsDesktopApp()
   const isMobileLayout = useIsMobileLayout() && !isDesktopApp
   useWebsiteLinkStatus()
@@ -722,6 +725,11 @@ export function TaskListPage() {
       </div>
 
       <KeyboardShortcutsHelp />
+      {/* Only mounted in this "main" branch, not while AssignmentWorkspace
+          is open (it has its own scoped ChatButton instead) - the
+          surrounding AnimatePresence/motion.div swap already handles that
+          for free, no extra gating needed. */}
+      <ChatLauncher currentUsername={user?.username} />
         </motion.div>
       )}
       </AnimatePresence>

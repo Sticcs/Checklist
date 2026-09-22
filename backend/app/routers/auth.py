@@ -1,5 +1,4 @@
 import secrets
-from datetime import datetime
 from urllib.parse import urlencode
 
 import httpx
@@ -195,7 +194,7 @@ def push_to_website(
     username, password = creds
 
     tasks = crud.get_tasks_with_subtasks(current_user.username)
-    payload = ExportPayload(exported_at=datetime.now().isoformat(), tasks=tasks).model_dump()
+    payload = ExportPayload(exported_at=crud.utc_now_iso(), tasks=tasks).model_dump()
 
     result = _push_to_website(username, password, payload)
     if result is None:

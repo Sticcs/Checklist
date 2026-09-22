@@ -1,7 +1,7 @@
 import json
 import secrets
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
@@ -9,6 +9,22 @@ from sqlalchemy.exc import IntegrityError
 from app import undo
 from app.db import get_engine
 from app.security import hash_password, verify_password
+
+
+def utc_now_iso() -> str:
+    """Every persisted `created_at`/`read_at`/`added_at`/`linked_at`
+    timestamp in this app goes through this, not a bare `datetime.now()` -
+    Render's containers run their system clock in UTC by default (no TZ
+    override anywhere in this repo), so a naive `datetime.now().isoformat()`
+    silently produced a string with no timezone marker at all. The frontend
+    hands that straight to `new Date(...)`, which the JS spec requires to
+    interpret an offset-less ISO string as *local time in the viewer's own
+    browser* - so a UTC timestamp with no marker got silently reinterpreted
+    as if it were already the viewer's local time, correct only for anyone
+    who happens to be in UTC themselves. Attaching a real UTC offset here
+    (`+00:00`) makes `new Date(...)` interpret it correctly and convert to
+    the viewer's actual local time via toLocaleString/toLocaleTimeString."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ----------------------------- Auth -----------------------------
@@ -110,7 +126,7 @@ def set_website_link(username: str, website_username: str, website_password: str
                 "username": username,
                 "website_username": website_username,
                 "website_password": website_password,
-                "linked_at": datetime.now().isoformat(),
+                "linked_at": utc_now_iso(),
             },
         )
 
@@ -301,7 +317,7 @@ def log_activity(username: str, action: str, detail: str, task_id: int | None = 
                 "username": username,
                 "action": action,
                 "detail": detail,
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
                 "task_id": task_id,
             },
         )
@@ -391,7 +407,7 @@ def create_notification(
                 "message": message,
                 "actor_username": actor_username,
                 "task_id": task_id,
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
             },
         )
 
@@ -431,7 +447,7 @@ def mark_notification_read(notification_id: int, username: str) -> bool:
                 "UPDATE notifications SET read_at = :read_at "
                 "WHERE id = :id AND username = :username AND read_at IS NULL"
             ),
-            {"read_at": datetime.now().isoformat(), "id": notification_id, "username": username},
+            {"read_at": utc_now_iso(), "id": notification_id, "username": username},
         )
         if result.rowcount > 0:
             return True
@@ -453,7 +469,7 @@ def mark_all_notifications_read(username: str) -> None:
                 "UPDATE notifications SET read_at = :read_at "
                 "WHERE username = :username AND read_at IS NULL"
             ),
-            {"read_at": datetime.now().isoformat(), "username": username},
+            {"read_at": utc_now_iso(), "username": username},
         )
 
 
@@ -478,7 +494,13 @@ def get_stats(username: str) -> dict:
     counts_by_day: dict[str, int] = {r["day"]: r["count"] for r in rows}
     total_completed = sum(counts_by_day.values())
 
-    today = date.today()
+    # UTC, not the server's local system clock (date.today()) - created_at
+    # is now always a UTC timestamp (see utc_now_iso), so "today" has to be
+    # judged in that same reference frame or the day boundary drifts out of
+    # sync with it (exactly what broke here when created_at switched from
+    # naive-local to UTC: this stayed local, and started disagreeing with
+    # its own data the moment the server's local date and UTC date differ).
+    today = datetime.now(timezone.utc).date()
     today_iso = today.isoformat()
     completed_today = counts_by_day.get(today_iso, 0)
 
@@ -660,7 +682,7 @@ def add_task(
                 "priority": priority,
                 "category": category or "General",
                 "due_date": due_date,
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
                 "username": username,
                 "position": new_position,
                 "list_id": list_id,
@@ -1076,7 +1098,7 @@ def add_collaborator(task_id: int, username: str) -> None:
                 "INSERT INTO assignment_collaborators (task_id, username, added_at) "
                 "VALUES (:task_id, :username, :added_at)"
             ),
-            {"task_id": task_id, "username": username, "added_at": datetime.now().isoformat()},
+            {"task_id": task_id, "username": username, "added_at": utc_now_iso()},
         )
 
 
@@ -1129,7 +1151,7 @@ def create_chat_message(task_id: int, username: str, message_text: str) -> dict:
                 "task_id": task_id,
                 "username": username,
                 "text": message_text,
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
             },
         ).scalar_one()
         row = conn.execute(
@@ -1153,16 +1175,27 @@ def list_chat_messages(task_id: int, limit: int = 200) -> list[dict]:
 
 def unread_chat_count(task_id: int, username: str) -> int:
     """Excludes the caller's own messages - otherwise sending a message
-    would immediately show as "1 unread" to the sender themself."""
+    would immediately show as "1 unread" to the sender themself.
+
+    MAX(...), not a plain SELECT - assignment_message_reads has no DB
+    uniqueness on (task_id, username) (see its own comment), and a mark-
+    read race (e.g. React StrictMode double-invoking a mount effect, two
+    read receipts landing close enough together) can genuinely leave more
+    than one row for the same pair despite mark_chat_read's own dedup
+    attempt. An aggregate always collapses to exactly one row regardless of
+    how many (0, 1, or several) matched, so this can't crash on
+    MultipleResultsFound the way a plain scalar_one_or_none() did - and
+    taking the max is the most generous, self-healing reading of duplicate
+    rows: whichever one recorded the furthest progress wins."""
     engine = get_engine()
     with engine.connect() as conn:
         last_read = conn.execute(
             text(
-                "SELECT last_read_message_id FROM assignment_message_reads "
+                "SELECT MAX(last_read_message_id) FROM assignment_message_reads "
                 "WHERE task_id = :task_id AND username = :username"
             ),
             {"task_id": task_id, "username": username},
-        ).scalar_one_or_none() or 0
+        ).scalar_one() or 0
         row = conn.execute(
             text(
                 "SELECT COUNT(*) AS n FROM assignment_messages "
@@ -1175,28 +1208,32 @@ def unread_chat_count(task_id: int, username: str) -> int:
 
 def mark_chat_read(task_id: int, username: str) -> None:
     """Dedupes before inserting - same convention as add_collaborator, no
-    DB uniqueness constraint on (task_id, username) here either."""
+    DB uniqueness constraint on (task_id, username) here either. That
+    convention assumes calls are effectively sequential, which mark-read
+    isn't: it fires from a mount effect (see ChatPanel.tsx), and React
+    StrictMode's dev-only double-invoke - or just two chats opened in quick
+    succession - can start two overlapping calls that both pass the
+    check before either commits its insert, leaving two rows for the same
+    (task_id, username). UPDATE-then-conditionally-INSERT (not the reverse)
+    closes that: the UPDATE always runs first and reports how many rows it
+    touched - if a duplicate already exists (or another call's insert lands
+    in the gap), this one's UPDATE lands on at least one of them and its
+    own INSERT is skipped, rather than every racing call independently
+    deciding "no row yet" and all inserting."""
     engine = get_engine()
     with engine.begin() as conn:
         max_id = conn.execute(
             text("SELECT COALESCE(MAX(id), 0) FROM assignment_messages WHERE task_id = :task_id"),
             {"task_id": task_id},
         ).scalar_one()
-        existing = conn.execute(
+        result = conn.execute(
             text(
-                "SELECT id FROM assignment_message_reads WHERE task_id = :task_id AND username = :username"
+                "UPDATE assignment_message_reads SET last_read_message_id = :max_id "
+                "WHERE task_id = :task_id AND username = :username"
             ),
-            {"task_id": task_id, "username": username},
-        ).fetchone()
-        if existing:
-            conn.execute(
-                text(
-                    "UPDATE assignment_message_reads SET last_read_message_id = :max_id "
-                    "WHERE task_id = :task_id AND username = :username"
-                ),
-                {"max_id": max_id, "task_id": task_id, "username": username},
-            )
-        else:
+            {"max_id": max_id, "task_id": task_id, "username": username},
+        )
+        if result.rowcount == 0:
             conn.execute(
                 text(
                     "INSERT INTO assignment_message_reads (task_id, username, last_read_message_id) "
@@ -1204,6 +1241,40 @@ def mark_chat_read(task_id: int, username: str) -> None:
                 ),
                 {"task_id": task_id, "username": username, "max_id": max_id},
             )
+
+
+def list_chat_summaries(username: str) -> list[dict]:
+    """Every assignment `username` can see - owned or collaborator - each
+    with its own chat unread count, for the main screen's chat launcher
+    (a conversation list across every assignment, not scoped to one).
+    One unread_chat_count() call per assignment (not a single aggregate
+    query) - N+1, but this app's scale (a personal account's own
+    assignments) never makes that meaningfully slow, and it keeps this
+    function a thin composition of the same crud primitives everything
+    else here already uses rather than a new bespoke aggregate query."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        owned = conn.execute(
+            text("SELECT id, text FROM tasks WHERE username = :username AND category = 'Assessment'"),
+            {"username": username},
+        ).mappings().all()
+        shared = conn.execute(
+            text(
+                "SELECT t.id, t.text FROM tasks t "
+                "JOIN assignment_collaborators c ON c.task_id = t.id "
+                "WHERE c.username = :username"
+            ),
+            {"username": username},
+        ).mappings().all()
+    results = [
+        {"task_id": r["id"], "text": r["text"], "is_owner": True, "unread_count": unread_chat_count(r["id"], username)}
+        for r in owned
+    ]
+    results += [
+        {"task_id": r["id"], "text": r["text"], "is_owner": False, "unread_count": unread_chat_count(r["id"], username)}
+        for r in shared
+    ]
+    return results
 
 
 # ----------------------------- Lists -----------------------------
@@ -1234,7 +1305,7 @@ def get_or_create_shopping_list(username: str) -> dict:
                 "INSERT INTO lists (username, name, created_at, position, kind, is_simple) "
                 "VALUES (:username, 'Shopping', :created_at, 0, 'shopping', 1) RETURNING id"
             ),
-            {"username": username, "created_at": datetime.now().isoformat()},
+            {"username": username, "created_at": utc_now_iso()},
         ).scalar_one()
         row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": new_id}).mappings().fetchone()
     return dict(row)
@@ -1267,7 +1338,7 @@ def get_or_create_main_list(username: str) -> dict:
                     "INSERT INTO lists (username, name, created_at, position, kind) "
                     "VALUES (:username, 'List 1', :created_at, 0, 'main') RETURNING id"
                 ),
-                {"username": username, "created_at": datetime.now().isoformat()},
+                {"username": username, "created_at": utc_now_iso()},
             ).scalar_one()
             row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": new_id}).mappings().fetchone()
         conn.execute(
@@ -1329,7 +1400,7 @@ def create_list(username: str) -> dict:
             {
                 "username": username,
                 "name": f"List {count + 2}",
-                "created_at": datetime.now().isoformat(),
+                "created_at": utc_now_iso(),
                 "position": count + 1,
             },
         ).scalar_one()
@@ -1594,7 +1665,7 @@ def add_subtask(task_id: int, subtask_text: str, username: str) -> tuple[dict, b
                 "INSERT INTO subtasks (task_id, text, done, created_at) "
                 "VALUES (:task_id, :text, 0, :created_at) RETURNING id"
             ),
-            {"task_id": task_id, "text": subtask_text, "created_at": datetime.now().isoformat()},
+            {"task_id": task_id, "text": subtask_text, "created_at": utc_now_iso()},
         ).scalar_one()
         conn.execute(
             text("UPDATE tasks SET done = 0 WHERE id = :id AND username = :username"),
@@ -1765,7 +1836,7 @@ def import_data(tasks: list[dict], username: str, *, replace: bool = False) -> t
     engine = get_engine()
     imported_tasks = 0
     imported_subtasks = 0
-    now = datetime.now().isoformat()
+    now = utc_now_iso()
 
     with engine.begin() as conn:
         if replace:

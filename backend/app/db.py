@@ -376,3 +376,31 @@ def init_db() -> None:
             # google_sub before ever inserting, so the practical uniqueness
             # holds without the database enforcing it too.
             conn.execute(text("ALTER TABLE users ADD COLUMN google_sub TEXT"))
+
+    # Every created_at/read_at/added_at/linked_at timestamp used to be
+    # written with a bare, naive datetime.now().isoformat() (see
+    # crud.utc_now_iso's own comment for the full story) - Render's
+    # containers run in UTC with no TZ override, so those strings held UTC
+    # values with no marker saying so, and the frontend's `new Date(...)`
+    # silently reinterpreted them as if they were already the viewer's own
+    # local time. New rows are correct now (utc_now_iso() appends a real
+    # "+00:00"); this backfills every row written before that fix. Safe to
+    # run on every startup, not just once: a naive ISO string never
+    # contains "+" (only a timezone offset would), so the WHERE clause
+    # only ever matches genuinely-unmigrated rows - already-fixed rows (and
+    # NULLs, e.g. an unread notification's read_at) are silently skipped.
+    for table, column in [
+        ("tasks", "created_at"),
+        ("subtasks", "created_at"),
+        ("notifications", "created_at"),
+        ("notifications", "read_at"),
+        ("assignment_messages", "created_at"),
+        ("assignment_collaborators", "added_at"),
+        ("website_links", "linked_at"),
+        ("activity_log", "created_at"),
+        ("lists", "created_at"),
+    ]:
+        with engine.begin() as conn:
+            conn.execute(
+                text(f"UPDATE {table} SET {column} = {column} || '+00:00' WHERE {column} NOT LIKE '%+%'")
+            )

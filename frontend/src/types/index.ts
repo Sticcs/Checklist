@@ -168,6 +168,17 @@ export interface ChatMessagesResponse {
   unread_count: number
 }
 
+export interface ChatSummaryEntry {
+  task_id: number
+  text: string
+  is_owner: boolean
+  unread_count: number
+}
+
+export interface ChatSummaryResponse {
+  assignments: ChatSummaryEntry[]
+}
+
 // Shopping, the user's main list, and every user-created ("custom") list
 // share this shape - see backend/app/db.py's lists_table `kind` comment.
 export interface ListEntry {

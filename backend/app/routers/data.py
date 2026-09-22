@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Response
 
 from app import crud
@@ -16,7 +14,7 @@ def export_data(response: Response, current_user: CurrentUser = Depends(get_curr
     # declares the portable subset, so FastAPI drops the rest on serialization.
     response.headers["Content-Disposition"] = 'attachment; filename="checklist-export.json"'
     tasks = crud.get_tasks_with_subtasks(current_user.username)
-    return ExportPayload(exported_at=datetime.now().isoformat(), tasks=tasks)
+    return ExportPayload(exported_at=crud.utc_now_iso(), tasks=tasks)
 
 
 @router.post("/import", response_model=ImportResponse)

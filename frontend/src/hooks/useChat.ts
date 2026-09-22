@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { chatApi } from '../api/chat'
 
 export const CHAT_KEY = (taskId: number) => ['assignment-chat', taskId]
+export const CHAT_SUMMARY_KEY = ['chat-summary']
 
 // Always enabled (not gated on the chat panel being open) so the round
 // button's unread badge stays current even while the panel is closed -
@@ -35,9 +36,24 @@ export function useMarkChatRead(taskId: number) {
     mutationFn: () => chatApi.markRead(taskId),
     // Refetches (not just an optimistic zero-out) so the panel reflects
     // the truly-latest read state - mirrors useRemoveCollaborator's
-    // invalidateQueries pattern.
+    // invalidateQueries pattern. Also invalidates the cross-assignment
+    // summary (ChatLauncher's conversation list) so its own badge for this
+    // assignment clears immediately too, not just this one panel's.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: CHAT_KEY(taskId) })
+      queryClient.invalidateQueries({ queryKey: CHAT_SUMMARY_KEY })
     },
+  })
+}
+
+// Every assignment the caller can see, each with its own unread count -
+// powers ChatLauncher's main-screen conversation list. Same 20s cadence as
+// the rest of this app's background polling.
+export function useChatSummary() {
+  return useQuery({
+    queryKey: CHAT_SUMMARY_KEY,
+    queryFn: () => chatApi.summary(),
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
   })
 }

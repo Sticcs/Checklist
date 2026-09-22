@@ -248,6 +248,20 @@ class ChatMessagesResponse(BaseModel):
     unread_count: int
 
 
+class ChatSummaryEntry(BaseModel):
+    # One row per assignment the caller can see (owned or collaborator),
+    # for the main screen's chat launcher - a conversation list, not tied
+    # to any single assignment's own workspace.
+    task_id: int
+    text: str
+    is_owner: bool
+    unread_count: int
+
+
+class ChatSummaryResponse(BaseModel):
+    assignments: list[ChatSummaryEntry]
+
+
 # ----------------------------- Lists -----------------------------
 # Shopping and user-created lists share the same lists_table row shape (see
 # db.py's `kind` comment) and therefore the same response models.

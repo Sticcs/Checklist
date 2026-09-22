@@ -3868,6 +3868,50 @@ body[data-theme='dark'] .assessment-card.compact:hover {
   min-width: 0;
 }
 
+/* ChatLauncher's conversation list - the screen shown before picking which
+   assignment's ChatPanel to open (see its own comment). Sits inside the
+   same .assignment-chat-panel shell as the panel itself, just with a list
+   of rows instead of messages + an input. */
+.assignment-chat-conversation-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.assignment-chat-conversation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.assignment-chat-conversation-row:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.assignment-chat-conversation-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignment-chat-conversation-badge {
+  position: static;
+  flex-shrink: 0;
+}
+
 /* Subtasks mount/unmount on hover (see TaskCard's AnimatePresence, driven by
    onMouseEnter/onMouseLeave on the card) rather than a CSS-only display
    toggle, so the reveal is an actual animated height/opacity transition

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app import crud
-from app.models import ChatMessageCreate, ChatMessageEntry, ChatMessagesResponse
+from app.models import ChatMessageCreate, ChatMessageEntry, ChatMessagesResponse, ChatSummaryEntry, ChatSummaryResponse
 from app.routers.collaboration import _require_assignment_access
 from app.security import CurrentUser, get_current_user
 
@@ -10,7 +10,12 @@ from app.security import CurrentUser, get_current_user
 # (_require_assignment_access, reused from collaboration.py rather than
 # duplicated). No undo.save_snapshot() calls anywhere here - chat messages
 # aren't part of tasks/subtasks state, which is all undo/redo ever restores.
-router = APIRouter(prefix="/api/tasks", tags=["chat"])
+#
+# No router-level prefix (unlike this file's first version) - /chat/summary
+# below isn't scoped to a single task_id the way every other route here is,
+# so each route spells out its own full path instead, matching
+# collaboration.py's own convention.
+router = APIRouter(tags=["chat"])
 
 MAX_MESSAGE_LENGTH = 2000
 
@@ -19,7 +24,7 @@ def _entry(row: dict) -> ChatMessageEntry:
     return ChatMessageEntry(id=row["id"], username=row["username"], text=row["text"], created_at=row["created_at"])
 
 
-@router.get("/{task_id}/messages", response_model=ChatMessagesResponse)
+@router.get("/api/tasks/{task_id}/messages", response_model=ChatMessagesResponse)
 def list_messages(task_id: int, current_user: CurrentUser = Depends(get_current_user)) -> ChatMessagesResponse:
     _require_assignment_access(task_id, current_user.username)
     rows = crud.list_chat_messages(task_id)
@@ -27,7 +32,7 @@ def list_messages(task_id: int, current_user: CurrentUser = Depends(get_current_
     return ChatMessagesResponse(messages=[_entry(r) for r in rows], unread_count=unread)
 
 
-@router.post("/{task_id}/messages", response_model=ChatMessageEntry, status_code=status.HTTP_201_CREATED)
+@router.post("/api/tasks/{task_id}/messages", response_model=ChatMessageEntry, status_code=status.HTTP_201_CREATED)
 def post_message(
     task_id: int, body: ChatMessageCreate, current_user: CurrentUser = Depends(get_current_user)
 ) -> ChatMessageEntry:
@@ -41,7 +46,22 @@ def post_message(
     return _entry(row)
 
 
-@router.post("/{task_id}/messages/read", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/api/tasks/{task_id}/messages/read", status_code=status.HTTP_204_NO_CONTENT)
 def mark_messages_read(task_id: int, current_user: CurrentUser = Depends(get_current_user)) -> None:
     _require_assignment_access(task_id, current_user.username)
     crud.mark_chat_read(task_id, current_user.username)
+
+
+@router.get("/api/chat/summary", response_model=ChatSummaryResponse)
+def chat_summary(current_user: CurrentUser = Depends(get_current_user)) -> ChatSummaryResponse:
+    # Powers the main screen's chat launcher (outside any one assignment's
+    # workspace) - every assignment the caller can see, owned or shared,
+    # with its own unread count, so the launcher can show a conversation
+    # list instead of only ever working from inside one specific assignment.
+    rows = crud.list_chat_summaries(current_user.username)
+    return ChatSummaryResponse(
+        assignments=[
+            ChatSummaryEntry(task_id=r["task_id"], text=r["text"], is_owner=r["is_owner"], unread_count=r["unread_count"])
+            for r in rows
+        ]
+    )

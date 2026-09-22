@@ -1,8 +1,18 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import text
 
 from app import db
+
+
+def _utc_today() -> date:
+    # get_stats judges "today" in UTC (see crud.get_stats's own comment on
+    # why - created_at is always a UTC timestamp now), so test setup needs
+    # to seed activity against that same UTC "today", not this machine's
+    # own local date.today() - the two only actually differ near a day
+    # boundary, but a flaky test that only fails once a day is worse than
+    # one that's always right.
+    return datetime.now(timezone.utc).date()
 
 
 def _add_task(client, text="Buy milk"):
@@ -52,12 +62,12 @@ def test_stats_reflects_a_real_completion_today(guest_client):
     assert body["total_completed"] == 1
     assert body["current_streak"] == 1
     assert body["longest_streak"] == 1
-    assert body["daily_counts"][-1] == {"date": date.today().isoformat(), "count": 1}
+    assert body["daily_counts"][-1] == {"date": _utc_today().isoformat(), "count": 1}
 
 
 def test_current_streak_counts_consecutive_days_including_today(guest_client):
     client, username = guest_client
-    today = date.today()
+    today = _utc_today()
     for offset in range(4):  # today, yesterday, 2 and 3 days ago
         _insert_completed_activity(username, today - timedelta(days=offset))
 
@@ -69,7 +79,7 @@ def test_current_streak_counts_consecutive_days_including_today(guest_client):
 
 def test_streak_not_broken_by_empty_today(guest_client):
     client, username = guest_client
-    today = date.today()
+    today = _utc_today()
     # Yesterday and the day before have activity; today doesn't yet.
     _insert_completed_activity(username, today - timedelta(days=1))
     _insert_completed_activity(username, today - timedelta(days=2))
@@ -81,7 +91,7 @@ def test_streak_not_broken_by_empty_today(guest_client):
 
 def test_streak_broken_by_gap(guest_client):
     client, username = guest_client
-    today = date.today()
+    today = _utc_today()
     _insert_completed_activity(username, today)
     _insert_completed_activity(username, today - timedelta(days=1))
     # Gap at 2 days ago
@@ -95,7 +105,7 @@ def test_streak_broken_by_gap(guest_client):
 
 def test_completed_this_week_excludes_older_activity(guest_client):
     client, username = guest_client
-    today = date.today()
+    today = _utc_today()
     _insert_completed_activity(username, today)
     _insert_completed_activity(username, today - timedelta(days=10))  # outside the 7-day window
 
