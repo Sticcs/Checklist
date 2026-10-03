@@ -3,7 +3,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { Task, TasksResponse, WorkspacePage } from '../types'
-import { TASKS_KEY, isOwnedTask, setSharedData, useSetTaskLinks, useSetTaskPages, useToggleDone } from '../hooks/useTasks'
+import {
+  TASKS_KEY,
+  isOwnedTask,
+  setSharedData,
+  useAddPage,
+  useDeletePage,
+  useRenamePage,
+  useSetTaskLinks,
+  useSetTaskPages,
+  useToggleDone,
+} from '../hooks/useTasks'
 import { useAddSubtask, useDeleteSubtask, useSetSubtaskAssignee, useToggleSubtask } from '../hooks/useSubtasks'
 import {
   useAssignmentPresence,
@@ -70,10 +80,6 @@ function normalizeUrl(raw: string): string {
 // stops being hit.
 function defaultFirstPage(notes: string | null): WorkspacePage {
   return { id: 'page-1', title: 'Page 1', content: notes ?? '' }
-}
-
-function makePage(title: string): WorkspacePage {
-  return { id: `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, content: '' }
 }
 
 const FORMAT_BUTTONS: Array<{ kind: FormatKind; title: string; glyph: React.ReactNode }> = [
@@ -155,6 +161,9 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
 
   const setTaskLinks = useSetTaskLinks()
   const setTaskPages = useSetTaskPages()
+  const addPageMutation = useAddPage()
+  const deletePageMutation = useDeletePage()
+  const renamePageMutation = useRenamePage()
   const toggleDone = useToggleDone()
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
@@ -341,24 +350,76 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     setDraft(pages.find((p) => p.id === id)?.content ?? '')
   }
 
+  // Structural page edits (add/delete/rename) - unlike the debounced
+  // content autosave above, these go through their own dedicated endpoints
+  // (useAddPage/useDeletePage/useRenamePage, see useTasks.ts) that push a
+  // real undo snapshot server-side, so Ctrl+Z actually restores a deleted
+  // or renamed page. The server computes the resulting `pages` array (new
+  // page's id in particular, generated server-side) - local state is set
+  // directly from its response in onSuccess, not predicted client-side, so
+  // it stays correct even if dirty.current happened to be true (mid-typing
+  // on the current page) when one of these fires, which the existing
+  // task.pages-sync effect above would otherwise skip.
   const addPage = () => {
-    const page = makePage(`Page ${pages.length + 1}`)
-    const next = [...pages, page]
-    setPages(next)
-    setActivePageId(page.id)
-    setDraft('')
-    setTaskPages.mutate({ id: task.id, pages: next })
+    addPageMutation.mutate(
+      { id: task.id, title: `Page ${pages.length + 1}` },
+      {
+        onSuccess: (updated) => {
+          setPages(updated.pages)
+          const newPage = updated.pages[updated.pages.length - 1]
+          setActivePageId(newPage.id)
+          setDraft(newPage.content)
+          // A stale pending-content draft from before this structural edit
+          // would otherwise resurrect the old page array on the next reload.
+          dirty.current = false
+          clearPendingDraft(pagesDraftKey)
+        },
+      }
+    )
   }
 
   const deletePage = (id: string) => {
     if (pages.length <= 1) return
-    const next = pages.filter((p) => p.id !== id)
-    setPages(next)
-    if (activePageId === id) {
-      setActivePageId(next[0].id)
-      setDraft(next[0].content)
-    }
-    setTaskPages.mutate({ id: task.id, pages: next })
+    deletePageMutation.mutate(
+      { id: task.id, pageId: id },
+      {
+        onSuccess: (updated) => {
+          setPages(updated.pages)
+          dirty.current = false
+          clearPendingDraft(pagesDraftKey)
+          if (activePageId === id) {
+            const next = updated.pages[0]
+            setActivePageId(next.id)
+            setDraft(next.content)
+          }
+        },
+      }
+    )
+  }
+
+  const [renamingPageId, setRenamingPageId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+
+  const startRenamingPage = (page: WorkspacePage) => {
+    setRenamingPageId(page.id)
+    setRenameDraft(page.title)
+  }
+
+  const commitRenamePage = () => {
+    const id = renamingPageId
+    const title = renameDraft.trim()
+    setRenamingPageId(null)
+    if (id === null || !title) return
+    renamePageMutation.mutate(
+      { id: task.id, pageId: id, title },
+      {
+        onSuccess: (updated) => {
+          setPages(updated.pages)
+          dirty.current = false
+          clearPendingDraft(pagesDraftKey)
+        },
+      }
+    )
   }
 
   const notesField = useFormattableEditable(onChange)
@@ -1157,26 +1218,46 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
 
           <div className="assignment-textbox-column">
             <div className="assignment-page-tabs" data-focus-exempt>
-              {pages.map((page) => (
-                <div
-                  key={page.id}
-                  className={page.id === activePageId ? 'assignment-page-tab active' : 'assignment-page-tab'}
-                >
-                  <button type="button" onClick={() => switchPage(page.id)}>
-                    {page.title}
-                  </button>
-                  {pages.length > 1 && (
+              {pages.map((page) =>
+                renamingPageId === page.id ? (
+                  <input
+                    key={page.id}
+                    className="assignment-page-tab-rename-input"
+                    value={renameDraft}
+                    autoFocus
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onBlur={commitRenamePage}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRenamePage()
+                      if (e.key === 'Escape') setRenamingPageId(null)
+                    }}
+                  />
+                ) : (
+                  <div
+                    key={page.id}
+                    className={page.id === activePageId ? 'assignment-page-tab active' : 'assignment-page-tab'}
+                  >
                     <button
                       type="button"
-                      className="assignment-page-tab-close"
-                      title="Delete this page"
-                      onClick={() => deletePage(page.id)}
+                      title="Double-click to rename"
+                      onClick={() => switchPage(page.id)}
+                      onDoubleClick={() => startRenamingPage(page)}
                     >
-                      ✕
+                      {page.title}
                     </button>
-                  )}
-                </div>
-              ))}
+                    {pages.length > 1 && (
+                      <button
+                        type="button"
+                        className="assignment-page-tab-close"
+                        title="Delete this page"
+                        onClick={() => deletePage(page.id)}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )
+              )}
               <button type="button" className="assignment-page-tab-add" title="Add a page" onClick={addPage}>
                 + Page
               </button>

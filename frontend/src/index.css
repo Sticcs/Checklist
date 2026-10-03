@@ -3362,6 +3362,18 @@ body[data-theme='dark'] .assignment-add-link-btn {
   background: rgba(231, 76, 60, 0.25);
 }
 
+.assignment-page-tab-rename-input {
+  border: 1px solid var(--glass-border);
+  border-radius: 8px 8px 0 0;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  padding: 0.4rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 8rem;
+}
+
 .assignment-page-tab-add {
   flex-shrink: 0;
   border: 1px dashed rgba(128, 128, 128, 0.4);

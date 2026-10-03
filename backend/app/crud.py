@@ -150,6 +150,20 @@ def _task_dict(row) -> dict:
     return d
 
 
+def _effective_pages(pages_json: str | None, notes: str | None) -> list[dict]:
+    """Same fallback as the frontend's defaultFirstPage (AssignmentWorkspace.
+    tsx): an assignment with no `pages` saved yet (predates the pages
+    feature, or has simply never been structurally edited) has an implicit
+    single page synthesized from the legacy `notes` field. The structural
+    page endpoints (add/delete/rename) must operate on that same implicit
+    page rather than an empty list, or adding a second page would silently
+    discard the user's existing first page/notes."""
+    pages = json.loads(pages_json) if pages_json else []
+    if not pages:
+        pages = [{"id": "page-1", "title": "Page 1", "content": notes or ""}]
+    return pages
+
+
 def _subtask_dict(row) -> dict:
     d = dict(row)
     d["done"] = bool(d["done"])
@@ -802,12 +816,84 @@ def set_task_pages(task_id: int, pages: list[dict], username: str) -> dict | Non
     # set_task_notes: this fires on every debounced keystroke while typing
     # in a page, and snapshotting each of those would flood the 20-entry
     # undo stack with near-identical in-progress drafts instead of the
-    # structural edits (add/delete page) a user would actually want to undo.
+    # structural edits (add/delete/rename a page) a user would actually want
+    # to undo. Those go through add_task_page/delete_task_page/
+    # rename_task_page below instead, each a genuine one-shot action that
+    # does snapshot.
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages) if pages else None, "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
+def add_task_page(task_id: int, title: str, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT pages, notes FROM tasks WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        pages = _effective_pages(row["pages"], row["notes"])
+        pages.append({"id": f"page-{secrets.token_urlsafe(8)}", "title": title, "content": ""})
+        conn.execute(
+            text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
+            {"pages": json.dumps(pages), "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
+def delete_task_page(task_id: int, page_id: str, username: str) -> dict | None:
+    """Refuses to delete the last remaining page - mirrors the frontend's
+    existing pages.length<=1 guard (AssignmentWorkspace.tsx's deletePage),
+    enforced here too since this is now reachable as its own endpoint."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT pages, notes FROM tasks WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        pages = _effective_pages(row["pages"], row["notes"])
+        if len(pages) <= 1:
+            # Refusing a no-op delete shouldn't silently drop the synthesized
+            # implicit page from the response - get_task would otherwise
+            # re-read the still-empty raw `pages` column.
+            task = get_task(task_id, username)
+            task["pages"] = pages
+            return task
+        pages = [p for p in pages if p["id"] != page_id]
+        conn.execute(
+            text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
+            {"pages": json.dumps(pages), "id": task_id, "username": username},
+        )
+    return get_task(task_id, username)
+
+
+def rename_task_page(task_id: int, page_id: str, title: str, username: str) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT pages, notes FROM tasks WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        pages = _effective_pages(row["pages"], row["notes"])
+        for p in pages:
+            if p["id"] == page_id:
+                p["title"] = title
+        conn.execute(
+            text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
+            {"pages": json.dumps(pages), "id": task_id, "username": username},
         )
     return get_task(task_id, username)
 

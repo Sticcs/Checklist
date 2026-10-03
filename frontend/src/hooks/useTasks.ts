@@ -420,6 +420,74 @@ export function useSetTaskPages() {
   })
 }
 
+// Structural page edits (add/delete/rename) - unlike useSetTaskPages above,
+// these go through the normal beginOptimisticUpdate/pushUndoSnapshot path
+// (so Ctrl+Z actually restores a deleted or renamed page), since each is a
+// genuine one-shot action, not a per-keystroke autosave. The resulting
+// `pages` array isn't predicted client-side (unlike most optimistic
+// mutations in this file) - onSuccess just writes back the task the server
+// actually returned, which already has the real new page id (add) or the
+// post-delete/rename array, rather than duplicating that logic here.
+function applyServerTask(queryClient: QueryClient, task: Task) {
+  if (isOwnedTask(queryClient, task.id)) {
+    setTasksData(queryClient, (old) => ({ ...old, tasks: old.tasks.map((t) => (t.id === task.id ? task : t)) }))
+  } else {
+    setSharedData(queryClient, (old) => old.map((t) => (t.id === task.id ? task : t)))
+  }
+}
+
+export function useAddPage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, title }: { id: number; title: string }) => tasksApi.addPage(id, title),
+    onMutate: async (vars) => {
+      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
+      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+    },
+    onSuccess: (task) => applyServerTask(queryClient, task),
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to add page')
+    },
+  })
+}
+
+export function useDeletePage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, pageId }: { id: number; pageId: string }) => tasksApi.deletePage(id, pageId),
+    onMutate: async (vars) => {
+      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
+      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+    },
+    onSuccess: (task) => applyServerTask(queryClient, task),
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to delete page')
+    },
+  })
+}
+
+export function useRenamePage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, pageId, title }: { id: number; pageId: string; title: string }) =>
+      tasksApi.renamePage(id, pageId, title),
+    onMutate: async (vars) => {
+      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
+      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+    },
+    onSuccess: (task) => applyServerTask(queryClient, task),
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to rename page')
+    },
+  })
+}
+
 export function useAssignTask() {
   const queryClient = useQueryClient()
   return useMutation({

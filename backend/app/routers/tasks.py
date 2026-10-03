@@ -4,6 +4,8 @@ from app import crud, undo
 from app.models import (
     ClearResponse,
     MarkAllCompletedResponse,
+    PageCreate,
+    PageRename,
     SubtaskCreate,
     SubtaskMutationResponse,
     Task,
@@ -213,8 +215,38 @@ def update_task_pages(
     task_id: int, body: TaskPagesUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> Task:
     # Collaborator-accessible - see toggle_done's comment on owner_task["username"].
+    # Whole-array replacement, used only by the debounced content-autosave
+    # path - see TaskPagesUpdate's own comment. Structural edits (add/
+    # delete/rename a page) use the three dedicated routes below instead,
+    # each of which (unlike this one) pushes an undo snapshot first.
     owner_task = _require_task_access(task_id, current_user.username)
     task = crud.set_task_pages(task_id, [page.model_dump() for page in body.pages], owner_task["username"])
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.post("/{task_id}/pages", response_model=Task, status_code=status.HTTP_201_CREATED)
+def add_page(task_id: int, body: PageCreate, current_user: CurrentUser = Depends(get_current_user)) -> Task:
+    owner_task = _require_task_access(task_id, current_user.username)
+    task = crud.add_task_page(task_id, body.title, owner_task["username"])
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.delete("/{task_id}/pages/{page_id}", response_model=Task)
+def delete_page(task_id: int, page_id: str, current_user: CurrentUser = Depends(get_current_user)) -> Task:
+    owner_task = _require_task_access(task_id, current_user.username)
+    task = crud.delete_task_page(task_id, page_id, owner_task["username"])
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return task
+
+
+@router.patch("/{task_id}/pages/{page_id}", response_model=Task)
+def rename_page(
+    task_id: int, page_id: str, body: PageRename, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    owner_task = _require_task_access(task_id, current_user.username)
+    task = crud.rename_task_page(task_id, page_id, body.title, owner_task["username"])
     task["subtasks"] = crud.get_subtasks(task_id)
     return task
 

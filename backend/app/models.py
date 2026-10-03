@@ -145,10 +145,21 @@ class WorkspacePage(BaseModel):
 
 
 class TaskPagesUpdate(BaseModel):
-    # Whole-list replacement, same reasoning as TaskLinksUpdate - the
-    # AssignmentWorkspace's page tabs (add/rename/switch/type) all just
-    # compute the next full list client-side and PATCH it.
+    # Whole-list replacement - but now only ever hit by AssignmentWorkspace's
+    # debounced content-autosave while typing in a page (see crud.py's
+    # set_task_pages, which deliberately skips undo.save_snapshot() for
+    # exactly that reason). Structural edits (add/delete/rename a page) go
+    # through their own dedicated routes below instead, each of which does
+    # snapshot - see add_task_page/delete_task_page/rename_task_page.
     pages: list[WorkspacePage]
+
+
+class PageCreate(BaseModel):
+    title: str
+
+
+class PageRename(BaseModel):
+    title: str
 
 
 class TaskDueDateUpdate(BaseModel):

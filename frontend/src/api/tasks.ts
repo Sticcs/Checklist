@@ -21,6 +21,10 @@ export const tasksApi = {
     api.patch<Task>(`/tasks/${id}/in-progress`, { in_progress }),
   setLinks: (id: number, links: LinkItem[]) => api.patch<Task>(`/tasks/${id}/links`, { links }),
   setPages: (id: number, pages: WorkspacePage[]) => api.patch<Task>(`/tasks/${id}/pages`, { pages }),
+  addPage: (id: number, title: string) => api.post<Task>(`/tasks/${id}/pages`, { title }),
+  deletePage: (id: number, pageId: string) => api.delete<Task>(`/tasks/${id}/pages/${pageId}`),
+  renamePage: (id: number, pageId: string, title: string) =>
+    api.patch<Task>(`/tasks/${id}/pages/${pageId}`, { title }),
   setDueDate: (id: number, due_date: string | null) => api.patch<Task>(`/tasks/${id}/due-date`, { due_date }),
   setListId: (id: number, list_id: number) => api.patch<Task>(`/tasks/${id}/list`, { list_id }),
   assign: (id: number, assigned_task_id: number | null) =>
