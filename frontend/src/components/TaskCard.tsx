@@ -577,6 +577,14 @@ export function TaskCard({
             >
               {task.subtasks.length > 0 ? `📋 ${subDone}/${task.subtasks.length}` : '📋 Add subtasks'}
             </button>
+            {task.subtasks.length > 0 && (
+              <div className="task-reveal-progress-track" title={`${subDone}/${task.subtasks.length} subtasks done`}>
+                <div
+                  className="task-reveal-progress-fill"
+                  style={{ width: `${(subDone / task.subtasks.length) * 100}%` }}
+                />
+              </div>
+            )}
             <button
               type="button"
               className={task.notes ? 'icon-btn btn-primary' : 'icon-btn'}

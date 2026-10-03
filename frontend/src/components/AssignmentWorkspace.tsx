@@ -82,6 +82,12 @@ const FORMAT_BUTTONS: Array<{ kind: FormatKind; title: string; glyph: React.Reac
   { kind: 'underline', title: 'Underline (Ctrl/Cmd+U)', glyph: <u>U</u> },
 ]
 
+const ALIGN_BUTTONS: Array<{ kind: FormatKind; title: string; glyph: React.ReactNode }> = [
+  { kind: 'justifyLeft', title: 'Align left', glyph: '⬅' },
+  { kind: 'justifyCenter', title: 'Align center', glyph: '↔' },
+  { kind: 'justifyRight', title: 'Align right', glyph: '➡' },
+]
+
 const FONT_SIZE_PRESETS_PX = [12, 14, 16, 18, 20, 24, 28, 32, 40]
 const FONT_SIZE_STEP_PX = 2
 const MIN_FONT_SIZE_PX = 8
@@ -919,6 +925,24 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
           <span className="assignment-toolbar-divider" />
 
           <div className="assignment-toolbar-group">
+            {ALIGN_BUTTONS.map(({ kind, title, glyph }) => (
+              <button
+                key={kind}
+                type="button"
+                className={formattingActive ? 'toolbar-btn active' : 'toolbar-btn'}
+                disabled={!formattingActive}
+                title={title}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => applyFormat(kind)}
+              >
+                {glyph}
+              </button>
+            ))}
+          </div>
+
+          <span className="assignment-toolbar-divider" />
+
+          <div className="assignment-toolbar-group">
             <select
               className="assignment-fontsize-select"
               disabled={!hasSelection}
@@ -1091,34 +1115,38 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
                         onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
                       />
                       <span className="assignment-task-text">{s.text}</span>
-                      {hasCollaborators && (
-                        <select
-                          className="assignment-task-assignee"
-                          title="Assign to"
-                          value={s.assigned_username ?? ''}
-                          onChange={(e) =>
-                            setSubtaskAssignee.mutate({
-                              subtaskId: s.id,
-                              assignedUsername: e.target.value || null,
-                            })
-                          }
-                        >
-                          <option value="">Unassigned</option>
-                          {assigneeOptions.map((username) => (
-                            <option key={username} value={username}>
-                              {username === task.username ? `${username} (owner)` : username}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <button
-                        type="button"
-                        className="assignment-task-delete-btn"
-                        title="Delete"
-                        onClick={() => deleteSubtask.mutate(s.id)}
-                      >
-                        ✕
-                      </button>
+                      {/* Hover/focus-reveal, same pattern as TaskCard's own
+                          .task-reveal - only the checkbox+text stay always
+                          visible, everything else (assignee, delete) hides
+                          until you hover the row or tab/click into it
+                          (:focus-within covers keyboard/touch, since this
+                          row has no separate "focused" concept to key off
+                          the way TaskCard does). */}
+                      <div className="assignment-task-reveal" data-focus-exempt>
+                        {hasCollaborators && (
+                          <select
+                            className="assignment-task-assignee"
+                            title="Assign to"
+                            value={s.assigned_username ?? ''}
+                            onChange={(e) =>
+                              setSubtaskAssignee.mutate({
+                                subtaskId: s.id,
+                                assignedUsername: e.target.value || null,
+                              })
+                            }
+                          >
+                            <option value="">Unassigned</option>
+                            {assigneeOptions.map((username) => (
+                              <option key={username} value={username}>
+                                {username === task.username ? `${username} (owner)` : username}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button type="button" className="icon-btn" title="Delete" onClick={() => deleteSubtask.mutate(s.id)}>
+                          ✕
+                        </button>
+                      </div>
                     </motion.li>
                   ))}
                 </AnimatePresence>

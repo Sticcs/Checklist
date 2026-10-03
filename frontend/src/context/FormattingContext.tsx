@@ -1,12 +1,22 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode, type RefObject } from 'react'
 
-export type FormatKind = 'bold' | 'italic' | 'underline' | 'insertUnorderedList'
+export type FormatKind =
+  | 'bold'
+  | 'italic'
+  | 'underline'
+  | 'insertUnorderedList'
+  | 'justifyLeft'
+  | 'justifyCenter'
+  | 'justifyRight'
 
 const COMMAND: Record<FormatKind, string> = {
   bold: 'bold',
   italic: 'italic',
   underline: 'underline',
   insertUnorderedList: 'insertUnorderedList',
+  justifyLeft: 'justifyLeft',
+  justifyCenter: 'justifyCenter',
+  justifyRight: 'justifyRight',
 }
 
 interface ActiveEditor {

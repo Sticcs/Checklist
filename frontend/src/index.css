@@ -2105,6 +2105,25 @@ body[data-theme='dark'] .task-reveal .icon-btn:not(.btn-primary):hover {
   background: rgba(128, 128, 128, 0.3);
 }
 
+/* A minimalistic hover-only fill bar, alongside the 📋 N/M pill above - the
+   pill is a useful discrete count even at 0/0 or 1/1 (where a few-pixel bar
+   would read as nothing); the bar adds an at-a-glance fill. Deliberately
+   plain CSS (no framer-motion) for a 4px bar. */
+.task-reveal-progress-track {
+  width: 3.5rem;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--badge-bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.task-reveal-progress-fill {
+  height: 100%;
+  background: #2ecc71;
+  transition: width 0.25s ease;
+}
+
 .pin-badge {
   font-size: 0.85rem;
 }
@@ -3030,6 +3049,85 @@ body[data-theme='dark'] .assignment-add-link-btn {
   }
 }
 
+/* The links panel (flex-shrink:0, unbounded add-link form height) and the
+   task list (flex:1, min-height:0 - absorbs all the squeeze) share
+   .assignment-left-column's height, whatever that happens to be at the
+   current breakpoint (40vh under the 700px query above, the landscape
+   query's own unconstrained-but-short height below, or just "however much
+   vertical space the page has" on desktop). Without a cap of its own, a
+   long/opened links panel could squeeze the task list down to ~0px at any
+   of those - still technically scrollable, but with nothing visible to
+   grab onto - so these apply unconditionally (not nested in either media
+   query) rather than duplicating the same two rules into each one. */
+.assignment-links-panel {
+  max-height: 45%;
+  overflow-y: auto;
+}
+
+.assignment-tasks-column {
+  min-height: 30%;
+}
+
+/* A landscape phone is wide but short - it falls through every max-width
+   query above (either staying at the full desktop column width if wide
+   enough, or hitting the portrait stack above if narrow, both wrong for
+   "plenty of width, very little height"). max-height alone (no width
+   condition) safely covers real phone-landscape heights (~320-430px)
+   without also matching a merely-narrow desktop window. */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* .assignment-workspace is deliberately a fixed, non-scrolling 100vh page
+     the rest of the year (see its own comment - "Word/Docs-style", every
+     child anchored in place, only the textbox scrolls internally) - that
+     assumption breaks down here: the share row + title + toolbar + page
+     tabs alone can approach or exceed 390px of real phone-landscape height,
+     leaving the body row (links+tasks+textbox) next to nothing to work
+     with, no matter how it's internally redistributed. Letting the whole
+     page scroll vertically here is simpler and more robust than trying to
+     out-shrink every piece of chrome above the body row to fit a height
+     budget that may not exist at all on some devices. */
+  .assignment-workspace {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
+  .assignment-workspace-main {
+    height: auto;
+  }
+
+  .assignment-body-row {
+    flex-direction: row;
+    /* No longer the one bounded-height region feeding the textbox's own
+       internal scroll (see .assignment-workspace-textbox below) - let it
+       take whatever height its content naturally needs instead of being
+       squeezed into "whatever's left after the chrome above it." */
+    height: auto;
+    min-height: 24rem;
+  }
+
+  .assignment-left-column {
+    width: auto;
+    max-height: none;
+    /* Wider than desktop's own clamp(180px,20vw,260px) - landscape has the
+       width to spare that portrait mobile doesn't. */
+    flex: 0 0 clamp(200px, 30vw, 320px);
+    overflow-y: visible;
+  }
+
+  .assignment-task-assignee {
+    max-width: 5rem;
+  }
+
+  /* No longer needs its own internal scroll region now that the whole page
+     scrolls - a fixed height here would just add a confusing second
+     scrollbar nested inside the page's own one. */
+  .assignment-workspace-textbox {
+    flex: 0 0 auto;
+    min-height: 16rem;
+    overflow-y: visible;
+  }
+}
+
 .assignment-top-actions {
   display: flex;
   align-items: center;
@@ -3320,6 +3418,10 @@ body[data-theme='dark'] .assignment-add-link-btn {
 
 .assignment-task-row {
   display: flex;
+  /* wrap, not nowrap - .assignment-task-reveal's flex-basis:100% needs a
+     wrapping flex container to actually drop onto its own line, same as
+     TaskCard's .task-content/.task-reveal pairing. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.85rem;
@@ -3372,26 +3474,62 @@ body[data-theme='dark'] .assignment-add-link-btn {
   }
 }
 
-.assignment-task-delete-btn {
-  flex-shrink: 0;
-  width: 1.4rem;
-  height: 1.4rem;
-  border: none;
-  background: none;
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
+/* Hover/focus-reveal for a subtask row's assignee+delete actions - same
+   collapsed-by-default/hover-or-focus-open shape as TaskCard's own
+   .task-reveal, just scoped separately (not reusing that class) since this
+   is a different row type. The checkbox+text stay direct children of
+   .assignment-task-row, outside this, so they're always visible. */
+.assignment-task-reveal {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-height: 0;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  overflow: hidden;
+  transition: max-height 0.22s ease, opacity 0.15s ease, margin-top 0.22s ease;
 }
 
-.assignment-task-row:hover .assignment-task-delete-btn {
-  opacity: 0.7;
+.assignment-task-row:hover .assignment-task-reveal,
+.assignment-task-row:focus-within .assignment-task-reveal {
+  max-height: 3rem;
+  opacity: 1;
+  margin-top: 0.15rem;
 }
 
-.assignment-task-delete-btn:hover {
-  opacity: 1 !important;
-  background: rgba(231, 76, 60, 0.2);
+@media (prefers-reduced-motion: reduce) {
+  .assignment-task-reveal {
+    transition: none;
+  }
+}
+
+/* Borderless "ghost" icon button, identical ruleset to .task-reveal
+   .icon-btn (index.css's TaskCard section) - copied rather than shared
+   since the two live in different CSS regions for different components. */
+.assignment-task-reveal .icon-btn {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.92rem;
+}
+
+.assignment-task-reveal .icon-btn:hover {
+  background: var(--badge-bg);
+}
+
+body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary) {
+  background: transparent;
+  border: none;
+}
+
+body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary):hover {
+  background: var(--badge-bg);
 }
 
 /* ----------------------------- Compact view ----------------------------- */
