@@ -3473,6 +3473,17 @@ body[data-theme='dark'] .assignment-add-link-btn {
   opacity: 0.55;
 }
 
+.assignment-task-text-edit-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+}
+
 .assignment-task-assignee {
   flex-shrink: 0;
   max-width: 6.5rem;
@@ -3502,14 +3513,18 @@ body[data-theme='dark'] .assignment-add-link-btn {
   }
 }
 
-/* Hover/focus-reveal for a subtask row's assignee+delete actions - same
-   collapsed-by-default/hover-or-focus-open shape as TaskCard's own
-   .task-reveal, just scoped separately (not reusing that class) since this
-   is a different row type. The checkbox+text stay direct children of
-   .assignment-task-row, outside this, so they're always visible. */
+/* Hover/focus-reveal for a subtask row's due-date/urgent/edit/assignee/
+   delete actions - same collapsed-by-default/hover-or-focus-open shape as
+   TaskCard's own .task-reveal, just scoped separately (not reusing that
+   class) since this is a different row type. The done-toggle+text stay
+   direct children of .assignment-task-row, outside this, so they're always
+   visible. flex-wrap since this row now has enough controls (plus an
+   occasional date-picker popup) to need a second line on narrow widths -
+   max-height is generous enough to cover that without clipping. */
 .assignment-task-reveal {
   flex-basis: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   max-height: 0;
@@ -3520,7 +3535,7 @@ body[data-theme='dark'] .assignment-add-link-btn {
 
 .assignment-task-row:hover .assignment-task-reveal,
 .assignment-task-row:focus-within .assignment-task-reveal {
-  max-height: 3rem;
+  max-height: 6rem;
   opacity: 1;
   margin-top: 0.15rem;
 }
@@ -3533,8 +3548,14 @@ body[data-theme='dark'] .assignment-add-link-btn {
 
 /* Borderless "ghost" icon button, identical ruleset to .task-reveal
    .icon-btn (index.css's TaskCard section) - copied rather than shared
-   since the two live in different CSS regions for different components. */
-.assignment-task-reveal .icon-btn {
+   since the two live in different CSS regions for different components.
+   .assignment-task-done-btn (the always-visible done-toggle, outside the
+   reveal - see "only keep the complete subtask button outside" in the
+   JSX comment) gets the same treatment: a plain <button class="icon-btn">
+   still draws the base .icon-btn rule's square border/fill otherwise,
+   which is exactly the boxy look this was meant to get away from. */
+.assignment-task-reveal .icon-btn,
+.assignment-task-done-btn {
   border: none;
   background: transparent;
   border-radius: 999px;
@@ -3547,16 +3568,19 @@ body[data-theme='dark'] .assignment-add-link-btn {
   font-size: 0.92rem;
 }
 
-.assignment-task-reveal .icon-btn:hover {
+.assignment-task-reveal .icon-btn:hover,
+.assignment-task-done-btn:hover {
   background: var(--badge-bg);
 }
 
-body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary) {
+body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary),
+body[data-theme='dark'] .assignment-task-done-btn {
   background: transparent;
   border: none;
 }
 
-body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary):hover {
+body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary):hover,
+body[data-theme='dark'] .assignment-task-done-btn:hover {
   background: var(--badge-bg);
 }
 

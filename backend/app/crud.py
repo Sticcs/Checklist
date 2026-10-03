@@ -1897,7 +1897,9 @@ def set_subtask_done(
     return (_subtask_dict(row) if row else None), parent_done
 
 
-def set_subtask_urgent(subtask_id: int, urgent: bool, username: str) -> dict | None:
+def set_subtask_urgent(
+    subtask_id: int, urgent: bool, username: str, actor_username: str | None = None
+) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -1908,10 +1910,14 @@ def set_subtask_urgent(subtask_id: int, urgent: bool, username: str) -> dict | N
         row = conn.execute(
             text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
         ).mappings().fetchone()
+        if row is not None:
+            _touch_last_edited(conn, row["task_id"], actor_username or username)
     return _subtask_dict(row) if row else None
 
 
-def set_subtask_due_date(subtask_id: int, due_date: str | None, username: str) -> dict | None:
+def set_subtask_due_date(
+    subtask_id: int, due_date: str | None, username: str, actor_username: str | None = None
+) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -1922,6 +1928,26 @@ def set_subtask_due_date(subtask_id: int, due_date: str | None, username: str) -
         row = conn.execute(
             text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
         ).mappings().fetchone()
+        if row is not None:
+            _touch_last_edited(conn, row["task_id"], actor_username or username)
+    return _subtask_dict(row) if row else None
+
+
+def set_subtask_text(
+    subtask_id: int, subtask_text: str, username: str, actor_username: str | None = None
+) -> dict | None:
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE subtasks SET text = :text WHERE id = :id"),
+            {"text": subtask_text, "id": subtask_id},
+        )
+        row = conn.execute(
+            text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
+        ).mappings().fetchone()
+        if row is not None:
+            _touch_last_edited(conn, row["task_id"], actor_username or username)
     return _subtask_dict(row) if row else None
 
 

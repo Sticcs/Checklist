@@ -7,6 +7,7 @@ from app.models import (
     SubtaskDueDateUpdate,
     SubtaskMutationResponse,
     SubtaskNotesUpdate,
+    SubtaskTextUpdate,
     SubtaskUrgentUpdate,
 )
 from app.security import CurrentUser, get_current_user
@@ -70,9 +71,11 @@ def toggle_subtask_done(
 def toggle_subtask_urgent(
     subtask_id: int, body: SubtaskUrgentUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> SubtaskMutationResponse:
-    task_id = _require_owning_task(subtask_id, current_user.username)
-    subtask = crud.set_subtask_urgent(subtask_id, body.urgent, current_user.username)
-    task = crud.get_task(task_id, current_user.username)
+    # Collaborator-accessible - same mini task panel toggle_subtask_done and
+    # remove_subtask already are (see _require_owning_task_access).
+    task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
+    subtask = crud.set_subtask_urgent(subtask_id, body.urgent, owner_username, actor_username=current_user.username)
+    task = crud.get_task(task_id, owner_username)
     parent_done = bool(task["done"]) if task else False
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
 
@@ -81,9 +84,27 @@ def toggle_subtask_urgent(
 def update_subtask_due_date(
     subtask_id: int, body: SubtaskDueDateUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> SubtaskMutationResponse:
-    task_id = _require_owning_task(subtask_id, current_user.username)
-    subtask = crud.set_subtask_due_date(subtask_id, body.due_date, current_user.username)
-    task = crud.get_task(task_id, current_user.username)
+    # Collaborator-accessible - see toggle_subtask_urgent's comment.
+    task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
+    subtask = crud.set_subtask_due_date(
+        subtask_id, body.due_date, owner_username, actor_username=current_user.username
+    )
+    task = crud.get_task(task_id, owner_username)
+    parent_done = bool(task["done"]) if task else False
+    return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
+
+
+@router.patch("/{subtask_id}/text", response_model=SubtaskMutationResponse)
+def update_subtask_text(
+    subtask_id: int, body: SubtaskTextUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> SubtaskMutationResponse:
+    # Collaborator-accessible - see toggle_subtask_urgent's comment.
+    task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Subtask text is required")
+    subtask = crud.set_subtask_text(subtask_id, text, owner_username, actor_username=current_user.username)
+    task = crud.get_task(task_id, owner_username)
     parent_done = bool(task["done"]) if task else False
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
 

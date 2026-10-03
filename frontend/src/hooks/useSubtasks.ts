@@ -193,38 +193,50 @@ export function useSetSubtaskAssignee() {
   })
 }
 
+// Was owned-only (plain beginOptimisticUpdate/TASKS_KEY) until the
+// AssignmentWorkspace mini task panel started using this too - a
+// collaborator (not the task owner) marking a subtask urgent has no entry
+// in their own TASKS_KEY cache at all, so that write was a silent no-op
+// until the next poll. Now branches the same way useToggleSubtask etc. do.
+function applySubtaskUrgent<T extends Task>(t: T, subtaskId: number, urgent: boolean): T {
+  if (!t.subtasks.some((s) => s.id === subtaskId)) return t
+  return { ...t, subtasks: t.subtasks.map((s) => (s.id === subtaskId ? { ...s, urgent } : s)) }
+}
+
 export function useSetSubtaskUrgent() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ subtaskId, urgent }: { subtaskId: number; urgent: boolean }) =>
       subtasksApi.setUrgent(subtaskId, urgent),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
-      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
-        old
-          ? {
-              tasks: old.tasks.map((t) =>
-                t.subtasks.some((s) => s.id === vars.subtaskId)
-                  ? {
-                      ...t,
-                      subtasks: t.subtasks.map((s) =>
-                        s.id === vars.subtaskId ? { ...s, urgent: vars.urgent } : s
-                      ),
-                    }
-                  : t
-              ),
-              can_undo: true,
-              can_redo: false,
-            }
-          : old
-      )
-      return { previous }
+      if (isSubtaskOwned(queryClient, vars.subtaskId)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+          old
+            ? {
+                tasks: old.tasks.map((t) => applySubtaskUrgent(t, vars.subtaskId, vars.urgent)),
+                can_undo: true,
+                can_redo: false,
+              }
+            : old
+        )
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map((t) => applySubtaskUrgent(t, vars.subtaskId, vars.urgent)))
+      return { previous, shared: true }
     },
     onError: (_err, _vars, ctx) => {
-      rollback(queryClient, ctx?.previous)
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to update subtask')
     },
   })
+}
+
+function applySubtaskDueDate<T extends Task>(t: T, subtaskId: number, dueDate: string | null): T {
+  if (!t.subtasks.some((s) => s.id === subtaskId)) return t
+  return { ...t, subtasks: t.subtasks.map((s) => (s.id === subtaskId ? { ...s, due_date: dueDate } : s)) }
 }
 
 export function useSetSubtaskDueDate() {
@@ -233,30 +245,63 @@ export function useSetSubtaskDueDate() {
     mutationFn: ({ subtaskId, dueDate }: { subtaskId: number; dueDate: string | null }) =>
       subtasksApi.setDueDate(subtaskId, dueDate),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
-      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
-        old
-          ? {
-              tasks: old.tasks.map((t) =>
-                t.subtasks.some((s) => s.id === vars.subtaskId)
-                  ? {
-                      ...t,
-                      subtasks: t.subtasks.map((s) =>
-                        s.id === vars.subtaskId ? { ...s, due_date: vars.dueDate } : s
-                      ),
-                    }
-                  : t
-              ),
-              can_undo: true,
-              can_redo: false,
-            }
-          : old
-      )
-      return { previous }
+      if (isSubtaskOwned(queryClient, vars.subtaskId)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+          old
+            ? {
+                tasks: old.tasks.map((t) => applySubtaskDueDate(t, vars.subtaskId, vars.dueDate)),
+                can_undo: true,
+                can_redo: false,
+              }
+            : old
+        )
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map((t) => applySubtaskDueDate(t, vars.subtaskId, vars.dueDate)))
+      return { previous, shared: true }
     },
     onError: (_err, _vars, ctx) => {
-      rollback(queryClient, ctx?.previous)
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to update due date')
+    },
+  })
+}
+
+function applySubtaskText<T extends Task>(t: T, subtaskId: number, text: string): T {
+  if (!t.subtasks.some((s) => s.id === subtaskId)) return t
+  return { ...t, subtasks: t.subtasks.map((s) => (s.id === subtaskId ? { ...s, text } : s)) }
+}
+
+export function useSetSubtaskText() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ subtaskId, text }: { subtaskId: number; text: string }) =>
+      subtasksApi.setText(subtaskId, text),
+    onMutate: async (vars) => {
+      if (isSubtaskOwned(queryClient, vars.subtaskId)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+          old
+            ? {
+                tasks: old.tasks.map((t) => applySubtaskText(t, vars.subtaskId, vars.text)),
+                can_undo: true,
+                can_redo: false,
+              }
+            : old
+        )
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map((t) => applySubtaskText(t, vars.subtaskId, vars.text)))
+      return { previous, shared: true }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to rename subtask')
     },
   })
 }

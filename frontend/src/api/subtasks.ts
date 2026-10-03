@@ -6,6 +6,8 @@ export const subtasksApi = {
     api.post<SubtaskMutationResponse>(`/tasks/${taskId}/subtasks`, { text }),
   setDone: (subtaskId: number, done: boolean) =>
     api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}`, { done }),
+  setText: (subtaskId: number, text: string) =>
+    api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}/text`, { text }),
   setUrgent: (subtaskId: number, urgent: boolean) =>
     api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}/urgent`, { urgent }),
   setDueDate: (subtaskId: number, due_date: string | null) =>

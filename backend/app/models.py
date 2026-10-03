@@ -45,6 +45,10 @@ class SubtaskDoneUpdate(BaseModel):
     done: bool
 
 
+class SubtaskTextUpdate(BaseModel):
+    text: str
+
+
 class SubtaskUrgentUpdate(BaseModel):
     urgent: bool
 
