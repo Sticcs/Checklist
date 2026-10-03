@@ -50,7 +50,9 @@ def toggle_subtask_done(
     # value, and the item_checked notification below needs to gate on a
     # real false->true transition (see toggle_done's matching comment).
     prior_done = crud.get_subtask_done(subtask_id)
-    subtask, parent_done = crud.set_subtask_done(subtask_id, task_id, body.done, owner_username)
+    subtask, parent_done = crud.set_subtask_done(
+        subtask_id, task_id, body.done, owner_username, actor_username=current_user.username
+    )
     if subtask is not None and current_user.username != owner_username and body.done and not prior_done:
         owner_task = crud.get_task(task_id, owner_username)
         parent_text = owner_task["text"] if owner_task else ""
@@ -109,7 +111,7 @@ def update_subtask_assignee(
         # Don't trust the picker UI to only ever offer valid choices -
         # assignee must be the owner or a current collaborator.
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a collaborator on this assignment")
-    subtask = crud.set_subtask_assignee(subtask_id, assignee, owner_username)
+    subtask = crud.set_subtask_assignee(subtask_id, assignee, owner_username, actor_username=current_user.username)
     task = crud.get_task(task_id, owner_username)
     parent_done = bool(task["done"]) if task else False
     if subtask is not None and assignee is not None and assignee != current_user.username:
@@ -129,5 +131,5 @@ def remove_subtask(
     subtask_id: int, current_user: CurrentUser = Depends(get_current_user)
 ) -> SubtaskMutationResponse:
     task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
-    parent_done = crud.delete_subtask(subtask_id, task_id, owner_username)
+    parent_done = crud.delete_subtask(subtask_id, task_id, owner_username, actor_username=current_user.username)
     return SubtaskMutationResponse(subtask=None, parent_done=parent_done)

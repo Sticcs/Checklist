@@ -20,6 +20,8 @@ export const tasksApi = {
   setInProgress: (id: number, in_progress: boolean) =>
     api.patch<Task>(`/tasks/${id}/in-progress`, { in_progress }),
   setLinks: (id: number, links: LinkItem[]) => api.patch<Task>(`/tasks/${id}/links`, { links }),
+  setLinkHidden: (id: number, linkId: string, hidden: boolean) =>
+    api.patch<Task>(`/tasks/${id}/links/${linkId}/hidden`, { hidden }),
   setPages: (id: number, pages: WorkspacePage[]) => api.patch<Task>(`/tasks/${id}/pages`, { pages }),
   addPage: (id: number, title: string) => api.post<Task>(`/tasks/${id}/pages`, { title }),
   deletePage: (id: number, pageId: string) => api.delete<Task>(`/tasks/${id}/pages/${pageId}`),

@@ -77,6 +77,12 @@ tasks_table = Table(
     # built-in tabs (Shopping) and user-created ones (custom) use different
     # membership rules despite sharing the same lists_table/UI.
     Column("list_id", Integer, nullable=True),
+    # Who last touched this assignment (content, pages, links, subtasks, or
+    # done-state) and when - shown in AssignmentWorkspace's header. Set
+    # unconditionally, including the owner's own edits - "Last edited by
+    # you" is a fine, expected state, not noise.
+    Column("last_edited_by", String, nullable=True),
+    Column("last_edited_at", String, nullable=True),
 )
 
 subtasks_table = Table(
@@ -332,6 +338,14 @@ def init_db() -> None:
     if "list_id" not in existing_task_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN list_id INTEGER"))
+
+    if "last_edited_by" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN last_edited_by TEXT"))
+
+    if "last_edited_at" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN last_edited_at TEXT"))
 
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:

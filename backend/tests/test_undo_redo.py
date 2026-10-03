@@ -244,7 +244,8 @@ def test_undo_of_unrelated_action_preserves_links(guest_client):
 
     tasks = client.get("/api/tasks").json()["tasks"]
     reloaded = next(t for t in tasks if t["text"] == "Essay")
-    assert reloaded["links"] == [{"name": "Rubric", "url": "https://example.edu/rubric"}]
+    assert reloaded["links"][0]["name"] == "Rubric"
+    assert reloaded["links"][0]["url"] == "https://example.edu/rubric"
 
 
 def test_undo_redo_isolated_per_user(client):

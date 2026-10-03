@@ -127,15 +127,29 @@ class TaskInProgressUpdate(BaseModel):
 
 
 class LinkItem(BaseModel):
+    # Backfilled server-side (see crud._backfill_links) for any link saved
+    # before these existed - id/added_by default to a synthesized value and
+    # the task's owner, respectively, so this model's fields are never
+    # actually optional from the client's perspective.
+    id: str = ""
     name: str
     url: str
+    added_by: str = ""
+    hidden: bool = False
 
 
 class TaskLinksUpdate(BaseModel):
     # Whole-list replacement (like TaskNotesUpdate) rather than separate
     # add/remove endpoints - the frontend's "Add link"/remove-link buttons
-    # both just compute the next full list client-side and PATCH it.
+    # both just compute the next full list client-side and PATCH it. Hiding
+    # a link uses its own dedicated, ownership-gated endpoint instead (see
+    # LinkHiddenUpdate) since whole-list replacement can't enforce "only the
+    # adder may toggle this".
     links: list[LinkItem]
+
+
+class LinkHiddenUpdate(BaseModel):
+    hidden: bool
 
 
 class WorkspacePage(BaseModel):
@@ -205,6 +219,11 @@ class Task(BaseModel):
     # null for everything else, including Assessment/Shopping-category tasks
     # (which are still routed by category alone).
     list_id: int | None = None
+    # Who last touched this assignment (content, pages, links, subtasks, or
+    # done-state) and when - null until the first edit after this feature
+    # shipped. Shown in AssignmentWorkspace's header.
+    last_edited_by: str | None = None
+    last_edited_at: str | None = None
 
 
 class TasksResponse(BaseModel):

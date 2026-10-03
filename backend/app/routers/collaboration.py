@@ -134,4 +134,5 @@ def join_assignment(token: str, current_user: CurrentUser = Depends(get_current_
         # re-opening the same link later) is a no-op, not an error.
         crud.add_collaborator(task["id"], current_user.username)
     task["subtasks"] = crud.get_subtasks(task["id"])
+    task["links"] = crud.visible_links(task.get("links", []), current_user.username)
     return task

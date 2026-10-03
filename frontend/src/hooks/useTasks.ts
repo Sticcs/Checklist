@@ -134,6 +134,8 @@ export function useAddTask() {
         pages: [],
         subtasks: [],
         list_id: vars.listId ?? null,
+        last_edited_by: null,
+        last_edited_at: null,
         clientKey,
       }
       setTasksData(queryClient, (old) => ({
@@ -381,6 +383,28 @@ export function useSetTaskLinks() {
       if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
       else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to update links')
+    },
+  })
+}
+
+// Only the collaborator who added a link may hide/unhide it (enforced
+// server-side) - the response (via applyServerTask, defined below) is the
+// server's own filtered view, so a hidden link disappears from every other
+// collaborator's cache on their next fetch, not predicted client-side here.
+export function useSetLinkHidden() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, linkId, hidden }: { id: number; linkId: string; hidden: boolean }) =>
+      tasksApi.setLinkHidden(id, linkId, hidden),
+    onMutate: async (vars) => {
+      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
+      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+    },
+    onSuccess: (task) => applyServerTask(queryClient, task),
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to update link visibility')
     },
   })
 }

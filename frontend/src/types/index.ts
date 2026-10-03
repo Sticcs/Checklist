@@ -27,8 +27,11 @@ export interface Subtask {
 }
 
 export interface LinkItem {
+  id: string
   name: string
   url: string
+  added_by: string
+  hidden: boolean
 }
 
 export interface WorkspacePage {
@@ -64,6 +67,11 @@ export interface Task {
   // null for everything else, including Assessment/Shopping-category tasks
   // (which are still routed by category alone).
   list_id: number | null
+  // Who last touched this assignment (content, pages, links, subtasks, or
+  // done-state) and when - null until the first edit after this feature
+  // shipped. Shown in AssignmentWorkspace's header.
+  last_edited_by: string | null
+  last_edited_at: string | null
   clientKey?: string
 }
 

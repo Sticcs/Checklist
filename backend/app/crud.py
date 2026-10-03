@@ -139,13 +139,39 @@ def clear_website_link(username: str) -> None:
 
 # ----------------------------- Row -> dict helpers -----------------------------
 
+def new_link_id() -> str:
+    return f"link-{secrets.token_urlsafe(8)}"
+
+
+def _backfill_links(links: list[dict], owner_username: str) -> list[dict]:
+    """Lazy, self-healing migration for links saved before id/added_by/hidden
+    existed - links live in a JSON blob column, not a relational table, so
+    there's no ALTER TABLE to run. added_by defaults to the task's own
+    owner, the only identity known for a pre-existing link. Not persisted
+    back here - cheap enough to recompute on every read, and the first real
+    edit through the links endpoints saves the real values for good."""
+    for i, link in enumerate(links):
+        link.setdefault("id", f"link-{i}")
+        link.setdefault("added_by", owner_username)
+        link.setdefault("hidden", False)
+    return links
+
+
+def visible_links(links: list[dict], viewer_username: str) -> list[dict]:
+    """A hidden link stays visible only to the collaborator who added it -
+    everyone else's view (including the task owner, if someone else added
+    it) filters it out. Must be called on every Task-shaped response before
+    it reaches the client - see routers/tasks.py's _visible_task."""
+    return [link for link in links if not link.get("hidden") or link.get("added_by") == viewer_username]
+
+
 def _task_dict(row) -> dict:
     d = dict(row)
     d["done"] = bool(d["done"])
     d["pinned"] = bool(d["pinned"])
     d["urgent"] = bool(d["urgent"])
     d["in_progress"] = bool(d["in_progress"])
-    d["links"] = json.loads(d["links"]) if d.get("links") else []
+    d["links"] = _backfill_links(json.loads(d["links"]) if d.get("links") else [], d["username"])
     d["pages"] = json.loads(d["pages"]) if d.get("pages") else []
     return d
 
@@ -570,8 +596,8 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
         for t in state_tasks:
             conn.execute(
                 text(
-                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress, links, pages, share_token, list_id) "
-                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress, :links, :pages, :share_token, :list_id)"
+                    "INSERT INTO tasks (id, text, done, priority, category, due_date, created_at, username, pinned, position, notes, urgent, assigned_task_id, in_progress, links, pages, share_token, list_id, last_edited_by, last_edited_at) "
+                    "VALUES (:id, :text, :done, :priority, :category, :due_date, :created_at, :username, :pinned, :position, :notes, :urgent, :assigned_task_id, :in_progress, :links, :pages, :share_token, :list_id, :last_edited_by, :last_edited_at)"
                 ),
                 {
                     "id": t["id"],
@@ -620,6 +646,11 @@ def restore_state(state_tasks: list[dict], username: str) -> None:
                     # of their list (list_id reset to NULL) the moment any
                     # unrelated action gets undone.
                     "list_id": t.get("list_id"),
+                    # Same round-trip requirement as everything else above -
+                    # "Last edited by" would otherwise silently reset to
+                    # blank the moment any unrelated action gets undone.
+                    "last_edited_by": t.get("last_edited_by"),
+                    "last_edited_at": t.get("last_edited_at"),
                 },
             )
 
@@ -668,6 +699,17 @@ def restore_subtasks(state_subtasks: list[dict], username: str) -> None:
 
 # ----------------------------- Task mutations -----------------------------
 
+def _touch_last_edited(conn, task_id: int, actor_username: str) -> None:
+    """Called from inside the same transaction as a collaborative edit
+    (pages, links, done-state, subtasks) to record who touched this
+    assignment last and when - shown in AssignmentWorkspace's header.
+    Updated unconditionally, including the owner's own edits."""
+    conn.execute(
+        text("UPDATE tasks SET last_edited_by = :actor, last_edited_at = :at WHERE id = :id"),
+        {"actor": actor_username, "at": utc_now_iso(), "id": task_id},
+    )
+
+
 def add_task(
     task_text: str,
     priority: str,
@@ -706,7 +748,7 @@ def add_task(
     return get_task(new_id, username)
 
 
-def set_done(task_id: int, done: bool, username: str) -> dict | None:
+def set_done(task_id: int, done: bool, username: str, actor_username: str | None = None) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -736,6 +778,7 @@ def set_done(task_id: int, done: bool, username: str) -> dict | None:
                 text("UPDATE subtasks SET done = 0 WHERE task_id = :task_id"),
                 {"task_id": task_id},
             )
+        _touch_last_edited(conn, task_id, actor_username or username)
     log_activity(username, "completed" if done else "uncompleted", task_text, task_id=task_id)
     return get_task(task_id, username)
 
@@ -800,7 +843,9 @@ def set_task_in_progress(task_id: int, in_progress: bool, username: str) -> dict
     return get_task(task_id, username)
 
 
-def set_task_links(task_id: int, links: list[dict], username: str) -> dict | None:
+def set_task_links(
+    task_id: int, links: list[dict], username: str, actor_username: str | None = None
+) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -808,10 +853,41 @@ def set_task_links(task_id: int, links: list[dict], username: str) -> dict | Non
             text("UPDATE tasks SET links = :links WHERE id = :id AND username = :username"),
             {"links": json.dumps(links) if links else None, "id": task_id, "username": username},
         )
+        _touch_last_edited(conn, task_id, actor_username or username)
     return get_task(task_id, username)
 
 
-def set_task_pages(task_id: int, pages: list[dict], username: str) -> dict | None:
+def set_link_hidden(
+    task_id: int, link_id: str, hidden: bool, username: str, actor_username: str | None = None
+) -> dict | None:
+    """Toggle a single link's hidden flag. Caller (routers/tasks.py) must
+    already have confirmed the current user is that link's own added_by -
+    not re-checked here, same division of responsibility as
+    set_subtask_assignee's collaborator check."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT links FROM tasks WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        links = _backfill_links(json.loads(row["links"]) if row["links"] else [], username)
+        for link in links:
+            if link["id"] == link_id:
+                link["hidden"] = hidden
+        conn.execute(
+            text("UPDATE tasks SET links = :links WHERE id = :id AND username = :username"),
+            {"links": json.dumps(links) if links else None, "id": task_id, "username": username},
+        )
+        _touch_last_edited(conn, task_id, actor_username or username)
+    return get_task(task_id, username)
+
+
+def set_task_pages(
+    task_id: int, pages: list[dict], username: str, actor_username: str | None = None
+) -> dict | None:
     # Deliberately does NOT call undo.save_snapshot() - same reasoning as
     # set_task_notes: this fires on every debounced keystroke while typing
     # in a page, and snapshotting each of those would flood the 20-entry
@@ -826,10 +902,13 @@ def set_task_pages(task_id: int, pages: list[dict], username: str) -> dict | Non
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages) if pages else None, "id": task_id, "username": username},
         )
+        _touch_last_edited(conn, task_id, actor_username or username)
     return get_task(task_id, username)
 
 
-def add_task_page(task_id: int, title: str, username: str) -> dict | None:
+def add_task_page(
+    task_id: int, title: str, username: str, actor_username: str | None = None
+) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -845,10 +924,13 @@ def add_task_page(task_id: int, title: str, username: str) -> dict | None:
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages), "id": task_id, "username": username},
         )
+        _touch_last_edited(conn, task_id, actor_username or username)
     return get_task(task_id, username)
 
 
-def delete_task_page(task_id: int, page_id: str, username: str) -> dict | None:
+def delete_task_page(
+    task_id: int, page_id: str, username: str, actor_username: str | None = None
+) -> dict | None:
     """Refuses to delete the last remaining page - mirrors the frontend's
     existing pages.length<=1 guard (AssignmentWorkspace.tsx's deletePage),
     enforced here too since this is now reachable as its own endpoint."""
@@ -874,10 +956,13 @@ def delete_task_page(task_id: int, page_id: str, username: str) -> dict | None:
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages), "id": task_id, "username": username},
         )
+        _touch_last_edited(conn, task_id, actor_username or username)
     return get_task(task_id, username)
 
 
-def rename_task_page(task_id: int, page_id: str, title: str, username: str) -> dict | None:
+def rename_task_page(
+    task_id: int, page_id: str, title: str, username: str, actor_username: str | None = None
+) -> dict | None:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -895,6 +980,7 @@ def rename_task_page(task_id: int, page_id: str, title: str, username: str) -> d
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages), "id": task_id, "username": username},
         )
+        _touch_last_edited(conn, task_id, actor_username or username)
     return get_task(task_id, username)
 
 
@@ -1742,7 +1828,9 @@ def toggle_public_list_item(list_row: dict, item_id: int, done: bool) -> str | N
 
 # ----------------------------- Subtask mutations -----------------------------
 
-def add_subtask(task_id: int, subtask_text: str, username: str) -> tuple[dict, bool]:
+def add_subtask(
+    task_id: int, subtask_text: str, username: str, actor_username: str | None = None
+) -> tuple[dict, bool]:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -1757,13 +1845,16 @@ def add_subtask(task_id: int, subtask_text: str, username: str) -> tuple[dict, b
             text("UPDATE tasks SET done = 0 WHERE id = :id AND username = :username"),
             {"id": task_id, "username": username},
         )
+        _touch_last_edited(conn, task_id, actor_username or username)
         row = conn.execute(
             text("SELECT * FROM subtasks WHERE id = :id"), {"id": new_id}
         ).mappings().fetchone()
     return _subtask_dict(row), False
 
 
-def set_subtask_done(subtask_id: int, task_id: int, done: bool, username: str) -> tuple[dict | None, bool]:
+def set_subtask_done(
+    subtask_id: int, task_id: int, done: bool, username: str, actor_username: str | None = None
+) -> tuple[dict | None, bool]:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -1801,6 +1892,7 @@ def set_subtask_done(subtask_id: int, task_id: int, done: bool, username: str) -
                 text("SELECT done FROM tasks WHERE id = :id"), {"id": task_id}
             ).mappings().fetchone()
             parent_done = bool(task_row["done"]) if task_row else False
+        _touch_last_edited(conn, task_id, actor_username or username)
 
     return (_subtask_dict(row) if row else None), parent_done
 
@@ -1849,7 +1941,9 @@ def set_subtask_notes(subtask_id: int, notes: str) -> dict | None:
     return _subtask_dict(row) if row else None
 
 
-def set_subtask_assignee(subtask_id: int, assigned_username: str | None, username: str) -> dict | None:
+def set_subtask_assignee(
+    subtask_id: int, assigned_username: str | None, username: str, actor_username: str | None = None
+) -> dict | None:
     """Who a mini task in an Assignment workspace's own bare-bones task panel
     is assigned to - the owner, one of the assignment's current
     collaborators, or None to unassign. Caller (routers/subtasks.py) is
@@ -1865,10 +1959,15 @@ def set_subtask_assignee(subtask_id: int, assigned_username: str | None, usernam
         row = conn.execute(
             text("SELECT * FROM subtasks WHERE id = :id"), {"id": subtask_id}
         ).mappings().fetchone()
+        task_id = row["task_id"] if row else None
+        if task_id is not None:
+            _touch_last_edited(conn, task_id, actor_username or username)
     return _subtask_dict(row) if row else None
 
 
-def delete_subtask(subtask_id: int, task_id: int, username: str) -> bool:
+def delete_subtask(
+    subtask_id: int, task_id: int, username: str, actor_username: str | None = None
+) -> bool:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
@@ -1888,6 +1987,7 @@ def delete_subtask(subtask_id: int, task_id: int, username: str) -> bool:
         task_row = conn.execute(
             text("SELECT done FROM tasks WHERE id = :id"), {"id": task_id}
         ).mappings().fetchone()
+        _touch_last_edited(conn, task_id, actor_username or username)
 
     return bool(task_row["done"]) if task_row else False
 

@@ -2805,6 +2805,12 @@ kbd {
   opacity: 0.75;
 }
 
+.assignment-last-edited {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.55;
+}
+
 /* One continuous bar (like Google Docs/Word's own toolbar) - a single
    framed strip everything sits flush inside, rather than a row of
    individually-bordered pill buttons with visible gaps between them. */
@@ -3024,6 +3030,16 @@ body[data-theme='dark'] .assignment-add-link-btn {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Only ever rendered for the collaborator who hid their own link - everyone
+   else's view never includes a hidden link at all (filtered server-side). */
+.assignment-link-hidden {
+  opacity: 0.55;
+}
+
+.assignment-link-hidden a {
+  font-style: italic;
 }
 
 .assignment-links-list .icon-btn {

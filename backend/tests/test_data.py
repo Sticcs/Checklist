@@ -163,14 +163,16 @@ def test_export_then_import_round_trip_preserves_links(guest_client):
     )
 
     exported = client.get("/api/export").json()
-    assert exported["tasks"][0]["links"] == [{"name": "Rubric", "url": "https://example.edu/rubric"}]
+    assert exported["tasks"][0]["links"][0]["name"] == "Rubric"
+    assert exported["tasks"][0]["links"][0]["url"] == "https://example.edu/rubric"
 
     client.post("/api/tasks/clear-all")
     r = client.post("/api/import", json=exported)
     assert r.status_code == 200
 
     tasks = client.get("/api/tasks").json()["tasks"]
-    assert tasks[0]["links"] == [{"name": "Rubric", "url": "https://example.edu/rubric"}]
+    assert tasks[0]["links"][0]["name"] == "Rubric"
+    assert tasks[0]["links"][0]["url"] == "https://example.edu/rubric"
 
 
 def test_import_without_id_field_still_works(guest_client):

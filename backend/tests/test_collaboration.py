@@ -169,12 +169,15 @@ def test_collaborator_can_edit_links_and_pages(guest_client):
     client, _ = guest_client
     task = _add_task(client)
     token = client.post(f"/api/tasks/{task['id']}/share-link").json()["token"]
-    other, _ = _second_guest(client)
+    other, other_username = _second_guest(client)
     other.post(f"/api/assignments/join/{token}")
 
     r = other.patch(f"/api/tasks/{task['id']}/links", json={"links": [{"name": "Doc", "url": "https://x"}]})
     assert r.status_code == 200
-    assert r.json()["links"] == [{"name": "Doc", "url": "https://x"}]
+    link = r.json()["links"][0]
+    assert link["name"] == "Doc"
+    assert link["url"] == "https://x"
+    assert link["added_by"] == other_username
 
     r = other.patch(
         f"/api/tasks/{task['id']}/pages",

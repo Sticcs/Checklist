@@ -84,7 +84,12 @@ def test_set_links(guest_client):
         json={"links": [{"name": "Course site", "url": "https://example.edu/course"}]},
     )
     assert r.status_code == 200
-    assert r.json()["links"] == [{"name": "Course site", "url": "https://example.edu/course"}]
+    link = r.json()["links"][0]
+    assert link["name"] == "Course site"
+    assert link["url"] == "https://example.edu/course"
+    assert link["added_by"] == task["username"]
+    assert link["hidden"] is False
+    assert link["id"]
 
     # Whole-list replacement - removing a link means PATCHing without it.
     r = client.patch(f"/api/tasks/{task['id']}/links", json={"links": []})

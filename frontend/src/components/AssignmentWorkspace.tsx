@@ -10,6 +10,7 @@ import {
   useAddPage,
   useDeletePage,
   useRenamePage,
+  useSetLinkHidden,
   useSetTaskLinks,
   useSetTaskPages,
   useToggleDone,
@@ -160,6 +161,7 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   }, [])
 
   const setTaskLinks = useSetTaskLinks()
+  const setLinkHidden = useSetLinkHidden()
   const setTaskPages = useSetTaskPages()
   const addPageMutation = useAddPage()
   const deletePageMutation = useDeletePage()
@@ -632,7 +634,14 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     const name = linkName.trim()
     const url = linkUrl.trim()
     if (!name || !url) return
-    setTaskLinks.mutate({ id: task.id, links: [...task.links, { name, url: normalizeUrl(url) }] })
+    const newLink = {
+      id: `link-${crypto.randomUUID()}`,
+      name,
+      url: normalizeUrl(url),
+      added_by: user?.username ?? '',
+      hidden: false,
+    }
+    setTaskLinks.mutate({ id: task.id, links: [...task.links, newLink] })
     setLinkName('')
     setLinkUrl('')
     setLinksOpen(false)
@@ -640,6 +649,10 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
 
   const removeLink = (index: number) => {
     setTaskLinks.mutate({ id: task.id, links: task.links.filter((_, i) => i !== index) })
+  }
+
+  const toggleLinkHidden = (linkId: string, hidden: boolean) => {
+    setLinkHidden.mutate({ id: task.id, linkId, hidden })
   }
 
   // innerText (not innerHTML/textContent) so the copied text keeps its line
@@ -834,6 +847,11 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
             <p className={isSaving ? 'assignment-save-status saving' : 'assignment-save-status'}>
               {isSaving ? '💾 Saving…' : '✅ Saved'}
             </p>
+            {task.last_edited_by && (
+              <p className="assignment-last-edited">
+                ✏️ Last edited by {task.last_edited_by === user?.username ? 'you' : task.last_edited_by}
+              </p>
+            )}
           </div>
         </div>
 
@@ -1122,10 +1140,20 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
               {task.links.length > 0 && (
                 <ul className="assignment-links-list">
                   {task.links.map((link, i) => (
-                    <li key={`${link.url}-${i}`}>
+                    <li key={link.id} className={link.hidden ? 'assignment-link-hidden' : undefined}>
                       <a href={link.url} target="_blank" rel="noreferrer">
                         {link.name}
                       </a>
+                      {link.added_by === user?.username && (
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title={link.hidden ? 'Unhide link (others can see it again)' : 'Hide link from others'}
+                          onClick={() => toggleLinkHidden(link.id, !link.hidden)}
+                        >
+                          {link.hidden ? '🙈' : '👁️'}
+                        </button>
+                      )}
                       <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
                         ✕
                       </button>
