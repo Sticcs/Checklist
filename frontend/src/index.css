@@ -2415,74 +2415,22 @@ body[data-theme='dark'] .subtask-panel {
   padding: 0.1rem 0.4rem;
 }
 
-/* Hover/focus-reveal for a subtask row's due-date/urgent/edit/delete
-   actions - same collapsed-by-default/hover-or-focus-open shape as the
-   parent task row's own .task-reveal, just scoped separately since this is
-   a different row type. The done-toggle+text stay direct children of
-   .subtask-row, outside this, so they're always visible. .subtask-row's
-   own .focused state (set by clicking the row, see TaskListPage's focus
-   delegation) also opens it, giving touch/keyboard users without a real
-   :hover a way in. */
-.subtask-reveal {
-  flex-basis: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem;
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition: max-height 0.22s ease, opacity 0.15s ease, margin-top 0.22s ease;
-}
-
-.subtask-row:hover .subtask-reveal,
-.subtask-row:focus-within .subtask-reveal,
-.subtask-row.focused .subtask-reveal {
-  max-height: 3rem;
-  opacity: 1;
-  margin-top: 0.1rem;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .subtask-reveal {
-    transition: none;
-  }
-}
-
-/* Borderless "ghost" icon button, same treatment as the parent task row's
-   own .task-reveal .icon-btn - a plain .icon-btn otherwise draws the base
-   rule's square border/fill, which is exactly the boxy look this (and
-   .subtask-done-btn, the always-visible done-toggle outside the reveal)
-   is meant to get away from. */
-.subtask-reveal .icon-btn,
-.subtask-done-btn {
-  border: none;
-  background: transparent;
-  border-radius: 999px;
-  width: 1.8rem;
-  height: 1.8rem;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.88rem;
+.subtask-urgent-badge {
+  font-size: 0.78rem;
   flex-shrink: 0;
 }
 
-.subtask-reveal .icon-btn:hover,
-.subtask-done-btn:hover {
-  background: var(--badge-bg);
+/* A click-triggered "⋮" menu (due date/urgent/edit/delete), not a hover
+   reveal - reuses .compact-menu-btn/.compact-menu-popover's exact look
+   (see the compact row's own menu above), just needs its own position:
+   relative anchor since each subtask row has one. */
+.subtask-menu {
+  position: relative;
+  flex-shrink: 0;
 }
 
-body[data-theme='dark'] .subtask-reveal .icon-btn:not(.btn-primary),
-body[data-theme='dark'] .subtask-done-btn {
-  background: transparent;
-  border: none;
-}
-
-body[data-theme='dark'] .subtask-reveal .icon-btn:not(.btn-primary):hover,
-body[data-theme='dark'] .subtask-done-btn:hover {
-  background: var(--badge-bg);
+.subtask-menu-popover {
+  min-width: 10rem;
 }
 
 .subtask-add-form {

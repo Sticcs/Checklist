@@ -87,6 +87,21 @@ export function TaskCard({
   // workspace's page-tab rename.
   const [editingSubtaskId, setEditingSubtaskId] = useState<number | null>(null)
   const [editSubtaskDraft, setEditSubtaskDraft] = useState('')
+  // A per-subtask-row "⋮" menu (due date/urgent/edit/delete) - only one
+  // open at a time, so a single ref is enough (it only ever points at
+  // whichever row's popover is currently mounted, same shape as
+  // compactMenuRef/compactMenuOpen below).
+  const [openMenuSubtaskId, setOpenMenuSubtaskId] = useState<number | null>(null)
+  const subtaskMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (openMenuSubtaskId === null) return
+    const handler = (e: MouseEvent) => {
+      if (!subtaskMenuRef.current?.contains(e.target as Node)) setOpenMenuSubtaskId(null)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [openMenuSubtaskId])
   // Drives the compact-view subtask dropdown's animated reveal (see the
   // AnimatePresence around .compact-subtask-list below) - a plain CSS
   // :hover toggle can't animate an instant display:none/flex swap, so this
@@ -726,20 +741,13 @@ export function TaskCard({
                       .filter(Boolean)
                       .join(' ')}
                   >
-                    {/* A borderless icon-btn, not left as a plain .icon-btn -
-                        the base .icon-btn rule draws its own square
-                        border/fill, which read as out of place for the one
-                        control that's always visible on this row. Placed
-                        first, mirroring the parent task row's own checkbox
-                        being first. */}
-                    <button
-                      type="button"
-                      className="icon-btn subtask-done-btn"
+                    <input
+                      type="checkbox"
+                      className="task-done-checkbox small"
+                      checked={s.done}
                       title="Mark complete"
-                      onClick={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
-                    >
-                      {s.done ? '↩️' : '✔️'}
-                    </button>
+                      onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                    />
                     {editingSubtaskId === s.id ? (
                       <input
                         className="subtask-row-text-edit-input"
@@ -775,68 +783,99 @@ export function TaskCard({
                         )}
                       </span>
                     )}
-                    {/* Hover/focus-reveal, same collapsed-by-default shape as
-                        the parent task row's own .task-reveal - only the
-                        done-toggle+text stay always visible, everything else
-                        (due date, urgent, edit, delete) hides until you
-                        hover the row or tab/click into it. */}
-                    <div className="subtask-reveal" data-focus-exempt>
-                      <button
-                        type="button"
-                        className={s.due_date ? 'icon-btn btn-primary' : 'icon-btn'}
-                        aria-pressed={dueDatePickerSubtaskId === s.id}
-                        title="Set due date"
-                        onClick={() =>
-                          setDueDatePickerSubtaskId((prev) => (prev === s.id ? null : s.id))
-                        }
-                      >
-                        📅
-                      </button>
-                      {dueDatePickerSubtaskId === s.id && (
-                        <DateInput
-                          className="due-date-quick-input"
-                          value={s.due_date ?? ''}
-                          autoFocus
-                          onCommit={(next) => {
-                            setDueDatePickerSubtaskId(null)
-                            if (next === (s.due_date ?? '')) return
-                            setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: next || null })
-                          }}
-                        />
-                      )}
-                      {s.due_date && (
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          title="Clear due date"
-                          onClick={() => {
-                            setDueDatePickerSubtaskId((prev) => (prev === s.id ? null : prev))
-                            setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: null })
-                          }}
-                        >
-                          ✕
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className={s.urgent ? 'icon-btn btn-primary' : 'icon-btn'}
-                        aria-pressed={s.urgent}
-                        title={s.urgent ? 'Unmark urgent' : 'Mark urgent'}
-                        onClick={() => setSubtaskUrgent.mutate({ subtaskId: s.id, urgent: !s.urgent })}
-                      >
+                    {s.urgent && (
+                      <span className="subtask-urgent-badge" title="Urgent">
                         🔥
-                      </button>
+                      </span>
+                    )}
+                    {/* A click-triggered menu, not a hover reveal - same
+                        ⋮-button/popover/click-outside-closes pattern as the
+                        compact row's own .compact-menu-popover above, just
+                        parameterized by subtask id (subtaskMenuRef only ever
+                        points at whichever row's popover is currently open,
+                        since just one can be open at a time). */}
+                    <div
+                      className="subtask-menu"
+                      ref={openMenuSubtaskId === s.id ? subtaskMenuRef : undefined}
+                    >
                       <button
                         type="button"
-                        className="icon-btn"
-                        title="Edit"
-                        onClick={() => startEditingSubtask(s.id, s.text)}
+                        className="compact-menu-btn"
+                        aria-expanded={openMenuSubtaskId === s.id}
+                        title="More actions"
+                        onClick={() => setOpenMenuSubtaskId((prev) => (prev === s.id ? null : s.id))}
                       >
-                        ✏️
+                        ⋮
                       </button>
-                      <button type="button" className="icon-btn" title="Delete" onClick={() => deleteSubtask.mutate(s.id)}>
-                        🗑️
-                      </button>
+                      {openMenuSubtaskId === s.id && (
+                        <div className="compact-menu-popover subtask-menu-popover" data-focus-exempt>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setDueDatePickerSubtaskId((prev) => (prev === s.id ? null : s.id))
+                            }}
+                          >
+                            📅 {s.due_date ? `Due ${s.due_date}` : 'Set due date'}
+                          </button>
+                          {dueDatePickerSubtaskId === s.id && (
+                            <DateInput
+                              className="due-date-quick-input"
+                              value={s.due_date ?? ''}
+                              autoFocus
+                              onCommit={(next) => {
+                                setDueDatePickerSubtaskId(null)
+                                setOpenMenuSubtaskId(null)
+                                if (next === (s.due_date ?? '')) return
+                                setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: next || null })
+                              }}
+                            />
+                          )}
+                          {s.due_date && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setDueDatePickerSubtaskId((prev) => (prev === s.id ? null : prev))
+                                setOpenMenuSubtaskId(null)
+                                setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: null })
+                              }}
+                            >
+                              ✕ Clear due date
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuSubtaskId(null)
+                              setSubtaskUrgent.mutate({ subtaskId: s.id, urgent: !s.urgent })
+                            }}
+                          >
+                            🔥 {s.urgent ? 'Unmark urgent' : 'Mark urgent'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuSubtaskId(null)
+                              startEditingSubtask(s.id, s.text)
+                            }}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuSubtaskId(null)
+                              deleteSubtask.mutate(s.id)
+                            }}
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <AnimatePresence mode="popLayout">
                       {focusedSubtaskId === s.id && (
