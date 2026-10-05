@@ -15,15 +15,7 @@ import {
   useSetTaskPages,
   useToggleDone,
 } from '../hooks/useTasks'
-import {
-  useAddSubtask,
-  useDeleteSubtask,
-  useSetSubtaskAssignee,
-  useSetSubtaskDueDate,
-  useSetSubtaskText,
-  useSetSubtaskUrgent,
-  useToggleSubtask,
-} from '../hooks/useSubtasks'
+import { useAddSubtask, useDeleteSubtask, useSetSubtaskAssignee, useToggleSubtask } from '../hooks/useSubtasks'
 import {
   useAssignmentPresence,
   useCollaborators,
@@ -41,7 +33,6 @@ import { useSyncEditableContent } from '../hooks/useSyncEditableContent'
 import { useDraftText, readPendingDraft, writePendingDraft, clearPendingDraft } from '../hooks/useDraftText'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { ChatButton } from './ChatButton'
-import { DateInput } from './DateInput'
 
 const NEW_DOC_URL = 'https://docs.google.com/document/u/0/create?usp=docs_home&ths=true'
 
@@ -180,9 +171,6 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const toggleSubtask = useToggleSubtask()
   const deleteSubtask = useDeleteSubtask()
   const setSubtaskAssignee = useSetSubtaskAssignee()
-  const setSubtaskUrgent = useSetSubtaskUrgent()
-  const setSubtaskDueDate = useSetSubtaskDueDate()
-  const setSubtaskText = useSetSubtaskText()
 
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -434,28 +422,6 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
         },
       }
     )
-  }
-
-  // Mini task panel subtask-row actions (due date, urgent, inline text edit)
-  // - mirrors TaskCard's own subtask row (due-date-picker-open id, urgent
-  // toggle) plus a double-click-to-edit affordance following the same
-  // pattern as startRenamingPage/commitRenamePage above, since subtask text
-  // has never been editable after creation anywhere in this app before.
-  const [subtaskDueDatePickerId, setSubtaskDueDatePickerId] = useState<number | null>(null)
-  const [editingSubtaskId, setEditingSubtaskId] = useState<number | null>(null)
-  const [editSubtaskDraft, setEditSubtaskDraft] = useState('')
-
-  const startEditingSubtask = (subtaskId: number, text: string) => {
-    setEditingSubtaskId(subtaskId)
-    setEditSubtaskDraft(text)
-  }
-
-  const commitEditSubtask = () => {
-    const id = editingSubtaskId
-    const text = editSubtaskDraft.trim()
-    setEditingSubtaskId(null)
-    if (id === null || !text) return
-    setSubtaskText.mutate({ subtaskId: id, text })
   }
 
   const notesField = useFormattableEditable(onChange)
@@ -1230,126 +1196,42 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
                         .filter(Boolean)
                         .join(' ')}
                     >
-                      {/* A borderless icon-btn, not a native checkbox - a
-                          native <input type=checkbox> always draws its own
-                          square frame no matter how it's styled, which read
-                          as out of place next to this row's otherwise
-                          borderless controls. Matches the done-toggle in the
-                          main checklist's own subtask-row (TaskCard) exactly.
-                          Kept as a direct child of .assignment-task-row,
-                          outside the reveal - the only thing besides the
-                          text that's always visible. */}
+                      <input
+                        type="checkbox"
+                        className="task-done-checkbox small"
+                        checked={s.done}
+                        title="Mark complete"
+                        onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                      />
+                      <span className="assignment-task-text">{s.text}</span>
+                      {hasCollaborators && (
+                        <select
+                          className="assignment-task-assignee"
+                          title="Assign to"
+                          value={s.assigned_username ?? ''}
+                          onChange={(e) =>
+                            setSubtaskAssignee.mutate({
+                              subtaskId: s.id,
+                              assignedUsername: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">Unassigned</option>
+                          {assigneeOptions.map((username) => (
+                            <option key={username} value={username}>
+                              {username === task.username ? `${username} (owner)` : username}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <button
                         type="button"
-                        className="icon-btn assignment-task-done-btn"
-                        title="Mark complete"
-                        onClick={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
+                        className="assignment-task-delete-btn"
+                        title="Delete"
+                        onClick={() => deleteSubtask.mutate(s.id)}
                       >
-                        {s.done ? '↩️' : '✔️'}
+                        ✕
                       </button>
-                      {editingSubtaskId === s.id ? (
-                        <input
-                          className="assignment-task-text-edit-input"
-                          value={editSubtaskDraft}
-                          autoFocus
-                          onChange={(e) => setEditSubtaskDraft(e.target.value)}
-                          onBlur={commitEditSubtask}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') commitEditSubtask()
-                            if (e.key === 'Escape') setEditingSubtaskId(null)
-                          }}
-                        />
-                      ) : (
-                        <span
-                          className="assignment-task-text"
-                          onDoubleClick={() => startEditingSubtask(s.id, s.text)}
-                        >
-                          {s.text}
-                        </span>
-                      )}
-                      {/* Hover/focus-reveal, same pattern as TaskCard's own
-                          .task-reveal - only the done-toggle+text stay always
-                          visible, everything else (due date, urgent, edit,
-                          assignee, delete) hides until you hover the row or
-                          tab/click into it (:focus-within covers keyboard/
-                          touch, since this row has no separate "focused"
-                          concept to key off the way TaskCard does). */}
-                      <div className="assignment-task-reveal" data-focus-exempt>
-                        <button
-                          type="button"
-                          className={s.due_date ? 'icon-btn btn-primary' : 'icon-btn'}
-                          aria-pressed={subtaskDueDatePickerId === s.id}
-                          title="Set due date"
-                          onClick={() => setSubtaskDueDatePickerId((prev) => (prev === s.id ? null : s.id))}
-                        >
-                          📅
-                        </button>
-                        {subtaskDueDatePickerId === s.id && (
-                          <DateInput
-                            className="due-date-quick-input"
-                            value={s.due_date ?? ''}
-                            autoFocus
-                            onCommit={(next) => {
-                              setSubtaskDueDatePickerId(null)
-                              if (next === (s.due_date ?? '')) return
-                              setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: next || null })
-                            }}
-                          />
-                        )}
-                        {s.due_date && (
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            title="Clear due date"
-                            onClick={() => {
-                              setSubtaskDueDatePickerId((prev) => (prev === s.id ? null : prev))
-                              setSubtaskDueDate.mutate({ subtaskId: s.id, dueDate: null })
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className={s.urgent ? 'icon-btn btn-primary' : 'icon-btn'}
-                          aria-pressed={s.urgent}
-                          title={s.urgent ? 'Unmark urgent' : 'Mark urgent'}
-                          onClick={() => setSubtaskUrgent.mutate({ subtaskId: s.id, urgent: !s.urgent })}
-                        >
-                          🔥
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          title="Edit"
-                          onClick={() => startEditingSubtask(s.id, s.text)}
-                        >
-                          ✏️
-                        </button>
-                        {hasCollaborators && (
-                          <select
-                            className="assignment-task-assignee"
-                            title="Assign to"
-                            value={s.assigned_username ?? ''}
-                            onChange={(e) =>
-                              setSubtaskAssignee.mutate({
-                                subtaskId: s.id,
-                                assignedUsername: e.target.value || null,
-                              })
-                            }
-                          >
-                            <option value="">Unassigned</option>
-                            {assigneeOptions.map((username) => (
-                              <option key={username} value={username}>
-                                {username === task.username ? `${username} (owner)` : username}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <button type="button" className="icon-btn" title="Delete" onClick={() => deleteSubtask.mutate(s.id)}>
-                          🗑️
-                        </button>
-                      </div>
                     </motion.li>
                   ))}
                 </AnimatePresence>

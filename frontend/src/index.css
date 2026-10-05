@@ -2404,6 +2404,87 @@ body[data-theme='dark'] .subtask-panel {
   white-space: nowrap;
 }
 
+.subtask-row-text-edit-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+}
+
+/* Hover/focus-reveal for a subtask row's due-date/urgent/edit/delete
+   actions - same collapsed-by-default/hover-or-focus-open shape as the
+   parent task row's own .task-reveal, just scoped separately since this is
+   a different row type. The done-toggle+text stay direct children of
+   .subtask-row, outside this, so they're always visible. .subtask-row's
+   own .focused state (set by clicking the row, see TaskListPage's focus
+   delegation) also opens it, giving touch/keyboard users without a real
+   :hover a way in. */
+.subtask-reveal {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.22s ease, opacity 0.15s ease, margin-top 0.22s ease;
+}
+
+.subtask-row:hover .subtask-reveal,
+.subtask-row:focus-within .subtask-reveal,
+.subtask-row.focused .subtask-reveal {
+  max-height: 3rem;
+  opacity: 1;
+  margin-top: 0.1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subtask-reveal {
+    transition: none;
+  }
+}
+
+/* Borderless "ghost" icon button, same treatment as the parent task row's
+   own .task-reveal .icon-btn - a plain .icon-btn otherwise draws the base
+   rule's square border/fill, which is exactly the boxy look this (and
+   .subtask-done-btn, the always-visible done-toggle outside the reveal)
+   is meant to get away from. */
+.subtask-reveal .icon-btn,
+.subtask-done-btn {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.88rem;
+  flex-shrink: 0;
+}
+
+.subtask-reveal .icon-btn:hover,
+.subtask-done-btn:hover {
+  background: var(--badge-bg);
+}
+
+body[data-theme='dark'] .subtask-reveal .icon-btn:not(.btn-primary),
+body[data-theme='dark'] .subtask-done-btn {
+  background: transparent;
+  border: none;
+}
+
+body[data-theme='dark'] .subtask-reveal .icon-btn:not(.btn-primary):hover,
+body[data-theme='dark'] .subtask-done-btn:hover {
+  background: var(--badge-bg);
+}
+
 .subtask-add-form {
   display: flex;
   gap: 0.4rem;
@@ -3446,10 +3527,6 @@ body[data-theme='dark'] .assignment-add-link-btn {
 
 .assignment-task-row {
   display: flex;
-  /* wrap, not nowrap - .assignment-task-reveal's flex-basis:100% needs a
-     wrapping flex container to actually drop onto its own line, same as
-     TaskCard's .task-content/.task-reveal pairing. */
-  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.85rem;
@@ -3471,17 +3548,6 @@ body[data-theme='dark'] .assignment-add-link-btn {
 .assignment-task-row.done .assignment-task-text {
   text-decoration: line-through;
   opacity: 0.55;
-}
-
-.assignment-task-text-edit-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  font: inherit;
-  color: var(--text-primary);
-  background: var(--card-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: 6px;
-  padding: 0.1rem 0.4rem;
 }
 
 .assignment-task-assignee {
@@ -3513,75 +3579,26 @@ body[data-theme='dark'] .assignment-add-link-btn {
   }
 }
 
-/* Hover/focus-reveal for a subtask row's due-date/urgent/edit/assignee/
-   delete actions - same collapsed-by-default/hover-or-focus-open shape as
-   TaskCard's own .task-reveal, just scoped separately (not reusing that
-   class) since this is a different row type. The done-toggle+text stay
-   direct children of .assignment-task-row, outside this, so they're always
-   visible. flex-wrap since this row now has enough controls (plus an
-   occasional date-picker popup) to need a second line on narrow widths -
-   max-height is generous enough to cover that without clipping. */
-.assignment-task-reveal {
-  flex-basis: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  max-height: 0;
+.assignment-task-delete-btn {
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
   opacity: 0;
-  overflow: hidden;
-  transition: max-height 0.22s ease, opacity 0.15s ease, margin-top 0.22s ease;
+  transition: opacity 0.12s ease;
 }
 
-.assignment-task-row:hover .assignment-task-reveal,
-.assignment-task-row:focus-within .assignment-task-reveal {
-  max-height: 6rem;
-  opacity: 1;
-  margin-top: 0.15rem;
+.assignment-task-row:hover .assignment-task-delete-btn {
+  opacity: 0.7;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .assignment-task-reveal {
-    transition: none;
-  }
-}
-
-/* Borderless "ghost" icon button, identical ruleset to .task-reveal
-   .icon-btn (index.css's TaskCard section) - copied rather than shared
-   since the two live in different CSS regions for different components.
-   .assignment-task-done-btn (the always-visible done-toggle, outside the
-   reveal - see "only keep the complete subtask button outside" in the
-   JSX comment) gets the same treatment: a plain <button class="icon-btn">
-   still draws the base .icon-btn rule's square border/fill otherwise,
-   which is exactly the boxy look this was meant to get away from. */
-.assignment-task-reveal .icon-btn,
-.assignment-task-done-btn {
-  border: none;
-  background: transparent;
-  border-radius: 999px;
-  width: 1.9rem;
-  height: 1.9rem;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.92rem;
-}
-
-.assignment-task-reveal .icon-btn:hover,
-.assignment-task-done-btn:hover {
-  background: var(--badge-bg);
-}
-
-body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary),
-body[data-theme='dark'] .assignment-task-done-btn {
-  background: transparent;
-  border: none;
-}
-
-body[data-theme='dark'] .assignment-task-reveal .icon-btn:not(.btn-primary):hover,
-body[data-theme='dark'] .assignment-task-done-btn:hover {
-  background: var(--badge-bg);
+.assignment-task-delete-btn:hover {
+  opacity: 1 !important;
+  background: rgba(231, 76, 60, 0.2);
 }
 
 /* ----------------------------- Compact view ----------------------------- */
