@@ -9,7 +9,9 @@ import {
   setSharedData,
   useAddPage,
   useDeletePage,
+  usePageVersions,
   useRenamePage,
+  useRestorePageVersion,
   useSetLinkHidden,
   useSetTaskLinks,
   useSetTaskPages,
@@ -166,6 +168,7 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const addPageMutation = useAddPage()
   const deletePageMutation = useDeletePage()
   const renamePageMutation = useRenamePage()
+  const restorePageVersion = useRestorePageVersion()
   const toggleDone = useToggleDone()
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
@@ -177,17 +180,20 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   const isDesktopApp = useIsDesktopApp()
   const isOwner = task.username === user?.username
 
-  // Refreshes this one assignment every 20s while the workspace stays open -
+  // Refreshes this one assignment every 4s while the workspace stays open -
   // the app's whole collaboration model is "refresh to see" (no websockets/
   // SSE), so this is the entire mechanism by which a collaborator's edits
   // eventually show up for the owner (and vice versa) without a manual
-  // reload. The pages-sync effect below already guards against a poll
-  // clobbering in-progress local typing (it only re-syncs from a changed
-  // task.pages prop when !dirty.current), so no extra guard is needed here.
+  // reload. 4s (not the original 20s) is the fastest a plain poll can feel
+  // close to "live" without being wasteful - a real push mechanism would
+  // need websockets/SSE, a bigger change than this app has ever taken on.
+  // The pages-sync effect below already guards against a poll clobbering
+  // in-progress local typing (it only re-syncs from a changed task.pages
+  // prop when !dirty.current), so no extra guard is needed here.
   const pollQuery = useQuery({
     queryKey: ['assignment-poll', task.id],
     queryFn: () => collaborationApi.getTask(task.id),
-    refetchInterval: 20_000,
+    refetchInterval: 4_000,
     refetchIntervalInBackground: false,
   })
 
@@ -231,15 +237,15 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
   // routers/subtasks.py's assignee endpoint) - this is just what the picker
   // offers, not the actual authorization boundary.
   const assigneeOptions = [task.username, ...(collaboratorsQuery.data?.collaborators.map((c) => c.username) ?? [])]
-  // With nobody else on the assignment, the picker can only ever offer
-  // "the owner" - not a real choice, so it's hidden entirely rather than
-  // shown as a dropdown with one option that does nothing useful.
-  const hasCollaborators = (collaboratorsQuery.data?.collaborators.length ?? 0) > 0
 
   // "Who's online right now" - see useAssignmentPresence's own comment for
-  // why this is a separate poll (same 20s cadence) rather than folded into
-  // pollQuery above.
-  const presenceQuery = useAssignmentPresence(task.id)
+  // why this is a separate poll (same 4s cadence) rather than folded into
+  // pollQuery above. activePageId is declared further down (it depends on
+  // `pages`, defined later in this component) - activePageIdRef lets this
+  // hook read its latest value on every poll tick without needing to be
+  // declared after it.
+  const activePageIdRef = useRef<string | null>(null)
+  const presenceQuery = useAssignmentPresence(task.id, () => activePageIdRef.current)
   const onlineUsers = presenceQuery.data?.online ?? []
 
   // Get-or-create is idempotent server-side, so re-fetching every time the
@@ -297,9 +303,38 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     () => pendingPages ?? (task.pages.length > 0 ? task.pages : [defaultFirstPage(task.notes)])
   )
   const [activePageId, setActivePageId] = useState(() => pages[0].id)
+  activePageIdRef.current = activePageId
   const [draft, setDraft] = useState(() => pages[0].content)
   const dirty = useRef(pendingPages !== null)
   const online = useOnlineStatus()
+
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const pageVersionsQuery = usePageVersions(task.id, activePageId, historyOpen)
+
+  useEffect(() => {
+    if (!historyOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.assignment-history')) setHistoryOpen(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [historyOpen])
+
+  const restoreVersion = (versionId: number) => {
+    restorePageVersion.mutate(
+      { id: task.id, pageId: activePageId, versionId },
+      {
+        onSuccess: (updated) => {
+          setPages(updated.pages)
+          setDraft(updated.pages.find((p) => p.id === activePageId)?.content ?? '')
+          dirty.current = false
+          clearPendingDraft(pagesDraftKey)
+          setHistoryOpen(false)
+          toast('⏪ Restored that version')
+        },
+      }
+    )
+  }
 
   useEffect(() => {
     if (dirty.current) return
@@ -682,6 +717,27 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
     addSubtask.mutate({ taskId: task.id, text })
   }
 
+  // "+ Custom..." in the assignee dropdown below - a free-text name for
+  // someone who isn't a tracked collaborator account (e.g. they're not
+  // using the app at all), rather than only ever picking from real
+  // usernames. Backend accepts any non-empty string here; it only sends a
+  // notification when the name happens to match a real owner/collaborator.
+  const [customAssigneeSubtaskId, setCustomAssigneeSubtaskId] = useState<number | null>(null)
+  const [customAssigneeDraft, setCustomAssigneeDraft] = useState('')
+
+  const startCustomAssignee = (subtaskId: number, current: string | null) => {
+    setCustomAssigneeSubtaskId(subtaskId)
+    setCustomAssigneeDraft(current ?? '')
+  }
+
+  const commitCustomAssignee = () => {
+    const id = customAssigneeSubtaskId
+    const name = customAssigneeDraft.trim()
+    setCustomAssigneeSubtaskId(null)
+    if (id === null || !name) return
+    setSubtaskAssignee.mutate({ subtaskId: id, assignedUsername: name })
+  }
+
   const remainingMs = task.due_date ? deadlineFor(task.due_date).getTime() - now.getTime() : null
   // dirty is a plain ref (not state) since the debounce logic above already
   // needs it to read as current-not-stale inside effects/timeouts - reading
@@ -730,12 +786,38 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
         <div className="assignment-top-actions">
           <div className="assignment-top-actions-left">
             {onlineUsers.length > 0 && (
-              <div className="assignment-presence-row" title={onlineUsers.join(', ')}>
-                {onlineUsers.map((username) => (
-                  <span key={username} className="assignment-presence-avatar" title={username}>
-                    {username.slice(0, 1)}
-                  </span>
-                ))}
+              <div className="assignment-presence-row">
+                {/* Clicking someone's bubble jumps to whichever page they
+                    last reported being on (see the presence heartbeat's
+                    page_id) - a poll-based approximation of "follow their
+                    cursor," refreshed every 4s rather than truly live
+                    (this app has no websocket/SSE push to track an actual
+                    moving caret). Only clickable when that page still
+                    exists locally - a stale page_id (they since deleted
+                    it, or it just hasn't synced here yet) is a no-op. */}
+                {onlineUsers.map((entry) => {
+                  const targetPage = entry.page_id ? pages.find((p) => p.id === entry.page_id) : undefined
+                  const isSelf = entry.username === user?.username
+                  const clickable = !isSelf && !!targetPage
+                  return (
+                    <button
+                      key={entry.username}
+                      type="button"
+                      className={clickable ? 'assignment-presence-avatar clickable' : 'assignment-presence-avatar'}
+                      disabled={!clickable}
+                      title={
+                        isSelf
+                          ? `${entry.username} (you)`
+                          : targetPage
+                            ? `${entry.username} - on "${targetPage.title}" - click to jump there`
+                            : entry.username
+                      }
+                      onClick={() => targetPage && switchPage(targetPage.id)}
+                    >
+                      {entry.username.slice(0, 1)}
+                    </button>
+                  )
+                })}
               </div>
             )}
             {task.assigned_task_id !== null && (
@@ -1144,19 +1226,26 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
                       <a href={link.url} target="_blank" rel="noreferrer">
                         {link.name}
                       </a>
-                      {link.added_by === user?.username && (
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          title={link.hidden ? 'Unhide link (others can see it again)' : 'Hide link from others'}
-                          onClick={() => toggleLinkHidden(link.id, !link.hidden)}
-                        >
-                          {link.hidden ? '🙈' : '👁️'}
+                      {/* Grouped so justify-content:space-between on the <li>
+                          only ever sees two flex children (the link, this
+                          group) - with hide/unhide as its own third sibling,
+                          space-between spread it out to the middle of the
+                          row instead of docking it next to delete. */}
+                      <div className="assignment-link-actions">
+                        {link.added_by === user?.username && (
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            title={link.hidden ? 'Unhide link (others can see it again)' : 'Hide link from others'}
+                            onClick={() => toggleLinkHidden(link.id, !link.hidden)}
+                          >
+                            {link.hidden ? '🙈' : '👁️'}
+                          </button>
+                        )}
+                        <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
+                          ✕
                         </button>
-                      )}
-                      <button type="button" className="icon-btn" title="Remove link" onClick={() => removeLink(i)}>
-                        ✕
-                      </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -1204,24 +1293,49 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
                         onChange={() => toggleSubtask.mutate({ subtaskId: s.id, done: !s.done })}
                       />
                       <span className="assignment-task-text">{s.text}</span>
-                      {hasCollaborators && (
+                      {customAssigneeSubtaskId === s.id ? (
+                        <input
+                          className="assignment-task-assignee-custom-input"
+                          placeholder="Name…"
+                          value={customAssigneeDraft}
+                          autoFocus
+                          onChange={(e) => setCustomAssigneeDraft(e.target.value)}
+                          onBlur={commitCustomAssignee}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitCustomAssignee()
+                            if (e.key === 'Escape') setCustomAssigneeSubtaskId(null)
+                          }}
+                        />
+                      ) : (
                         <select
                           className="assignment-task-assignee"
                           title="Assign to"
                           value={s.assigned_username ?? ''}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              startCustomAssignee(s.id, s.assigned_username)
+                              return
+                            }
                             setSubtaskAssignee.mutate({
                               subtaskId: s.id,
                               assignedUsername: e.target.value || null,
                             })
-                          }
+                          }}
                         >
                           <option value="">Unassigned</option>
+                          {/* A custom (free-text, non-collaborator) assignee
+                              isn't in assigneeOptions, so it needs its own
+                              synthesized entry or the <select> would show
+                              as blank instead of reflecting the real value. */}
+                          {s.assigned_username && !assigneeOptions.includes(s.assigned_username) && (
+                            <option value={s.assigned_username}>{s.assigned_username}</option>
+                          )}
                           {assigneeOptions.map((username) => (
                             <option key={username} value={username}>
                               {username === task.username ? `${username} (owner)` : username}
                             </option>
                           ))}
+                          <option value="__custom__">+ Custom…</option>
                         </select>
                       )}
                       <button
@@ -1285,6 +1399,41 @@ export function AssignmentWorkspace({ task, onBack, onShowParentTask }: Props) {
               <button type="button" className="assignment-page-tab-add" title="Add a page" onClick={addPage}>
                 + Page
               </button>
+              <div className="assignment-history">
+                <button
+                  type="button"
+                  className="assignment-page-tab-add"
+                  title="Version history for this page"
+                  onClick={() => setHistoryOpen((open) => !open)}
+                >
+                  🕐 History
+                </button>
+                {historyOpen && (
+                  <div className="assignment-history-popover compact-menu-popover" data-focus-exempt>
+                    {pageVersionsQuery.isLoading ? (
+                      <p className="status-message">Loading…</p>
+                    ) : !pageVersionsQuery.data?.versions.length ? (
+                      <p className="status-message">
+                        No earlier versions yet - they show up here once you've made a few edits.
+                      </p>
+                    ) : (
+                      <ul className="assignment-history-list">
+                        {pageVersionsQuery.data.versions.map((v) => (
+                          <li key={v.id}>
+                            <div className="assignment-history-entry-meta">
+                              <span>{new Date(v.created_at).toLocaleString()}</span>
+                              <span className="assignment-history-entry-actor">{v.actor_username}</span>
+                            </div>
+                            <button type="button" className="btn-secondary" onClick={() => restoreVersion(v.id)}>
+                              Restore
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div

@@ -229,6 +229,22 @@ notifications_table = Table(
     Column("read_at", String, nullable=True),
 )
 
+page_versions_table = Table(
+    "page_versions",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("task_id", Integer, nullable=False),
+    # References WorkspacePage.id (tasks.pages JSON blob), not a FK - same
+    # no-FK convention as the rest of this schema. Entries are pruned when
+    # their page is deleted (see crud.delete_task_page) and capped per page
+    # (see crud._maybe_record_page_version) so this never grows unbounded.
+    Column("page_id", String, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("content", Text, nullable=False),
+    Column("created_at", String, nullable=False),
+    Column("actor_username", String, nullable=False),
+)
+
 _engine = None
 
 

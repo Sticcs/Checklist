@@ -67,11 +67,29 @@ def test_stranger_cannot_assign(guest_client):
     assert r.status_code == 404
 
 
-def test_cannot_assign_to_a_non_collaborator(guest_client):
+def test_can_assign_to_a_free_text_custom_name(guest_client):
+    """The "+ Custom..." picker option lets someone type any name, not just
+    pick a real collaborator - this field was never an authorization
+    boundary, just a label (plus an optional notification target for a
+    real account - see test_custom_assignee_sends_no_notification)."""
     client, _ = guest_client
     task = _add_task(client)
     subtask_id = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Sub 1"}).json()["subtask"]["id"]
-    _, stranger_username = _second_guest(client)
 
-    r = client.patch(f"/api/subtasks/{subtask_id}/assignee", json={"assigned_username": stranger_username})
-    assert r.status_code == 400
+    r = client.patch(f"/api/subtasks/{subtask_id}/assignee", json={"assigned_username": "Mom"})
+    assert r.status_code == 200
+    assert r.json()["subtask"]["assigned_username"] == "Mom"
+
+
+def test_custom_assignee_sends_no_notification(guest_client):
+    from app import crud
+
+    client, _ = guest_client
+    task = _add_task(client)
+    subtask_id = client.post(f"/api/tasks/{task['id']}/subtasks", json={"text": "Sub 1"}).json()["subtask"]["id"]
+
+    r = client.patch(f"/api/subtasks/{subtask_id}/assignee", json={"assigned_username": "Mom"})
+    assert r.status_code == 200
+    # "Mom" isn't a real account, so there's nowhere to deliver a
+    # notification - confirm none was ever written for that name.
+    assert crud.list_notifications("Mom") == []

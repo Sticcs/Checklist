@@ -29,17 +29,20 @@ export function useRevokeShareLink() {
   })
 }
 
-// "Who's online in this assignment right now" - polls the same 20s cadence
-// as AssignmentWorkspace's own task-data poll. Each call both reports the
-// caller's own presence and returns everyone else's (see the backend's
-// touchPresence/presence.py) - not named useOnlineStatus/online, which
-// already exist elsewhere in this app for browser network connectivity
-// (hooks/useOnlineStatus.ts), a completely different concept.
-export function useAssignmentPresence(taskId: number) {
+// "Who's online in this assignment right now, and which page are they on" -
+// polls the same 4s cadence as AssignmentWorkspace's own task-data poll.
+// Each call both reports the caller's own presence+page and returns
+// everyone else's (see the backend's touchPresence/presence.py) - not
+// named useOnlineStatus/online, which already exist elsewhere in this app
+// for browser network connectivity (hooks/useOnlineStatus.ts), a completely
+// different concept. pageId is read fresh on every poll tick (passed as a
+// function, not a value) so switching pages between ticks doesn't need to
+// wait for this hook to re-render with a new prop.
+export function useAssignmentPresence(taskId: number, getPageId: () => string | null) {
   return useQuery({
     queryKey: ['assignment-presence', taskId],
-    queryFn: () => collaborationApi.touchPresence(taskId),
-    refetchInterval: 20_000,
+    queryFn: () => collaborationApi.touchPresence(taskId, getPageId()),
+    refetchInterval: 4_000,
     refetchIntervalInBackground: false,
   })
 }

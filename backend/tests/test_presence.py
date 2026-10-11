@@ -26,7 +26,7 @@ def test_heartbeat_reports_self_online(guest_client):
 
     r = client.post(f"/api/tasks/{task['id']}/presence")
     assert r.status_code == 200
-    assert r.json()["online"] == [owner]
+    assert r.json()["online"] == [{"username": owner, "page_id": None}]
 
 
 def test_two_collaborators_see_each_other_online(guest_client):
@@ -39,7 +39,17 @@ def test_two_collaborators_see_each_other_online(guest_client):
     client.post(f"/api/tasks/{task['id']}/presence")
     r = other.post(f"/api/tasks/{task['id']}/presence")
 
-    assert set(r.json()["online"]) == {owner, other_username}
+    usernames = {entry["username"] for entry in r.json()["online"]}
+    assert usernames == {owner, other_username}
+
+
+def test_heartbeat_reports_current_page(guest_client):
+    client, owner = guest_client
+    task = _add_task(client)
+
+    r = client.post(f"/api/tasks/{task['id']}/presence", json={"page_id": "page-abc"})
+    assert r.status_code == 200
+    assert r.json()["online"] == [{"username": owner, "page_id": "page-abc"}]
 
 
 def test_presence_requires_assignment_access(guest_client):
@@ -63,7 +73,7 @@ def test_stale_heartbeat_drops_out_of_online_list(guest_client, monkeypatch):
     task = _add_task(client)
 
     client.post(f"/api/tasks/{task['id']}/presence")
-    assert owner in presence.online_users(task["id"])
+    assert owner in [entry["username"] for entry in presence.online_users(task["id"])]
 
     # Simulate the online window elapsing without waiting for it in real
     # time - same monkeypatch-a-constant style as the rest of this suite.

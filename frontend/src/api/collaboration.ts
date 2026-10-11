@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Collaborator, ShareLink, Task } from '../types'
+import type { Collaborator, PresenceEntry, ShareLink, Task } from '../types'
 
 export const collaborationApi = {
   createShareLink: (taskId: number) => api.post<ShareLink>(`/tasks/${taskId}/share-link`),
@@ -14,5 +14,9 @@ export const collaborationApi = {
   getTask: (taskId: number) => api.get<Task>(`/tasks/${taskId}`),
   // POST, not GET - it has a side effect (records a heartbeat) each call,
   // matching the backend's own reasoning (see routers/collaboration.py).
-  touchPresence: (taskId: number) => api.post<{ online: string[] }>(`/tasks/${taskId}/presence`),
+  // pageId reports which page the caller is currently on, so other viewers
+  // can "follow" roughly where someone is (see AssignmentWorkspace's
+  // presence-avatar click handler).
+  touchPresence: (taskId: number, pageId: string | null) =>
+    api.post<{ online: PresenceEntry[] }>(`/tasks/${taskId}/presence`, { page_id: pageId }),
 }

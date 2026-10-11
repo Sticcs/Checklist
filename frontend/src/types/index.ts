@@ -40,6 +40,17 @@ export interface WorkspacePage {
   content: string
 }
 
+export interface PageVersionSummary {
+  id: number
+  title: string
+  created_at: string
+  actor_username: string
+}
+
+export interface PageVersionDetail extends PageVersionSummary {
+  content: string
+}
+
 export interface Task {
   id: number
   text: string
@@ -162,6 +173,11 @@ export interface ShareLink {
 export interface Collaborator {
   username: string
   added_at: string
+}
+
+export interface PresenceEntry {
+  username: string
+  page_id: string | null
 }
 
 export interface ChatMessage {

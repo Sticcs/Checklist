@@ -3071,6 +3071,13 @@ body[data-theme='dark'] .assignment-add-link-btn {
   font-style: italic;
 }
 
+.assignment-link-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
 .assignment-links-list .icon-btn {
   flex-shrink: 0;
   padding: 0.15rem 0.35rem;
@@ -3225,6 +3232,7 @@ body[data-theme='dark'] .assignment-add-link-btn {
   color: white;
   font-size: 0.72rem;
   font-weight: 700;
+  font-family: inherit;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3232,6 +3240,26 @@ body[data-theme='dark'] .assignment-add-link-btn {
   flex-shrink: 0;
   border: 2px solid var(--glass-bg);
   margin-left: -0.5rem;
+  padding: 0;
+  cursor: default;
+  transition: transform 0.12s ease;
+}
+
+/* Not semantically "disabled" when non-clickable (self, or no page to jump
+   to yet) - just not interactive right now - so it shouldn't get the
+   app-wide button:disabled dimming. Needs the :disabled pseudo-class
+   repeated in the selector (not just .assignment-presence-avatar alone) to
+   out-specificity that global rule. */
+.assignment-presence-avatar:disabled {
+  opacity: 1;
+}
+
+.assignment-presence-avatar.clickable {
+  cursor: pointer;
+}
+
+.assignment-presence-avatar.clickable:hover {
+  transform: scale(1.12);
 }
 
 .assignment-presence-avatar:first-child {
@@ -3435,6 +3463,67 @@ body[data-theme='dark'] .assignment-add-link-btn {
   background: rgba(128, 128, 128, 0.12);
 }
 
+.assignment-history {
+  position: relative;
+}
+
+.assignment-history-popover {
+  width: 18rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.assignment-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.assignment-history-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 8px;
+  background: var(--card-bg);
+  font-size: 0.78rem;
+}
+
+.assignment-history-entry-meta {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.assignment-history-entry-meta span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assignment-history-entry-actor {
+  opacity: 0.6;
+  font-size: 0.72rem;
+}
+
+.assignment-history-list .btn-secondary {
+  /* .compact-menu-popover button (reused for this popover's base look)
+     sets width:100%, meant for its own single-column list of full-width
+     action rows - fighting this flex row's layout here, where the button
+     sits beside the meta text instead of stacked under it. */
+  width: auto;
+  flex-shrink: 0;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
 /* ----------------------------- Assignment tasks panel ----------------------------- */
 /* A small, deliberately bare-bones task list scoped to one assignment - see
    AssignmentWorkspace. Sits below the links panel, in the same left column
@@ -3510,6 +3599,17 @@ body[data-theme='dark'] .assignment-add-link-btn {
   cursor: pointer;
 }
 
+.assignment-task-assignee-custom-input {
+  flex-shrink: 0;
+  width: 6.5rem;
+  border: 1px solid var(--glass-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+}
+
 @media (max-width: 700px) {
   /* iOS Safari auto-zooms the whole page in when a focused form control's
      computed font-size is under 16px - this select (0.7rem = 11.2px
@@ -3522,6 +3622,7 @@ body[data-theme='dark'] .assignment-add-link-btn {
      of silently losing to whichever rule happens to be declared later in
      the file. */
   .assignment-task-assignee,
+  .assignment-task-assignee-custom-input,
   .assignment-task-add-form input {
     font-size: 16px;
   }

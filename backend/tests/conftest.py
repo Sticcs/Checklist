@@ -26,6 +26,7 @@ def client(tmp_path, monkeypatch):
     # an earlier test could otherwise make an unrelated task look "already
     # online" in a completely different test.
     presence._last_seen.clear()
+    presence._page.clear()
 
     with TestClient(app) as c:
         yield c

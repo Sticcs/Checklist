@@ -388,17 +388,38 @@ export function useSetTaskLinks() {
 }
 
 // Only the collaborator who added a link may hide/unhide it (enforced
-// server-side) - the response (via applyServerTask, defined below) is the
-// server's own filtered view, so a hidden link disappears from every other
-// collaborator's cache on their next fetch, not predicted client-side here.
+// server-side), and the response (via applyServerTask, defined below) is
+// the server's own filtered view - but the toggling user is always that
+// link's own adder, so it never disappears from *their* view regardless of
+// hidden state, which makes a plain client-side toggle safe to predict
+// immediately instead of waiting on the round-trip the way the pages
+// endpoints below have to (those predict a server-generated id, this only
+// flips a bool on an id the client already has).
+function applyLinkHidden<T extends Task>(t: T, linkId: string, hidden: boolean): T {
+  if (!t.links.some((l) => l.id === linkId)) return t
+  return { ...t, links: t.links.map((l) => (l.id === linkId ? { ...l, hidden } : l)) }
+}
+
 export function useSetLinkHidden() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, linkId, hidden }: { id: number; linkId: string; hidden: boolean }) =>
       tasksApi.setLinkHidden(id, linkId, hidden),
     onMutate: async (vars) => {
-      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
-      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+      if (isOwnedTask(queryClient, vars.id)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        setTasksData(queryClient, (old) => ({
+          tasks: old.tasks.map((t) => (t.id === vars.id ? applyLinkHidden(t, vars.linkId, vars.hidden) : t)),
+          can_undo: true,
+          can_redo: false,
+        }))
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) =>
+        old.map((t) => (t.id === vars.id ? applyLinkHidden(t, vars.linkId, vars.hidden) : t))
+      )
+      return { previous, shared: true }
     },
     onSuccess: (task) => applyServerTask(queryClient, task),
     onError: (_err, _vars, ctx) => {
@@ -508,6 +529,36 @@ export function useRenamePage() {
       if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
       else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
       toast.error('Failed to rename page')
+    },
+  })
+}
+
+// Version-history panel's list fetch - only enabled while the panel is
+// actually open (see AssignmentWorkspace's historyOpen), not polled
+// alongside everything else, since it's only relevant while someone is
+// actively looking at it.
+export function usePageVersions(taskId: number, pageId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['page-versions', taskId, pageId],
+    queryFn: () => tasksApi.listPageVersions(taskId, pageId),
+    enabled,
+  })
+}
+
+export function useRestorePageVersion() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, pageId, versionId }: { id: number; pageId: string; versionId: number }) =>
+      tasksApi.restorePageVersion(id, pageId, versionId),
+    onMutate: async (vars) => {
+      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
+      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+    },
+    onSuccess: (task) => applyServerTask(queryClient, task),
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to restore version')
     },
   })
 }

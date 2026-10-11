@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app import crud, presence
 from app.config import settings
-from app.models import CollaboratorsResponse, PresenceResponse, ShareLinkResponse, Task
+from app.models import CollaboratorsResponse, PresenceHeartbeat, PresenceResponse, ShareLinkResponse, Task
 from app.paths import is_desktop_build
 from app.security import CurrentUser, get_current_user
 
@@ -85,15 +85,20 @@ def get_collaborators(task_id: int, current_user: CurrentUser = Depends(get_curr
 
 
 @router.post("/api/tasks/{task_id}/presence", response_model=PresenceResponse)
-def touch_presence(task_id: int, current_user: CurrentUser = Depends(get_current_user)) -> PresenceResponse:
+def touch_presence(
+    task_id: int,
+    body: PresenceHeartbeat = PresenceHeartbeat(),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> PresenceResponse:
     # POST, not GET - it has a side effect (records a heartbeat) each call,
     # matching every other "record something" endpoint in this app (share-
     # link create, join, notifications/read). AssignmentWorkspace calls this
-    # on the same ~20s cadence as its own task-data poll, so a single call
-    # both reports "I'm here" and answers "who else is here" - see
-    # presence.py for why an in-memory dict (not a DB table) is fine here.
+    # on the same ~4s cadence as its own task-data poll, so a single call
+    # both reports "I'm here, on this page" and answers "who else is here,
+    # and on which page" - see presence.py for why an in-memory dict (not a
+    # DB table) is fine here.
     _require_assignment_access(task_id, current_user.username)
-    presence.heartbeat(task_id, current_user.username)
+    presence.heartbeat(task_id, current_user.username, body.page_id)
     return PresenceResponse(online=presence.online_users(task_id))
 
 

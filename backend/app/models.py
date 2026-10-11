@@ -180,6 +180,29 @@ class PageRename(BaseModel):
     title: str
 
 
+class PageVersionSummary(BaseModel):
+    # No `content` here deliberately - the version-history panel's list
+    # fetch stays lightweight; a version's full content is only fetched
+    # (see PageVersionDetail) when the user actually opens one to preview
+    # or restore it.
+    id: int
+    title: str
+    created_at: str
+    actor_username: str
+
+
+class PageVersionListResponse(BaseModel):
+    versions: list[PageVersionSummary]
+
+
+class PageVersionDetail(BaseModel):
+    id: int
+    title: str
+    content: str
+    created_at: str
+    actor_username: str
+
+
 class TaskDueDateUpdate(BaseModel):
     due_date: str | None = None
 
@@ -256,10 +279,25 @@ class CollaboratorsResponse(BaseModel):
     collaborators: list[CollaboratorEntry]
 
 
+class PresenceHeartbeat(BaseModel):
+    # Which page (see WorkspacePage.id) the caller is currently looking at -
+    # null if they're not in any particular page (e.g. the links/task panel
+    # has focus). Lets other viewers "follow" roughly where someone is, the
+    # same way AssignmentWorkspace's own poll already lets edits show up
+    # without a push mechanism - see presence.py's heartbeat.
+    page_id: str | None = None
+
+
+class PresenceEntry(BaseModel):
+    username: str
+    page_id: str | None = None
+
+
 class PresenceResponse(BaseModel):
-    # Every username currently active on this assignment, including the
-    # caller themself - see presence.py's heartbeat/online_users.
-    online: list[str]
+    # Everyone currently active on this assignment, including the caller
+    # themself, and which page each of them last reported being on - see
+    # presence.py's heartbeat/online_users.
+    online: list[PresenceEntry]
 
 
 # ----------------------------- Assignment chat -----------------------------

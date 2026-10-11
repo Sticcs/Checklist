@@ -7,6 +7,8 @@ from app.models import (
     MarkAllCompletedResponse,
     PageCreate,
     PageRename,
+    PageVersionDetail,
+    PageVersionListResponse,
     SubtaskCreate,
     SubtaskMutationResponse,
     Task,
@@ -305,6 +307,39 @@ def rename_page(
     task = crud.rename_task_page(
         task_id, page_id, body.title, owner_task["username"], actor_username=current_user.username
     )
+    task["subtasks"] = crud.get_subtasks(task_id)
+    return _visible_task(task, current_user.username)
+
+
+@router.get("/{task_id}/pages/{page_id}/versions", response_model=PageVersionListResponse)
+def list_page_versions(
+    task_id: int, page_id: str, current_user: CurrentUser = Depends(get_current_user)
+) -> PageVersionListResponse:
+    _require_task_access(task_id, current_user.username)
+    return PageVersionListResponse(versions=crud.list_page_versions(task_id, page_id, current_user.username))
+
+
+@router.get("/{task_id}/pages/{page_id}/versions/{version_id}", response_model=PageVersionDetail)
+def get_page_version(
+    task_id: int, page_id: str, version_id: int, current_user: CurrentUser = Depends(get_current_user)
+) -> PageVersionDetail:
+    _require_task_access(task_id, current_user.username)
+    version = crud.get_page_version(task_id, page_id, version_id, current_user.username)
+    if version is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Version not found")
+    return version
+
+
+@router.post("/{task_id}/pages/{page_id}/versions/{version_id}/restore", response_model=Task)
+def restore_page_version(
+    task_id: int, page_id: str, version_id: int, current_user: CurrentUser = Depends(get_current_user)
+) -> Task:
+    owner_task = _require_task_access(task_id, current_user.username)
+    task = crud.restore_page_version(
+        task_id, page_id, version_id, owner_task["username"], actor_username=current_user.username
+    )
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Version not found")
     task["subtasks"] = crud.get_subtasks(task_id)
     return _visible_task(task, current_user.username)
 

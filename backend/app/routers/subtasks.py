@@ -128,14 +128,18 @@ def update_subtask_assignee(
     # remove_subtask already are (see _require_owning_task_access).
     task_id, owner_username = _require_owning_task_access(subtask_id, current_user.username)
     assignee = body.assigned_username
-    if assignee is not None and assignee != owner_username and not crud.is_collaborator(task_id, assignee):
-        # Don't trust the picker UI to only ever offer valid choices -
-        # assignee must be the owner or a current collaborator.
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a collaborator on this assignment")
+    # Any non-empty string is accepted, not just the owner or a current
+    # collaborator - the picker's "+ Custom..." option lets someone type a
+    # free-text name (e.g. a person not using the app at all) instead of
+    # only ever picking a real account. This field was never an
+    # authorization boundary (it's just a label + optional notification
+    # target - see is_real_recipient below), so there's nothing to
+    # validate here beyond "not blank".
+    is_real_recipient = assignee is not None and (assignee == owner_username or crud.is_collaborator(task_id, assignee))
     subtask = crud.set_subtask_assignee(subtask_id, assignee, owner_username, actor_username=current_user.username)
     task = crud.get_task(task_id, owner_username)
     parent_done = bool(task["done"]) if task else False
-    if subtask is not None and assignee is not None and assignee != current_user.username:
+    if subtask is not None and is_real_recipient and assignee is not None and assignee != current_user.username:
         parent_text = task["text"] if task else ""
         crud.create_notification(
             assignee,

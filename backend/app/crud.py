@@ -885,6 +885,55 @@ def set_link_hidden(
     return get_task(task_id, username)
 
 
+# Version history coalesces rapid edits into one entry per this many
+# seconds per (page, actor) pair, rather than one per debounced autosave
+# tick - otherwise the history would read like a keystroke log instead of
+# the kind of meaningful checkpoints most doc editors show. Within the
+# window, a recent-enough entry from the same actor is left exactly as it
+# was (a checkpoint has to stay frozen at the moment it captured, or
+# restoring it would just hand back whatever's already on screen) - the
+# save is simply skipped, not merged into it.
+PAGE_VERSION_GAP_SECONDS = 600
+PAGE_VERSIONS_PER_PAGE_CAP = 50
+
+
+def _maybe_record_page_version(conn, task_id: int, page: dict, actor_username: str, force: bool = False) -> None:
+    last = conn.execute(
+        text(
+            "SELECT id, created_at, actor_username FROM page_versions "
+            "WHERE task_id = :task_id AND page_id = :page_id ORDER BY id DESC LIMIT 1"
+        ),
+        {"task_id": task_id, "page_id": page["id"]},
+    ).mappings().fetchone()
+    now = datetime.now(timezone.utc)
+    if not force and last is not None and last["actor_username"] == actor_username:
+        elapsed = (now - datetime.fromisoformat(last["created_at"])).total_seconds()
+        if elapsed < PAGE_VERSION_GAP_SECONDS:
+            return
+    conn.execute(
+        text(
+            "INSERT INTO page_versions (task_id, page_id, title, content, created_at, actor_username) "
+            "VALUES (:task_id, :page_id, :title, :content, :created_at, :actor_username)"
+        ),
+        {
+            "task_id": task_id,
+            "page_id": page["id"],
+            "title": page.get("title", ""),
+            "content": page.get("content", ""),
+            "created_at": utc_now_iso(),
+            "actor_username": actor_username,
+        },
+    )
+    conn.execute(
+        text(
+            "DELETE FROM page_versions WHERE task_id = :task_id AND page_id = :page_id AND id NOT IN ("
+            "SELECT id FROM page_versions WHERE task_id = :task_id AND page_id = :page_id "
+            "ORDER BY id DESC LIMIT :cap)"
+        ),
+        {"task_id": task_id, "page_id": page["id"], "cap": PAGE_VERSIONS_PER_PAGE_CAP},
+    )
+
+
 def set_task_pages(
     task_id: int, pages: list[dict], username: str, actor_username: str | None = None
 ) -> dict | None:
@@ -898,11 +947,26 @@ def set_task_pages(
     # does snapshot.
     engine = get_engine()
     with engine.begin() as conn:
+        old_row = conn.execute(
+            text("SELECT pages FROM tasks WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+        old_content_by_id = {
+            p["id"]: p.get("content", "")
+            for p in (json.loads(old_row["pages"]) if old_row and old_row["pages"] else [])
+        }
         conn.execute(
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages) if pages else None, "id": task_id, "username": username},
         )
         _touch_last_edited(conn, task_id, actor_username or username)
+        actor = actor_username or username
+        for page in pages:
+            # Only an already-existing page whose content actually changed -
+            # a brand-new page's first save has nothing to diff against yet,
+            # and versioning an empty/just-created page isn't meaningful.
+            if page["id"] in old_content_by_id and page.get("content", "") != old_content_by_id[page["id"]]:
+                _maybe_record_page_version(conn, task_id, page, actor)
     return get_task(task_id, username)
 
 
@@ -956,6 +1020,14 @@ def delete_task_page(
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages), "id": task_id, "username": username},
         )
+        # A deleted page's history goes with it - undoing the deletion (see
+        # undo.py) restores the page itself but not its old version
+        # history, same trade-off this app already makes for chat/presence
+        # data that isn't part of the tasks/subtasks undo snapshot.
+        conn.execute(
+            text("DELETE FROM page_versions WHERE task_id = :task_id AND page_id = :page_id"),
+            {"task_id": task_id, "page_id": page_id},
+        )
         _touch_last_edited(conn, task_id, actor_username or username)
     return get_task(task_id, username)
 
@@ -976,6 +1048,83 @@ def rename_task_page(
         for p in pages:
             if p["id"] == page_id:
                 p["title"] = title
+        conn.execute(
+            text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
+            {"pages": json.dumps(pages), "id": task_id, "username": username},
+        )
+        _touch_last_edited(conn, task_id, actor_username or username)
+    return get_task(task_id, username)
+
+
+def list_page_versions(task_id: int, page_id: str, username: str) -> list[dict]:
+    """Summaries only (no content - that's a separate, potentially large
+    fetch, see get_page_version) for the version-history panel's list."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, title, created_at, actor_username FROM page_versions "
+                "WHERE task_id = :task_id AND page_id = :page_id ORDER BY id DESC"
+            ),
+            {"task_id": task_id, "page_id": page_id},
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def get_page_version(task_id: int, page_id: str, version_id: int, username: str) -> dict | None:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT id, title, content, created_at, actor_username FROM page_versions "
+                "WHERE id = :version_id AND task_id = :task_id AND page_id = :page_id"
+            ),
+            {"version_id": version_id, "task_id": task_id, "page_id": page_id},
+        ).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def restore_page_version(
+    task_id: int, page_id: str, version_id: int, username: str, actor_username: str | None = None
+) -> dict | None:
+    """Overwrites the page's current content with an old version's - a
+    genuine one-shot action (unlike the debounced set_task_pages), so it
+    snapshots for undo like add/delete/rename_task_page do (the immediate
+    safety net for "oops, undo that restore"). Also checkpoints whatever
+    was live *before* the overwrite (force=True) - without this, content
+    that was still within the coalescing window (never frozen as its own
+    checkpoint since it was merely "current") would become unreachable
+    through the history list the moment it's overwritten, leaving undo as
+    the only way back, and only until it ages out of the 20-entry stack."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        version = conn.execute(
+            text(
+                "SELECT content FROM page_versions "
+                "WHERE id = :version_id AND task_id = :task_id AND page_id = :page_id"
+            ),
+            {"version_id": version_id, "task_id": task_id, "page_id": page_id},
+        ).mappings().fetchone()
+        if version is None:
+            return None
+        row = conn.execute(
+            text("SELECT pages, notes FROM tasks WHERE id = :id AND username = :username"),
+            {"id": task_id, "username": username},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        pages = _effective_pages(row["pages"], row["notes"])
+        restored_page = None
+        for p in pages:
+            if p["id"] == page_id:
+                actor = actor_username or username
+                if p.get("content", "") != version["content"]:
+                    _maybe_record_page_version(conn, task_id, p, actor, force=True)
+                p["content"] = version["content"]
+                restored_page = p
+        if restored_page is None:
+            return None
         conn.execute(
             text("UPDATE tasks SET pages = :pages WHERE id = :id AND username = :username"),
             {"pages": json.dumps(pages), "id": task_id, "username": username},

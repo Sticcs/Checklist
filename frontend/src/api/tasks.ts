@@ -1,5 +1,14 @@
 import { api } from './client'
-import type { MarkAllCompletedResponse, ClearResponse, LinkItem, Task, TasksResponse, WorkspacePage } from '../types'
+import type {
+  MarkAllCompletedResponse,
+  ClearResponse,
+  LinkItem,
+  PageVersionDetail,
+  PageVersionSummary,
+  Task,
+  TasksResponse,
+  WorkspacePage,
+} from '../types'
 
 export const tasksApi = {
   list: () => api.get<TasksResponse>('/tasks'),
@@ -27,6 +36,12 @@ export const tasksApi = {
   deletePage: (id: number, pageId: string) => api.delete<Task>(`/tasks/${id}/pages/${pageId}`),
   renamePage: (id: number, pageId: string, title: string) =>
     api.patch<Task>(`/tasks/${id}/pages/${pageId}`, { title }),
+  listPageVersions: (id: number, pageId: string) =>
+    api.get<{ versions: PageVersionSummary[] }>(`/tasks/${id}/pages/${pageId}/versions`),
+  getPageVersion: (id: number, pageId: string, versionId: number) =>
+    api.get<PageVersionDetail>(`/tasks/${id}/pages/${pageId}/versions/${versionId}`),
+  restorePageVersion: (id: number, pageId: string, versionId: number) =>
+    api.post<Task>(`/tasks/${id}/pages/${pageId}/versions/${versionId}/restore`),
   setDueDate: (id: number, due_date: string | null) => api.patch<Task>(`/tasks/${id}/due-date`, { due_date }),
   setListId: (id: number, list_id: number) => api.patch<Task>(`/tasks/${id}/list`, { list_id }),
   assign: (id: number, assigned_task_id: number | null) =>
