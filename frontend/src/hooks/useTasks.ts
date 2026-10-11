@@ -468,11 +468,15 @@ export function useSetTaskPages() {
 // Structural page edits (add/delete/rename) - unlike useSetTaskPages above,
 // these go through the normal beginOptimisticUpdate/pushUndoSnapshot path
 // (so Ctrl+Z actually restores a deleted or renamed page), since each is a
-// genuine one-shot action, not a per-keystroke autosave. The resulting
-// `pages` array isn't predicted client-side (unlike most optimistic
-// mutations in this file) - onSuccess just writes back the task the server
-// actually returned, which already has the real new page id (add) or the
-// post-delete/rename array, rather than duplicating that logic here.
+// genuine one-shot action, not a per-keystroke autosave. onSuccess always
+// writes back the task the server actually returned (the authoritative
+// post-add/delete/rename `pages` array, with the real server-generated id
+// for a new page) - but onMutate *also* predicts the change immediately, the
+// same way every other structural mutation in this file does, so the page
+// tab bar updates the instant you click instead of waiting on the round
+// trip. Page tabs have no AnimatePresence/key-based mount animation (unlike
+// tasks/subtasks), so a temp id swapping for the real one on success is a
+// plain instant DOM update, not a flicker risk worth a clientKey for.
 function applyServerTask(queryClient: QueryClient, task: Task) {
   if (isOwnedTask(queryClient, task.id)) {
     setTasksData(queryClient, (old) => ({ ...old, tasks: old.tasks.map((t) => (t.id === task.id ? task : t)) }))
@@ -481,13 +485,43 @@ function applyServerTask(queryClient: QueryClient, task: Task) {
   }
 }
 
+// Mirrors AssignmentWorkspace's own defaultFirstPage/backend's
+// _effective_pages: a task whose `pages` column has never actually been
+// saved (every brand-new assignment, until its first structural page edit
+// or debounced content save) reports pages:[] from the server, with "Page
+// 1" only synthesized client-side in local component state - never written
+// back to this cache. Predicting an add/rename against the raw (possibly
+// still-empty) t.pages would silently drop or no-op against that implicit
+// page; this reproduces the same synthesis so the optimistic update
+// matches what the user already sees on screen.
+function effectivePages(t: Task): WorkspacePage[] {
+  return t.pages.length > 0 ? t.pages : [{ id: 'page-1', title: 'Page 1', content: t.notes ?? '' }]
+}
+
+function applyOptimisticPageChange(
+  queryClient: QueryClient,
+  taskId: number,
+  apply: (t: Task) => Task
+): Promise<{ previous: TasksResponse | Task[] | undefined; shared: boolean }> {
+  if (isOwnedTask(queryClient, taskId)) {
+    return beginOptimisticUpdate(queryClient).then((previous) => {
+      setTasksData(queryClient, (old) => ({ ...old, tasks: old.tasks.map((t) => (t.id === taskId ? apply(t) : t)) }))
+      return { previous, shared: false }
+    })
+  }
+  return beginSharedOptimisticUpdate(queryClient).then((previous) => {
+    setSharedData(queryClient, (old) => old.map((t) => (t.id === taskId ? apply(t) : t)))
+    return { previous, shared: true }
+  })
+}
+
 export function useAddPage() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, title }: { id: number; title: string }) => tasksApi.addPage(id, title),
     onMutate: async (vars) => {
-      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
-      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+      const tempPage: WorkspacePage = { id: `temp-page-${Date.now()}`, title: vars.title, content: '' }
+      return applyOptimisticPageChange(queryClient, vars.id, (t) => ({ ...t, pages: [...effectivePages(t), tempPage] }))
     },
     onSuccess: (task) => applyServerTask(queryClient, task),
     onError: (_err, _vars, ctx) => {
@@ -503,8 +537,13 @@ export function useDeletePage() {
   return useMutation({
     mutationFn: ({ id, pageId }: { id: number; pageId: string }) => tasksApi.deletePage(id, pageId),
     onMutate: async (vars) => {
-      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
-      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+      // Mirrors the backend's own refusal - optimistically removing the
+      // last page would show an empty tab bar for a moment before the
+      // server's refusal response puts it right back.
+      return applyOptimisticPageChange(queryClient, vars.id, (t) => {
+        const pages = effectivePages(t)
+        return pages.length > 1 ? { ...t, pages: pages.filter((p) => p.id !== vars.pageId) } : { ...t, pages }
+      })
     },
     onSuccess: (task) => applyServerTask(queryClient, task),
     onError: (_err, _vars, ctx) => {
@@ -521,8 +560,10 @@ export function useRenamePage() {
     mutationFn: ({ id, pageId, title }: { id: number; pageId: string; title: string }) =>
       tasksApi.renamePage(id, pageId, title),
     onMutate: async (vars) => {
-      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
-      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+      return applyOptimisticPageChange(queryClient, vars.id, (t) => ({
+        ...t,
+        pages: effectivePages(t).map((p) => (p.id === vars.pageId ? { ...p, title: vars.title } : p)),
+      }))
     },
     onSuccess: (task) => applyServerTask(queryClient, task),
     onError: (_err, _vars, ctx) => {
