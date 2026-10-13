@@ -176,15 +176,19 @@ lists_table = Table(
     # a response model a non-owner could reach.
     Column("share_token", String, nullable=True),
     # 'custom' (a user-created list via the "+" tab - its items are tasks
-    # with list_id pointing at this row), 'main' (the one, permanent,
-    # lazily-created-per-account row backing the user's original "List 1" -
-    # see crud.get_or_create_main_list), or 'shopping' (the one, permanent,
-    # lazily-created-per-account row backing the built-in Shopping tab -
-    # its items are tasks with category='Shopping', never list_id; see
-    # crud.get_or_create_shopping_list). This lets all three share one
-    # rename/delete/share code path, branching on `kind` only where their
-    # membership rule or delete semantics genuinely differ (which 'main'
-    # never does - it's identical to 'custom' there).
+    # with list_id pointing at this row), 'expiry' (a user-created list just
+    # like 'custom' in every respect - same items-by-list_id membership,
+    # same full-delete semantics - except it also carries an expires_at
+    # deadline the UI renders a countdown glow against), 'main' (the one,
+    # permanent, lazily-created-per-account row backing the user's original
+    # "List 1" - see crud.get_or_create_main_list), or 'shopping' (the one,
+    # permanent, lazily-created-per-account row backing the built-in
+    # Shopping tab - its items are tasks with category='Shopping', never
+    # list_id; see crud.get_or_create_shopping_list). This lets every kind
+    # share one rename/delete/share code path, branching on `kind` only
+    # where membership rule or delete semantics genuinely differ (which
+    # 'main'/'expiry' never do relative to 'custom' - they're identical
+    # there).
     Column("kind", String, nullable=False, server_default="custom"),
     # Rich (the default - full TaskCard UI: priority, due date, subtasks,
     # drag-reorder) or simple (bare checkbox+text, the UI every list had
@@ -198,6 +202,13 @@ lists_table = Table(
     # (forced at creation in get_or_create_shopping_list, backfilled for
     # existing rows below) - not user-toggleable.
     Column("is_simple", Integer, nullable=False, server_default=text("0")),
+    # Only meaningful for kind='expiry' (null for every other kind). A
+    # naive local wall-clock "YYYY-MM-DDTHH:MM" string straight out of a
+    # <input type="datetime-local">, deliberately NOT a UTC-stamped
+    # ISO-with-offset like created_at above - it's a user-picked deadline,
+    # same local-wall-clock convention as tasks.due_date, not a logged
+    # event, so it's excluded from the "+00:00" UTC-backfill loop below.
+    Column("expires_at", String, nullable=True),
 )
 
 activity_log_table = Table(
@@ -390,6 +401,10 @@ def init_db() -> None:
             # lazily created) correctly stays rich by default via the
             # column's own DEFAULT 0 above, no backfill needed for those.
             conn.execute(text("UPDATE lists SET is_simple = 1 WHERE kind = 'shopping'"))
+
+    if "expires_at" not in existing_list_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE lists ADD COLUMN expires_at TEXT"))
 
     existing_activity_columns = {c["name"] for c in inspector.get_columns("activity_log")}
     if "task_id" not in existing_activity_columns:

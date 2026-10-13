@@ -18,7 +18,8 @@ export function useLists() {
 export function useCreateList() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => listsApi.create(),
+    mutationFn: ({ kind = 'custom', expiresAt = null }: { kind?: ListEntry['kind']; expiresAt?: string | null }) =>
+      listsApi.create(kind, expiresAt),
     onSuccess: (list) => {
       // A direct cache write, not invalidateQueries - the caller (see
       // TaskListPage's handleCreateList) switches the active tab to this
@@ -29,6 +30,17 @@ export function useCreateList() {
       setListsData(queryClient, (old) => [...old, list])
     },
     onError: () => toast.error('Failed to create list'),
+  })
+}
+
+export function useSetListExpiresAt() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, expiresAt }: { id: number; expiresAt: string }) => listsApi.setExpiresAt(id, expiresAt),
+    onSuccess: (list) => {
+      setListsData(queryClient, (old) => old.map((l) => (l.id === list.id ? list : l)))
+    },
+    onError: () => toast.error('Failed to update expiry time'),
   })
 }
 
@@ -58,13 +70,14 @@ export function useDeleteList() {
   const queryClient = useQueryClient()
   return useMutation({
     // The backend branches on `kind` too (see delete_or_clear_list): a
-    // custom list's row is deleted outright, but Shopping's row survives
-    // with only its items cleared. The DELETE response carries no body to
-    // tell the two apart, so the caller (ListPanel, which already knows
-    // which list it's acting on) passes `kind` through.
+    // custom or expiry list's row is deleted outright, but Shopping's (and
+    // Main's) row survives with only its items cleared. The DELETE
+    // response carries no body to tell the two apart, so the caller
+    // (ListPanel, which already knows which list it's acting on) passes
+    // `kind` through.
     mutationFn: ({ id }: { id: number; kind: ListEntry['kind'] }) => listsApi.remove(id),
     onSuccess: (_res, { id, kind }) => {
-      if (kind === 'custom') {
+      if (kind === 'custom' || kind === 'expiry') {
         setListsData(queryClient, (old) => old.filter((l) => l.id !== id))
       }
       // Custom-list items and (Shopping's) cleared items both live in the

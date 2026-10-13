@@ -1675,14 +1675,16 @@ def get_or_create_main_list(username: str) -> dict:
 def get_lists(username: str) -> list[dict]:
     """Shopping first (always exists), then the main list (always exists,
     always second - see get_or_create_main_list above for why this can't
-    just be sorted alongside the customs by id/position), then custom
-    lists in creation order."""
+    just be sorted alongside the customs by id/position), then custom and
+    expiry lists together in creation order (an expiry list is a custom
+    list in every respect except its expires_at deadline - see lists_table's
+    kind comment)."""
     shopping = get_or_create_shopping_list(username)
     main = get_or_create_main_list(username)
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(
-            text("SELECT * FROM lists WHERE username = :username AND kind = 'custom' ORDER BY id ASC"),
+            text("SELECT * FROM lists WHERE username = :username AND kind IN ('custom', 'expiry') ORDER BY id ASC"),
             {"username": username},
         ).mappings().all()
     return [shopping, main] + [dict(r) for r in rows]
@@ -1698,31 +1700,36 @@ def get_list(list_id: int, username: str) -> dict | None:
     return dict(row) if row else None
 
 
-def create_list(username: str) -> dict:
-    """Always auto-named "List N" (N = current custom-list count + 2,
-    computed fresh each time - not a persistent counter, so a name can be
-    reused after its list is deleted, which is harmless). The +2 (not +1)
-    is deliberate: "List 1" is always taken by this user's `kind='main'`
-    row (see get_or_create_main_list) before their first *custom* list
-    exists, so counting only kind='custom' rows and adding 2 is what skips
-    past that already-claimed name - the first custom list becomes "List
-    2". Renaming is a separate action (see rename_list)."""
+def create_list(username: str, *, kind: str = "custom", expires_at: str | None = None) -> dict:
+    """Always auto-named "List N" (N = current custom-or-expiry-list count
+    + 2, computed fresh each time - not a persistent counter, so a name can
+    be reused after its list is deleted, which is harmless). The +2 (not
+    +1) is deliberate: "List 1" is always taken by this user's
+    `kind='main'` row (see get_or_create_main_list) before their first
+    *custom* list exists, so counting custom+expiry rows together and
+    adding 2 is what skips past that already-claimed name - the first one
+    becomes "List 2", regardless of kind, so the two kinds share one
+    numbering sequence instead of colliding. Renaming is a separate action
+    (see rename_list); the caller decides the kind and (for 'expiry') the
+    deadline up front since there's no "convert later" path for either."""
     engine = get_engine()
     with engine.begin() as conn:
         count = conn.execute(
-            text("SELECT COUNT(*) FROM lists WHERE username = :username AND kind = 'custom'"),
+            text("SELECT COUNT(*) FROM lists WHERE username = :username AND kind IN ('custom', 'expiry')"),
             {"username": username},
         ).scalar_one()
         new_id = conn.execute(
             text(
-                "INSERT INTO lists (username, name, created_at, position, kind) "
-                "VALUES (:username, :name, :created_at, :position, 'custom') RETURNING id"
+                "INSERT INTO lists (username, name, created_at, position, kind, expires_at) "
+                "VALUES (:username, :name, :created_at, :position, :kind, :expires_at) RETURNING id"
             ),
             {
                 "username": username,
                 "name": f"List {count + 2}",
                 "created_at": utc_now_iso(),
                 "position": count + 1,
+                "kind": kind,
+                "expires_at": expires_at,
             },
         ).scalar_one()
         row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": new_id}).mappings().fetchone()
@@ -1755,6 +1762,23 @@ def set_list_simple(list_id: int, username: str, is_simple: bool) -> dict | None
         result = conn.execute(
             text("UPDATE lists SET is_simple = :is_simple WHERE id = :id AND username = :username"),
             {"is_simple": int(is_simple), "id": list_id, "username": username},
+        )
+        if result.rowcount == 0:
+            return None
+        row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": list_id}).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def set_list_expires_at(list_id: int, username: str, expires_at: str) -> dict | None:
+    """Edits an expiry checklist's deadline after creation - the router
+    doesn't restrict this to kind='expiry' rows (nothing reads expires_at
+    on any other kind, so setting it on one would just be inert), matching
+    rename_list/set_list_simple's own lack of a kind check."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE lists SET expires_at = :expires_at WHERE id = :id AND username = :username"),
+            {"expires_at": expires_at, "id": list_id, "username": username},
         )
         if result.rowcount == 0:
             return None
@@ -2165,6 +2189,36 @@ def delete_subtask(
         _touch_last_edited(conn, task_id, actor_username or username)
 
     return bool(task_row["done"]) if task_row else False
+
+
+def clear_completed_subtasks(
+    task_id: int, username: str, actor_username: str | None = None
+) -> tuple[list[dict], bool]:
+    """Deletes only this task's completed (done=1) subtasks, leaving the
+    task and its incomplete subtasks alone - scoped to a single task_id,
+    unlike the account-wide clear_completed (which deletes whole *tasks*,
+    not subtasks). Every subtask left after this is necessarily incomplete
+    (every done one was just removed), so the parent is demoted to
+    not-done whenever any remain; if none remain, the parent's existing
+    done state is left untouched, same as deleting the last subtask does
+    in delete_subtask above."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM subtasks WHERE task_id = :task_id AND done = 1"), {"task_id": task_id})
+        remaining = conn.execute(
+            text("SELECT * FROM subtasks WHERE task_id = :task_id ORDER BY id"), {"task_id": task_id}
+        ).mappings().all()
+        if remaining:
+            conn.execute(
+                text("UPDATE tasks SET done = 0 WHERE id = :id AND username = :username"),
+                {"id": task_id, "username": username},
+            )
+        task_row = conn.execute(
+            text("SELECT done FROM tasks WHERE id = :id"), {"id": task_id}
+        ).mappings().fetchone()
+        _touch_last_edited(conn, task_id, actor_username or username)
+    return [_subtask_dict(r) for r in remaining], (bool(task_row["done"]) if task_row else False)
 
 
 # ----------------------------- Export / Import -----------------------------

@@ -119,6 +119,11 @@ export interface SubtaskMutationResponse {
   parent_done: boolean
 }
 
+export interface SubtaskClearCompletedResponse {
+  subtasks: Subtask[]
+  parent_done: boolean
+}
+
 export interface ExportedSubtask {
   text: string
   done: boolean
@@ -208,12 +213,17 @@ export interface ChatSummaryResponse {
 export interface ListEntry {
   id: number
   name: string
-  kind: 'custom' | 'shopping' | 'main'
+  kind: 'custom' | 'shopping' | 'main' | 'expiry'
   position: number
   has_share_link: boolean
   // Rich (full TaskCard UI - priority, due date, subtasks) or simple (bare
   // checkbox+text). Only a simple list can be shared - see ListMenu.tsx.
   is_simple: boolean
+  created_at: string
+  // Only ever set for kind='expiry' - a naive local "YYYY-MM-DDTHH:MM"
+  // string straight out of an <input type="datetime-local">, not a UTC
+  // one (see backend's lists_table column comment for why).
+  expires_at: string | null
 }
 
 // The bare item shape served by the public, no-login list endpoints -

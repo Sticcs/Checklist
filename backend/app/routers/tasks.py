@@ -9,6 +9,7 @@ from app.models import (
     PageRename,
     PageVersionDetail,
     PageVersionListResponse,
+    SubtaskClearCompletedResponse,
     SubtaskCreate,
     SubtaskMutationResponse,
     Task,
@@ -40,12 +41,12 @@ def _require_task(task_id: int, username: str) -> dict:
 
 
 def _require_movable_list(list_id: int, username: str) -> dict:
-    """A task's list_id may only point at a 'main' or 'custom' list owned
-    by the caller - the built-in 'shopping' list is never a valid target,
-    since its items are found by category alone (see crud.py's Lists
-    section), not list_id."""
+    """A task's list_id may only point at a 'main', 'custom', or 'expiry'
+    list owned by the caller - the built-in 'shopping' list is never a
+    valid target, since its items are found by category alone (see
+    crud.py's Lists section), not list_id."""
     target_list = crud.get_list(list_id, username)
-    if target_list is None or target_list["kind"] not in ("main", "custom"):
+    if target_list is None or target_list["kind"] not in ("main", "custom", "expiry"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
     return target_list
 
@@ -409,3 +410,18 @@ def create_subtask(
         task_id, text, owner_task["username"], actor_username=current_user.username
     )
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
+
+
+@router.post("/{task_id}/subtasks/clear-completed", response_model=SubtaskClearCompletedResponse)
+def clear_completed_subtasks(
+    task_id: int, current_user: CurrentUser = Depends(get_current_user)
+) -> SubtaskClearCompletedResponse:
+    # Collaborator-accessible - see toggle_done's comment on owner_task["username"].
+    # Scoped to this one task's own subtasks - not the account-wide
+    # "Clear completed" in the sidebar (see crud.clear_completed, which
+    # deletes whole done *tasks*, a different thing entirely).
+    owner_task = _require_task_access(task_id, current_user.username)
+    subtasks, parent_done = crud.clear_completed_subtasks(
+        task_id, owner_task["username"], actor_username=current_user.username
+    )
+    return SubtaskClearCompletedResponse(subtasks=subtasks, parent_done=parent_done)

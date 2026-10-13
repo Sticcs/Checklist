@@ -7,6 +7,7 @@ import {
   useRegenerateListShareLink,
   useRenameList,
   useRevokeListShareLink,
+  useSetListExpiresAt,
   useSetListSimple,
 } from '../hooks/useLists'
 import { copyTextToClipboard, formatAsOutline } from '../utils/copyAsText'
@@ -27,6 +28,7 @@ export function ListMenu({ list, items }: Props) {
   const renameList = useRenameList()
   const deleteList = useDeleteList()
   const setListSimple = useSetListSimple()
+  const setListExpiresAt = useSetListExpiresAt()
   const createShareLink = useCreateListShareLink()
   const regenerateShareLink = useRegenerateListShareLink()
   const revokeShareLink = useRevokeListShareLink()
@@ -36,6 +38,8 @@ export function ListMenu({ list, items }: Props) {
   const [renameDraft, setRenameDraft] = useState(list.name)
   const [sharePopoverOpen, setSharePopoverOpen] = useState(false)
   const [shareLink, setShareLink] = useState<string | null>(null)
+  const [expiryPopoverOpen, setExpiryPopoverOpen] = useState(false)
+  const [expiryDraft, setExpiryDraft] = useState(list.expires_at ?? '')
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -74,6 +78,21 @@ export function ListMenu({ list, items }: Props) {
     }
   }, [sharePopoverOpen])
 
+  // Same deferred-listener fix as sharePopoverOpen above, for the exact
+  // same same-tick-unmount reason (this popover also opens from a button
+  // inside the tricolon menu that closes that menu in the same click).
+  useEffect(() => {
+    if (!expiryPopoverOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setExpiryPopoverOpen(false)
+    }
+    const id = window.setTimeout(() => document.addEventListener('click', handler), 0)
+    return () => {
+      window.clearTimeout(id)
+      document.removeEventListener('click', handler)
+    }
+  }, [expiryPopoverOpen])
+
   // Reset any stale draft/link state whenever the active list itself
   // changes (a parent switching tabs can reuse the same component instance
   // for a different list).
@@ -82,7 +101,9 @@ export function ListMenu({ list, items }: Props) {
     setRenameDraft(list.name)
     setSharePopoverOpen(false)
     setShareLink(null)
-  }, [list.id, list.name])
+    setExpiryPopoverOpen(false)
+    setExpiryDraft(list.expires_at ?? '')
+  }, [list.id, list.name, list.expires_at])
 
   useEffect(() => {
     if (!sharePopoverOpen) return
@@ -206,6 +227,17 @@ export function ListMenu({ list, items }: Props) {
                 🔗 Share
               </button>
             )}
+            {list.kind === 'expiry' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  setExpiryPopoverOpen((open) => !open)
+                }}
+              >
+                ⏰ Edit expiry
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -256,6 +288,29 @@ export function ListMenu({ list, items }: Props) {
               </button>
             )}
             <p className="status-message">Anyone with this link can view and check items off - no login needed.</p>
+          </div>
+        )}
+        {expiryPopoverOpen && (
+          <div className="assignment-share-popover" data-focus-exempt>
+            <input
+              type="datetime-local"
+              className="custom-input"
+              value={expiryDraft}
+              onChange={(e) => setExpiryDraft(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!expiryDraft || setListExpiresAt.isPending}
+              onClick={() =>
+                setListExpiresAt.mutate(
+                  { id: list.id, expiresAt: expiryDraft },
+                  { onSuccess: () => setExpiryPopoverOpen(false) }
+                )
+              }
+            >
+              Save
+            </button>
           </div>
         )}
       </div>

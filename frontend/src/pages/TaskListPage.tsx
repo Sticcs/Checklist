@@ -3,7 +3,7 @@ import { AnimatePresence, motion, Reorder } from 'framer-motion'
 import { toast } from 'sonner'
 import { useAssignTask, useSetPosition, useSetTaskInProgress, useTasks, useToggleDone } from '../hooks/useTasks'
 import { useJoinAssignment, useSharedWithMe } from '../hooks/useCollaboration'
-import { useCreateList, useLists } from '../hooks/useLists'
+import { useLists } from '../hooks/useLists'
 import { useSettings } from '../context/SettingsContext'
 import { useAuth } from '../context/AuthContext'
 import { useToggleSubtask } from '../hooks/useSubtasks'
@@ -14,6 +14,8 @@ import { useEscapeBlurHotkey, useSubtaskFocusHotkey, useUndoRedoHotkeys } from '
 import { useDueDateNotifications } from '../hooks/useDueDateNotifications'
 import { useOfflineSync } from '../hooks/useOfflineSync'
 import { AddTaskForm } from '../components/AddTaskForm'
+import { AddFromListModal } from '../components/AddFromListModal'
+import { CreateListModal } from '../components/CreateListModal'
 import { OfflineBanner } from '../components/OfflineBanner'
 import { TaskCard } from '../components/TaskCard'
 import { ProgressBar } from '../components/ProgressBar'
@@ -29,14 +31,14 @@ import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { Sidebar, type StatusFilter } from '../components/Sidebar'
 import { sortTasks, type SortBy } from '../utils/sortTasks'
 import { toISODate } from '../utils/dueDatePresets'
+import { expiryGlowClass } from '../utils/listExpiry'
 import { ASSESSMENT_CATEGORY, PENDING_JOIN_TOKEN_KEY, SHOPPING_CATEGORY } from '../constants'
-import type { Task } from '../types'
+import type { ListEntry, Task } from '../types'
 
 export function TaskListPage() {
   const { data, isLoading, error } = useTasks()
   const { data: sharedData } = useSharedWithMe()
   const { data: listsData } = useLists()
-  const createList = useCreateList()
   const joinAssignment = useJoinAssignment()
   const toggleDone = useToggleDone()
   const toggleSubtask = useToggleSubtask()
@@ -72,6 +74,16 @@ export function TaskListPage() {
   // bare ListPanel the left column used to show custom lists in if
   // is_simple) and where AddTaskForm files a new task.
   const [mainTab, setMainTab] = useState<number | null>(null)
+  const [showCreateListModal, setShowCreateListModal] = useState(false)
+  const [showAddFromListModal, setShowAddFromListModal] = useState(false)
+  // Only the percentage *bucket* (white/yellow/red) matters for the glow -
+  // a 30s tick is plenty to catch every crossing without re-rendering every
+  // second for no visible change.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const handleStartAssignment = (taskId: number) => {
     setActiveAssignmentId(taskId)
@@ -142,7 +154,11 @@ export function TaskListPage() {
   const lists = useMemo(() => listsData?.lists ?? [], [listsData])
   const shoppingList = useMemo(() => lists.find((l) => l.kind === 'shopping') ?? null, [lists])
   const mainList = useMemo(() => lists.find((l) => l.kind === 'main') ?? null, [lists])
-  const customLists = useMemo(() => lists.filter((l) => l.kind === 'custom'), [lists])
+  // An expiry list is a custom list in every respect except its
+  // expires_at deadline (see backend's lists_table kind comment) - treated
+  // identically here, just rendered with a glow border (see
+  // expiryGlowClass below).
+  const customLists = useMemo(() => lists.filter((l) => l.kind === 'custom' || l.kind === 'expiry'), [lists])
   // Fixed order matching get_lists' own [shopping, main, ...customs]
   // assembly (minus shopping, which lives in the left panel) - the main
   // list is always the first right-panel tab, never sorted against customs
@@ -172,10 +188,11 @@ export function TaskListPage() {
     }
   }, [mainTab, rightPanelLists])
 
-  const handleCreateList = () => {
-    createList.mutate(undefined, {
-      onSuccess: (list) => setMainTab(list.id),
-    })
+  const handleCreateList = () => setShowCreateListModal(true)
+
+  const handleListCreated = (list: ListEntry) => {
+    setShowCreateListModal(false)
+    setMainTab(list.id)
   }
 
   // Every item filed under whichever list is the active right-panel tab -
@@ -614,7 +631,7 @@ export function TaskListPage() {
                   className={mainTab === list.id ? 'entry-tab active' : 'entry-tab'}
                   onClick={() => setMainTab(list.id)}
                 >
-                  📋 {list.name}
+                  {list.kind === 'expiry' ? '⏳' : '📋'} {list.name}
                 </button>
               ))}
               <button
@@ -626,11 +643,34 @@ export function TaskListPage() {
                 +
               </button>
             </div>
+            <div
+              className={`entry-tabbed-panel-body ${activeRightList ? expiryGlowClass(activeRightList, now) : ''}`.trim()}
+            >
             {activeRightList && activeRightList.is_simple ? (
-              <ListPanel list={activeRightList} items={tasks.filter((t) => t.list_id === activeRightList.id)} />
+              <>
+                <ListPanel list={activeRightList} items={tasks.filter((t) => t.list_id === activeRightList.id)} />
+                {activeRightList.kind === 'expiry' && (
+                  <button
+                    type="button"
+                    className="btn-add-from-list"
+                    onClick={() => setShowAddFromListModal(true)}
+                  >
+                    ➕ Add from another list
+                  </button>
+                )}
+              </>
             ) : (
               <div className="assessments-panel">
                 {activeRightList && <ListMenu list={activeRightList} items={mainTasks} />}
+                {activeRightList && activeRightList.kind === 'expiry' && (
+                  <button
+                    type="button"
+                    className="btn-add-from-list"
+                    onClick={() => setShowAddFromListModal(true)}
+                  >
+                    ➕ Add from another list
+                  </button>
+                )}
 
                 {isLoading && <p className="status-message">Loading...</p>}
                 {error && (
@@ -720,6 +760,7 @@ export function TaskListPage() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>
@@ -730,6 +771,12 @@ export function TaskListPage() {
           surrounding AnimatePresence/motion.div swap already handles that
           for free, no extra gating needed. */}
       <ChatLauncher currentUsername={user?.username} />
+      {showCreateListModal && (
+        <CreateListModal onCreated={handleListCreated} onCancel={() => setShowCreateListModal(false)} />
+      )}
+      {showAddFromListModal && activeRightList && (
+        <AddFromListModal targetListId={activeRightList.id} onClose={() => setShowAddFromListModal(false)} />
+      )}
         </motion.div>
       )}
       </AnimatePresence>

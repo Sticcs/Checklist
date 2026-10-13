@@ -1,9 +1,11 @@
 import { api } from './client'
-import type { SubtaskMutationResponse } from '../types'
+import type { SubtaskClearCompletedResponse, SubtaskMutationResponse } from '../types'
 
 export const subtasksApi = {
   create: (taskId: number, text: string) =>
     api.post<SubtaskMutationResponse>(`/tasks/${taskId}/subtasks`, { text }),
+  clearCompleted: (taskId: number) =>
+    api.post<SubtaskClearCompletedResponse>(`/tasks/${taskId}/subtasks/clear-completed`),
   setDone: (subtaskId: number, done: boolean) =>
     api.patch<SubtaskMutationResponse>(`/subtasks/${subtaskId}`, { done }),
   setText: (subtaskId: number, text: string) =>

@@ -18,6 +18,7 @@ import {
 import { MoveToMenu } from './MoveToMenu'
 import {
   useAddSubtask,
+  useClearCompletedSubtasks,
   useDeleteSubtask,
   useSetSubtaskDueDate,
   useSetSubtaskText,
@@ -138,7 +139,7 @@ export function TaskCard({
   const moveTask = useMoveTask()
   const { data: listsData } = useLists()
   const moveTargets = (listsData?.lists ?? []).filter(
-    (l) => (l.kind === 'main' || l.kind === 'custom') && l.id !== task.list_id
+    (l) => (l.kind === 'main' || l.kind === 'custom' || l.kind === 'expiry') && l.id !== task.list_id
   )
   const addSubtask = useAddSubtask()
   const toggleSubtask = useToggleSubtask()
@@ -146,6 +147,7 @@ export function TaskCard({
   const setSubtaskDueDate = useSetSubtaskDueDate()
   const setSubtaskText = useSetSubtaskText()
   const deleteSubtask = useDeleteSubtask()
+  const clearCompletedSubtasks = useClearCompletedSubtasks()
   const setTaskNotes = useSetTaskNotes()
   const dragControls = useDragControls()
 
@@ -723,6 +725,19 @@ export function TaskCard({
       {!compact && <div className="subtask-section">
         {subtasksOpen && (
           <div className="subtask-panel">
+            {task.subtasks.some((s) => s.done) && (
+              <button
+                type="button"
+                className="subtask-clear-completed-btn"
+                title="Clear completed subtasks"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  clearCompletedSubtasks.mutate(task.id)
+                }}
+              >
+                🧹
+              </button>
+            )}
             <ul className="subtask-list">
               <AnimatePresence>
                 {task.subtasks.map((s) => (

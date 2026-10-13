@@ -86,6 +86,11 @@ class SubtaskMutationResponse(BaseModel):
     parent_done: bool
 
 
+class SubtaskClearCompletedResponse(BaseModel):
+    subtasks: list[Subtask]
+    parent_done: bool
+
+
 # ----------------------------- Tasks -----------------------------
 
 class TaskCreate(BaseModel):
@@ -350,10 +355,26 @@ class ListEntry(BaseModel):
     # lists_table's is_simple column comment. Only a simple list can be
     # shared (see routers/lists.py's create_share_link).
     is_simple: bool
+    created_at: str
+    # Only ever set for kind='expiry' - see lists_table's own comment on
+    # the column for why this is a naive local string, not a UTC one.
+    expires_at: str | None = None
 
 
 class ListsResponse(BaseModel):
     lists: list[ListEntry]
+
+
+class ListCreate(BaseModel):
+    # 'custom' (default, today's only option) or 'expiry'. 'main'/
+    # 'shopping' are never user-creatable - the router rejects them.
+    kind: str = "custom"
+    # Required (router-enforced) when kind='expiry'; ignored otherwise.
+    expires_at: str | None = None
+
+
+class ListExpiresAtUpdate(BaseModel):
+    expires_at: str
 
 
 class ListRenameUpdate(BaseModel):

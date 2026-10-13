@@ -2,7 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app import crud
 from app.config import settings
-from app.models import ListEntry, ListRenameUpdate, ListShareLinkResponse, ListSimpleUpdate, ListsResponse
+from app.models import (
+    ListCreate,
+    ListEntry,
+    ListExpiresAtUpdate,
+    ListRenameUpdate,
+    ListShareLinkResponse,
+    ListSimpleUpdate,
+    ListsResponse,
+)
 from app.paths import is_desktop_build
 from app.security import CurrentUser, get_current_user
 
@@ -27,6 +35,8 @@ def _entry(row: dict) -> ListEntry:
         position=row["position"],
         has_share_link=bool(row.get("share_token")),
         is_simple=bool(row.get("is_simple")),
+        created_at=row["created_at"],
+        expires_at=row.get("expires_at"),
     )
 
 
@@ -40,8 +50,22 @@ def get_lists(current_user: CurrentUser = Depends(get_current_user)) -> ListsRes
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ListEntry)
-def create_list(current_user: CurrentUser = Depends(get_current_user)) -> ListEntry:
-    return _entry(crud.create_list(current_user.username))
+def create_list(body: ListCreate = ListCreate(), current_user: CurrentUser = Depends(get_current_user)) -> ListEntry:
+    if body.kind not in ("custom", "expiry"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid list kind")
+    if body.kind == "expiry" and not body.expires_at:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "expires_at is required for an expiry checklist")
+    return _entry(crud.create_list(current_user.username, kind=body.kind, expires_at=body.expires_at))
+
+
+@router.patch("/{list_id}/expires-at", response_model=ListEntry)
+def set_list_expires_at(
+    list_id: int, body: ListExpiresAtUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> ListEntry:
+    row = crud.set_list_expires_at(list_id, current_user.username, body.expires_at)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
+    return _entry(row)
 
 
 @router.patch("/{list_id}", response_model=ListEntry)

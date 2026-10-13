@@ -46,7 +46,7 @@ export function MoveToMenu({ taskId, currentListId }: Props) {
   }, [open])
 
   const targets = (listsData?.lists ?? []).filter(
-    (l) => (l.kind === 'main' || l.kind === 'custom') && l.id !== currentListId
+    (l) => (l.kind === 'main' || l.kind === 'custom' || l.kind === 'expiry') && l.id !== currentListId
   )
 
   // Nothing to move to (only one list exists) - no point showing a button

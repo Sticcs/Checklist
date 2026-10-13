@@ -1788,6 +1788,112 @@ body[data-theme='dark'] .entry-hint-step {
   margin-top: -1px;
 }
 
+/* Wraps the right panel's ListPanel/assessments-panel so an expiry list's
+   glow border (below) can be drawn around the whole panel without
+   disturbing .assessments-panel's own flex:1 sizing - a plain passthrough
+   box, no border/padding/background of its own. */
+.entry-tabbed-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  transition: box-shadow 0.4s ease;
+}
+
+.list-glow-white {
+  box-shadow: 0 0 16px 2px rgba(255, 255, 255, 0.55);
+  animation: list-glow-pulse-white 3.2s ease-in-out infinite;
+}
+
+.list-glow-yellow {
+  box-shadow: 0 0 16px 2px rgba(243, 156, 18, 0.65);
+}
+
+.list-glow-red {
+  box-shadow: 0 0 16px 2px rgba(231, 76, 60, 0.75);
+  animation: list-glow-pulse-red 1.6s ease-in-out infinite;
+}
+
+@keyframes list-glow-pulse-white {
+  0%,
+  100% {
+    box-shadow: 0 0 12px 1px rgba(255, 255, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 4px rgba(255, 255, 255, 0.7);
+  }
+}
+
+@keyframes list-glow-pulse-red {
+  0%,
+  100% {
+    box-shadow: 0 0 14px 2px rgba(231, 76, 60, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 24px 6px rgba(231, 76, 60, 0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-glow-white,
+  .list-glow-red {
+    animation: none;
+  }
+}
+
+.btn-add-from-list {
+  align-self: flex-start;
+  margin-bottom: 0.65rem;
+  border: none;
+  border-radius: 8px;
+  background: #2ecc71;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+}
+
+.btn-add-from-list:hover {
+  background: #27ae60;
+}
+
+.add-from-list-items {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.add-from-list-subitems {
+  list-style: none;
+  margin: 0;
+  padding-left: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.add-from-list-row {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.add-from-list-row:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
 .shopping-list {
   list-style: none;
   margin: 0;
@@ -2331,6 +2437,30 @@ body[data-theme='dark'] .notes-textarea {
   margin-top: 0.5rem;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   color: #2c3e50;
+}
+
+/* Its own row above the subtask list (not absolutely positioned over it) -
+   an earlier version overlapped the first subtask row's own "⋮" menu
+   button, which happened to render in the same top-right corner. */
+.subtask-clear-completed-btn {
+  display: block;
+  margin: 0 0 0.3rem auto;
+  width: 1.8rem;
+  height: 1.8rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.subtask-clear-completed-btn:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
 }
 
 body[data-theme='dark'] .subtask-panel {

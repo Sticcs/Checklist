@@ -395,3 +395,40 @@ export function useDeleteSubtask() {
     },
   })
 }
+
+// Scoped to one task's own subtasks, unlike the account-wide "Clear
+// completed" (useClearCompleted in useTasks.ts, which deletes whole done
+// *tasks*) - every remaining subtask is necessarily incomplete (every done
+// one was just removed), matching the backend's own cascade.
+function applyClearCompletedSubtasks<T extends Task>(t: T, taskId: number): T {
+  if (t.id !== taskId) return t
+  const subtasks = t.subtasks.filter((s) => !s.done)
+  return { ...t, subtasks, done: subtasks.length > 0 ? false : t.done }
+}
+
+export function useClearCompletedSubtasks() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskId: number) => subtasksApi.clearCompleted(taskId),
+    onMutate: async (taskId) => {
+      toast('🧹 Cleared completed subtasks')
+      if (isOwnedTask(queryClient, taskId)) {
+        const previous = await beginOptimisticUpdate(queryClient)
+        queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+          old
+            ? { tasks: old.tasks.map((t) => applyClearCompletedSubtasks(t, taskId)), can_undo: true, can_redo: false }
+            : old
+        )
+        return { previous, shared: false }
+      }
+      const previous = await beginSharedOptimisticUpdate(queryClient)
+      setSharedData(queryClient, (old) => old.map((t) => applyClearCompletedSubtasks(t, taskId)))
+      return { previous, shared: true }
+    },
+    onError: (_err, _taskId, ctx) => {
+      if (ctx?.shared) rollbackShared(queryClient, ctx.previous as Task[] | undefined)
+      else rollback(queryClient, ctx?.previous as TasksResponse | undefined)
+      toast.error('Failed to clear completed subtasks')
+    },
+  })
+}
