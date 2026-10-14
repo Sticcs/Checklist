@@ -94,13 +94,15 @@ export function useAddTask() {
       category,
       dueDate,
       listId,
+      linkedTaskId,
     }: {
       text: string
       priority: string
       category: string
       dueDate: string | null
       listId?: number | null
-    }) => tasksApi.create(text, priority, category, dueDate, listId ?? null),
+      linkedTaskId?: number | null
+    }) => tasksApi.create(text, priority, category, dueDate, listId ?? null, linkedTaskId ?? null),
     // Without this, TanStack Query's default networkMode ('online') PAUSES
     // the mutation the moment navigator.onLine is false, instead of
     // actually attempting (and failing) the request - mutationFn is simply
@@ -136,6 +138,7 @@ export function useAddTask() {
         list_id: vars.listId ?? null,
         last_edited_by: null,
         last_edited_at: null,
+        linked_task_id: vars.linkedTaskId ?? null,
         clientKey,
       }
       setTasksData(queryClient, (old) => ({
@@ -226,6 +229,19 @@ function applyToggleDone<T extends Task>(t: T, done: boolean): T {
   }
 }
 
+// Mirrors the backend's _propagate_linked_task_done (see crud.set_done) -
+// an expiry list's copied task and its original source task (see
+// AddFromListModal/Task.linked_task_id) toggle together, in either
+// direction. Never chained (the picker only ever copies from a plain
+// main/custom list, never another expiry list), so one pass is enough.
+function applyLinkedToggleDone(tasks: Task[], toggledId: number, done: boolean): Task[] {
+  const toggled = tasks.find((t) => t.id === toggledId)
+  const linkedId = toggled?.linked_task_id ?? null
+  return tasks.map((t) =>
+    t.id === toggledId || t.id === linkedId || t.linked_task_id === toggledId ? applyToggleDone(t, done) : t
+  )
+}
+
 // Looks a task up by id across both caches, purely to read its category for
 // the toast message below - a Shopping item being checked off isn't a "task
 // completed" the way a to-do or assignment is.
@@ -253,7 +269,7 @@ export function useToggleDone() {
       if (isOwnedTask(queryClient, vars.id)) {
         const previous = await beginOptimisticUpdate(queryClient)
         setTasksData(queryClient, (old) => ({
-          tasks: old.tasks.map((t) => (t.id === vars.id ? applyToggleDone(t, vars.done) : t)),
+          tasks: applyLinkedToggleDone(old.tasks, vars.id, vars.done),
           can_undo: true,
           can_redo: false,
         }))

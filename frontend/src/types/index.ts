@@ -18,6 +18,11 @@ export interface Subtask {
   // panel) is assigned to - the owner's own username, one of the
   // assignment's collaborators, or null for unassigned.
   assigned_username: string | null
+  // Set when this subtask was copied in standalone via an expiry list's
+  // "Add from another list" picker (see AddFromListModal) - points at the
+  // original source subtask. toggling either one's done-state propagates
+  // to the other (see backend's set_subtask_done).
+  linked_subtask_id: number | null
   // Client-only, never sent by the server: set on an optimistically-inserted
   // subtask and carried forward when its temp id is swapped for the real
   // one, so the React key stays stable across that swap instead of
@@ -83,6 +88,11 @@ export interface Task {
   // shipped. Shown in AssignmentWorkspace's header.
   last_edited_by: string | null
   last_edited_at: string | null
+  // Set when this task was copied in via an expiry list's "Add from
+  // another list" picker (see AddFromListModal) - points at the original
+  // source task. Toggling either one's done-state propagates to the other
+  // (see backend's set_done).
+  linked_task_id: number | null
   clientKey?: string
 }
 

@@ -83,6 +83,15 @@ tasks_table = Table(
     # you" is a fine, expected state, not noise.
     Column("last_edited_by", String, nullable=True),
     Column("last_edited_at", String, nullable=True),
+    # Set when this task was copied in via an expiry list's "Add from
+    # another list" picker (see AddFromListModal) - points at the original
+    # source task it was copied from. No FK (see assigned_task_id's comment
+    # above for why), and never chained: the picker only ever sources from
+    # plain main/custom lists, never from another expiry list, so a linked
+    # task's own linked_task_id is always null. set_done propagates a
+    # done-state change across this link in both directions so the two
+    # stay in sync.
+    Column("linked_task_id", Integer, nullable=True),
 )
 
 subtasks_table = Table(
@@ -103,6 +112,10 @@ subtasks_table = Table(
     # against the current collaborator list at write time by
     # routers/subtasks.py, not enforced by the schema.
     Column("assigned_username", String, nullable=True),
+    # Same idea as tasks.linked_task_id above, for a subtask copied in
+    # standalone (see AddFromListModal) - points at the original source
+    # subtask.
+    Column("linked_subtask_id", Integer, nullable=True),
 )
 
 website_links_table = Table(
@@ -374,6 +387,10 @@ def init_db() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN last_edited_at TEXT"))
 
+    if "linked_task_id" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN linked_task_id INTEGER"))
+
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:
         with engine.begin() as conn:
@@ -390,6 +407,10 @@ def init_db() -> None:
     if "assigned_username" not in existing_subtask_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE subtasks ADD COLUMN assigned_username TEXT"))
+
+    if "linked_subtask_id" not in existing_subtask_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE subtasks ADD COLUMN linked_subtask_id INTEGER"))
 
     existing_list_columns = {c["name"] for c in inspector.get_columns("lists")}
     if "is_simple" not in existing_list_columns:

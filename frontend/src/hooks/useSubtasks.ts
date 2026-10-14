@@ -38,7 +38,8 @@ let tempSubtaskSeq = 0
 export function useAddSubtask() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ taskId, text }: { taskId: number; text: string }) => subtasksApi.create(taskId, text),
+    mutationFn: ({ taskId, text, linkedSubtaskId }: { taskId: number; text: string; linkedSubtaskId?: number | null }) =>
+      subtasksApi.create(taskId, text, linkedSubtaskId ?? null),
     // See the matching comment on useAddTask - without this, the default
     // 'online' networkMode pauses the mutation (never calling mutationFn,
     // never firing onError) instead of actually failing it while offline.
@@ -56,6 +57,7 @@ export function useAddSubtask() {
         due_date: null,
         notes: null,
         assigned_username: null,
+        linked_subtask_id: vars.linkedSubtaskId ?? null,
         clientKey,
       }
       toast('➕ Subtask added')
@@ -125,6 +127,24 @@ function applySubtaskDone<T extends Task>(t: T, subtaskId: number, done: boolean
   return { ...t, subtasks, done: parentDone }
 }
 
+// Mirrors the backend's _propagate_linked_subtask_done (see
+// crud.set_subtask_done) - a standalone-copied subtask and its original
+// source subtask (see AddFromListModal/Subtask.linked_subtask_id) toggle
+// together, in either direction. Deliberately only mirrors the leaf done
+// flag (via applySubtaskDone, which still recomputes each side's OWN
+// parent), not a merged cross-task parent cascade.
+function applyLinkedSubtaskDone(tasks: Task[], subtaskId: number, done: boolean): Task[] {
+  const toggled = tasks.flatMap((t) => t.subtasks).find((s) => s.id === subtaskId)
+  const linkedId = toggled?.linked_subtask_id ?? null
+  const reverseLinked = tasks.flatMap((t) => t.subtasks).find((s) => s.linked_subtask_id === subtaskId)?.id ?? null
+  return tasks.map((t) => {
+    let next = applySubtaskDone(t, subtaskId, done)
+    if (linkedId !== null) next = applySubtaskDone(next, linkedId, done)
+    if (reverseLinked !== null) next = applySubtaskDone(next, reverseLinked, done)
+    return next
+  })
+}
+
 export function useToggleSubtask() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -136,7 +156,7 @@ export function useToggleSubtask() {
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? {
-                tasks: old.tasks.map((t) => applySubtaskDone(t, vars.subtaskId, vars.done)),
+                tasks: applyLinkedSubtaskDone(old.tasks, vars.subtaskId, vars.done),
                 can_undo: true,
                 can_redo: false,
               }
@@ -145,7 +165,7 @@ export function useToggleSubtask() {
         return { previous, shared: false }
       }
       const previous = await beginSharedOptimisticUpdate(queryClient)
-      setSharedData(queryClient, (old) => old.map((t) => applySubtaskDone(t, vars.subtaskId, vars.done)))
+      setSharedData(queryClient, (old) => applyLinkedSubtaskDone(old, vars.subtaskId, vars.done))
       return { previous, shared: true }
     },
     onError: (_err, _vars, ctx) => {

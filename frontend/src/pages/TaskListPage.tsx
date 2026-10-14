@@ -16,6 +16,7 @@ import { useOfflineSync } from '../hooks/useOfflineSync'
 import { AddTaskForm } from '../components/AddTaskForm'
 import { AddFromListModal } from '../components/AddFromListModal'
 import { CreateListModal } from '../components/CreateListModal'
+import { ExpiryTimer } from '../components/ExpiryTimer'
 import { OfflineBanner } from '../components/OfflineBanner'
 import { TaskCard } from '../components/TaskCard'
 import { ProgressBar } from '../components/ProgressBar'
@@ -628,7 +629,12 @@ export function TaskListPage() {
                 <button
                   key={list.id}
                   type="button"
-                  className={mainTab === list.id ? 'entry-tab active' : 'entry-tab'}
+                  className={[
+                    mainTab === list.id ? 'entry-tab active' : 'entry-tab',
+                    list.kind === 'expiry' ? expiryGlowClass(list, now) : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   onClick={() => setMainTab(list.id)}
                 >
                   {list.kind === 'expiry' ? '⏳' : '📋'} {list.name}
@@ -648,6 +654,7 @@ export function TaskListPage() {
             >
             {activeRightList && activeRightList.is_simple ? (
               <>
+                {activeRightList.kind === 'expiry' && <ExpiryTimer list={activeRightList} />}
                 <ListPanel list={activeRightList} items={tasks.filter((t) => t.list_id === activeRightList.id)} />
                 {activeRightList.kind === 'expiry' && (
                   <button
@@ -662,6 +669,7 @@ export function TaskListPage() {
             ) : (
               <div className="assessments-panel">
                 {activeRightList && <ListMenu list={activeRightList} items={mainTasks} />}
+                {activeRightList && activeRightList.kind === 'expiry' && <ExpiryTimer list={activeRightList} />}
                 {activeRightList && activeRightList.kind === 'expiry' && (
                   <button
                     type="button"

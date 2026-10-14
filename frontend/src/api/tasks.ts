@@ -17,8 +17,9 @@ export const tasksApi = {
     priority: string,
     category: string,
     due_date: string | null = null,
-    list_id: number | null = null
-  ) => api.post<Task>('/tasks', { text, priority, category, due_date, list_id }),
+    list_id: number | null = null,
+    linked_task_id: number | null = null
+  ) => api.post<Task>('/tasks', { text, priority, category, due_date, list_id, linked_task_id }),
   update: (id: number, text: string, priority: string, category: string, due_date: string | null) =>
     api.patch<Task>(`/tasks/${id}`, { text, priority, category, due_date }),
   setDone: (id: number, done: boolean) => api.patch<Task>(`/tasks/${id}/done`, { done }),

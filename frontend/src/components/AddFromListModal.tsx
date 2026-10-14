@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useLists } from '../hooks/useLists'
 import { useAddTask, useTasks } from '../hooks/useTasks'
+import { useAddSubtask } from '../hooks/useSubtasks'
+import type { Subtask, Task } from '../types'
 import { VignetteOverlay } from './VignetteOverlay'
 
 interface Props {
@@ -10,13 +12,17 @@ interface Props {
 
 // The expiry checklist's "Add from another list" picker - deliberately
 // simple (per the request): pick a source list, click a task or one of its
-// subtasks, it's copied in as a brand-new top-level task by text alone (no
-// link/reference back to the source, no backend endpoint beyond the
-// existing POST /tasks). Source items are left untouched.
+// subtasks to copy it in. A copied task is linked back to its source (see
+// Task.linked_task_id) - checking either one off checks off the other, see
+// useAddTask/useToggleDone's linked-propagation logic. A copied subtask
+// brings its parent task along too (as a fresh, unlinked copy) so it isn't
+// left floating with no context - only the subtask itself is linked back to
+// its source.
 export function AddFromListModal({ targetListId, onClose }: Props) {
   const { data: listsData } = useLists()
   const { data: tasksData } = useTasks()
   const addTask = useAddTask()
+  const addSubtask = useAddSubtask()
   const [sourceListId, setSourceListId] = useState<number | null>(null)
   const [justAddedKey, setJustAddedKey] = useState<string | null>(null)
 
@@ -29,13 +35,39 @@ export function AddFromListModal({ targetListId, onClose }: Props) {
 
   const sourceTasks = sourceListId === null ? [] : (tasksData?.tasks ?? []).filter((t) => t.list_id === sourceListId)
 
-  const copyIn = (text: string, key: string) => {
+  const flashAdded = (key: string) => {
+    setJustAddedKey(key)
+    window.setTimeout(() => setJustAddedKey((k) => (k === key ? null : k)), 1200)
+  }
+
+  const copyTask = (task: Task) => {
+    const key = `task-${task.id}`
     addTask.mutate(
-      { text, priority: 'Medium', category: 'General', dueDate: null, listId: targetListId },
       {
-        onSuccess: () => {
-          setJustAddedKey(key)
-          window.setTimeout(() => setJustAddedKey((k) => (k === key ? null : k)), 1200)
+        text: task.text,
+        priority: 'Medium',
+        category: 'General',
+        dueDate: null,
+        listId: targetListId,
+        linkedTaskId: task.id,
+      },
+      { onSuccess: () => flashAdded(key) }
+    )
+  }
+
+  const copySubtask = (parentTask: Task, subtask: Subtask) => {
+    const key = `subtask-${subtask.id}`
+    // The subtask needs a real task id to attach to, so the parent copy has
+    // to land first - chained through this call-level onSuccess rather than
+    // fired in parallel.
+    addTask.mutate(
+      { text: parentTask.text, priority: 'Medium', category: 'General', dueDate: null, listId: targetListId },
+      {
+        onSuccess: (newTask) => {
+          addSubtask.mutate(
+            { taskId: newTask.id, text: subtask.text, linkedSubtaskId: subtask.id },
+            { onSuccess: () => flashAdded(key) }
+          )
         },
       }
     )
@@ -65,18 +97,14 @@ export function AddFromListModal({ targetListId, onClose }: Props) {
             {sourceTasks.length === 0 && <p className="status-message">No tasks in this list.</p>}
             {sourceTasks.map((t) => (
               <li key={t.id}>
-                <button type="button" className="add-from-list-row" onClick={() => copyIn(t.text, `task-${t.id}`)}>
+                <button type="button" className="add-from-list-row" onClick={() => copyTask(t)}>
                   {justAddedKey === `task-${t.id}` ? '✓ Added' : `📝 ${t.text}`}
                 </button>
                 {t.subtasks.length > 0 && (
                   <ul className="add-from-list-subitems">
                     {t.subtasks.map((s) => (
                       <li key={s.id}>
-                        <button
-                          type="button"
-                          className="add-from-list-row"
-                          onClick={() => copyIn(s.text, `subtask-${s.id}`)}
-                        >
+                        <button type="button" className="add-from-list-row" onClick={() => copySubtask(t, s)}>
                           {justAddedKey === `subtask-${s.id}` ? '✓ Added' : `↳ ${s.text}`}
                         </button>
                       </li>

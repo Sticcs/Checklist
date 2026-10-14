@@ -39,6 +39,12 @@ class WebsiteLinkResponse(BaseModel):
 
 class SubtaskCreate(BaseModel):
     text: str
+    # Set when this subtask is copied in standalone via an expiry list's
+    # "Add from another list" picker (see AddFromListModal) - points at the
+    # original source subtask. The route validates the caller owns that
+    # source subtask before storing it (see routers/tasks.py's
+    # create_subtask).
+    linked_subtask_id: int | None = None
 
 
 class SubtaskDoneUpdate(BaseModel):
@@ -79,6 +85,7 @@ class Subtask(BaseModel):
     # Who this mini task (in an Assignment workspace's own bare-bones task
     # panel) is assigned to - see SubtaskAssigneeUpdate.
     assigned_username: str | None = None
+    linked_subtask_id: int | None = None
 
 
 class SubtaskMutationResponse(BaseModel):
@@ -102,6 +109,11 @@ class TaskCreate(BaseModel):
     # lists.py) instead of the main task list - the route validates it
     # belongs to the caller and is a 'custom' (not 'shopping') list.
     list_id: int | None = None
+    # Set when this task is copied in via an expiry list's "Add from
+    # another list" picker (see AddFromListModal) - points at the original
+    # source task. The route validates the caller owns that source task
+    # before storing it.
+    linked_task_id: int | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -256,6 +268,7 @@ class Task(BaseModel):
     # shipped. Shown in AssignmentWorkspace's header.
     last_edited_by: str | None = None
     last_edited_at: str | None = None
+    linked_task_id: int | None = None
 
 
 class TasksResponse(BaseModel):

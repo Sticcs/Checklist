@@ -20,3 +20,43 @@ export function expiryGlowClass(list: ListEntry, nowMs: number): string {
   if (pct >= 25) return 'list-glow-yellow'
   return 'list-glow-red'
 }
+
+// Raw ms remaining, clamped at 0 - unlike expiryProgressPct this isn't a
+// percentage, it's what the live countdown (see ExpiryTimer) actually
+// counts down.
+export function expiryRemainingMs(list: ListEntry, nowMs: number): number | null {
+  if (list.kind !== 'expiry' || !list.expires_at) return null
+  return Math.max(0, new Date(list.expires_at).getTime() - nowMs)
+}
+
+// "1d 4h", "2h 15m", "45m 12s", "30s" - drops to the next-finer unit once
+// the coarser one hits zero, never shows more than two units at once (a
+// countdown reading "1d 4h 32m 11s" is harder to read at a glance, not
+// more useful).
+export function formatRemaining(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000)
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+// Mirrors expiryGlowClass's buckets, plus a distinct message once the
+// deadline has actually passed (as opposed to just being deep in the red
+// zone) - the glow itself doesn't need that extra distinction, but the
+// text reads oddly saying "almost done" about a deadline that's already
+// gone.
+export function expiryProgressMessage(list: ListEntry, nowMs: number): string {
+  const remaining = expiryRemainingMs(list, nowMs)
+  if (remaining === null) return ''
+  if (remaining <= 0) return "Time's up!"
+  const pct = expiryProgressPct(list, nowMs)
+  if (pct === null) return ''
+  if (pct > 60) return 'Still a while to go'
+  if (pct >= 25) return 'Getting closer...'
+  return 'Almost done!'
+}

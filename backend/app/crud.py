@@ -717,6 +717,7 @@ def add_task(
     due_date: str | None,
     username: str,
     list_id: int | None = None,
+    linked_task_id: int | None = None,
 ) -> dict:
     undo.save_snapshot(username)
     engine = get_engine()
@@ -729,8 +730,8 @@ def add_task(
         new_position = (min_position - 1) if min_position is not None else 0
         new_id = conn.execute(
             text(
-                "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, position, list_id) "
-                "VALUES (:text, 0, :priority, :category, :due_date, :created_at, :username, :position, :list_id) "
+                "INSERT INTO tasks (text, done, priority, category, due_date, created_at, username, position, list_id, linked_task_id) "
+                "VALUES (:text, 0, :priority, :category, :due_date, :created_at, :username, :position, :list_id, :linked_task_id) "
                 "RETURNING id"
             ),
             {
@@ -742,6 +743,7 @@ def add_task(
                 "username": username,
                 "position": new_position,
                 "list_id": list_id,
+                "linked_task_id": linked_task_id,
             },
         ).scalar_one()
     log_activity(username, "added", task_text, task_id=new_id)
@@ -778,9 +780,27 @@ def set_done(task_id: int, done: bool, username: str, actor_username: str | None
                 text("UPDATE subtasks SET done = 0 WHERE task_id = :task_id"),
                 {"task_id": task_id},
             )
+        _propagate_linked_task_done(conn, task_id, done, username)
         _touch_last_edited(conn, task_id, actor_username or username)
     log_activity(username, "completed" if done else "uncompleted", task_text, task_id=task_id)
     return get_task(task_id, username)
+
+
+def _propagate_linked_task_done(conn, task_id: int, done: bool, username: str) -> None:
+    """Keeps an expiry list's copied task and its original source task (see
+    AddFromListModal/tasks.linked_task_id) in sync both ways - never chained
+    (the picker only ever copies from a plain main/custom list, never from
+    another expiry list), so one pass each direction is enough."""
+    row = conn.execute(text("SELECT linked_task_id FROM tasks WHERE id = :id"), {"id": task_id}).mappings().fetchone()
+    if row and row["linked_task_id"] is not None:
+        conn.execute(
+            text("UPDATE tasks SET done = :done WHERE id = :id AND username = :username"),
+            {"done": int(done), "id": row["linked_task_id"], "username": username},
+        )
+    conn.execute(
+        text("UPDATE tasks SET done = :done WHERE linked_task_id = :task_id AND username = :username"),
+        {"done": int(done), "task_id": task_id, "username": username},
+    )
 
 
 def set_pinned(task_id: int, pinned: bool, username: str) -> dict | None:
@@ -2002,17 +2022,26 @@ def toggle_public_list_item(list_row: dict, item_id: int, done: bool) -> str | N
 # ----------------------------- Subtask mutations -----------------------------
 
 def add_subtask(
-    task_id: int, subtask_text: str, username: str, actor_username: str | None = None
+    task_id: int,
+    subtask_text: str,
+    username: str,
+    actor_username: str | None = None,
+    linked_subtask_id: int | None = None,
 ) -> tuple[dict, bool]:
     undo.save_snapshot(username)
     engine = get_engine()
     with engine.begin() as conn:
         new_id = conn.execute(
             text(
-                "INSERT INTO subtasks (task_id, text, done, created_at) "
-                "VALUES (:task_id, :text, 0, :created_at) RETURNING id"
+                "INSERT INTO subtasks (task_id, text, done, created_at, linked_subtask_id) "
+                "VALUES (:task_id, :text, 0, :created_at, :linked_subtask_id) RETURNING id"
             ),
-            {"task_id": task_id, "text": subtask_text, "created_at": utc_now_iso()},
+            {
+                "task_id": task_id,
+                "text": subtask_text,
+                "created_at": utc_now_iso(),
+                "linked_subtask_id": linked_subtask_id,
+            },
         ).scalar_one()
         conn.execute(
             text("UPDATE tasks SET done = 0 WHERE id = :id AND username = :username"),
@@ -2037,6 +2066,7 @@ def set_subtask_done(
             conn.execute(text("UPDATE subtasks SET done = 1, urgent = 0 WHERE id = :id"), {"id": subtask_id})
         else:
             conn.execute(text("UPDATE subtasks SET done = 0 WHERE id = :id"), {"id": subtask_id})
+        _propagate_linked_subtask_done(conn, subtask_id, done)
 
         subtasks = conn.execute(
             text("SELECT done FROM subtasks WHERE task_id = :task_id"), {"task_id": task_id}
@@ -2068,6 +2098,26 @@ def set_subtask_done(
         _touch_last_edited(conn, task_id, actor_username or username)
 
     return (_subtask_dict(row) if row else None), parent_done
+
+
+def _propagate_linked_subtask_done(conn, subtask_id: int, done: bool) -> None:
+    """Same idea as _propagate_linked_task_done, for a standalone-copied
+    subtask (see AddFromListModal/subtasks.linked_subtask_id). Deliberately
+    only mirrors the leaf done flag, not a full parent-done recompute on the
+    other side - keeping the two checkboxes in sync is the ask, not
+    cascading completion across unrelated parent tasks."""
+    row = conn.execute(
+        text("SELECT linked_subtask_id FROM subtasks WHERE id = :id"), {"id": subtask_id}
+    ).mappings().fetchone()
+    if row and row["linked_subtask_id"] is not None:
+        conn.execute(
+            text("UPDATE subtasks SET done = :done WHERE id = :id"),
+            {"done": int(done), "id": row["linked_subtask_id"]},
+        )
+    conn.execute(
+        text("UPDATE subtasks SET done = :done WHERE linked_subtask_id = :subtask_id"),
+        {"done": int(done), "subtask_id": subtask_id},
+    )
 
 
 def set_subtask_urgent(

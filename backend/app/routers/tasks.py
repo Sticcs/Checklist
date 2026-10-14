@@ -112,8 +112,19 @@ def create_task(body: TaskCreate, current_user: CurrentUser = Depends(get_curren
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Task text is required")
     if body.list_id is not None:
         _require_movable_list(body.list_id, current_user.username)
+    # Links this copy back to its source (see AddFromListModal) - only ever
+    # set by the "Add from another list" picker, which only ever lists the
+    # caller's own lists, so this also doubles as the ownership check.
+    if body.linked_task_id is not None:
+        _require_task(body.linked_task_id, current_user.username)
     task = crud.add_task(
-        text, body.priority, body.category, body.due_date, current_user.username, list_id=body.list_id
+        text,
+        body.priority,
+        body.category,
+        body.due_date,
+        current_user.username,
+        list_id=body.list_id,
+        linked_task_id=body.linked_task_id,
     )
     task["subtasks"] = []
     return _visible_task(task, current_user.username)
@@ -406,8 +417,20 @@ def create_subtask(
     text = body.text.strip()
     if not text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Subtask text is required")
+    # Links this copy back to its source (see AddFromListModal) - same
+    # ownership reasoning as create_task's linked_task_id above, just
+    # routed through the owning-task lookup since subtasks have no
+    # username column of their own.
+    if body.linked_subtask_id is not None:
+        owning_task_id = crud.get_subtask_owning_task_id(body.linked_subtask_id)
+        if owning_task_id is None or crud.get_task(owning_task_id, current_user.username) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Subtask not found")
     subtask, parent_done = crud.add_subtask(
-        task_id, text, owner_task["username"], actor_username=current_user.username
+        task_id,
+        text,
+        owner_task["username"],
+        actor_username=current_user.username,
+        linked_subtask_id=body.linked_subtask_id,
     )
     return SubtaskMutationResponse(subtask=subtask, parent_done=parent_done)
 

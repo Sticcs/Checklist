@@ -1837,8 +1837,72 @@ body[data-theme='dark'] .entry-hint-step {
 
 @media (prefers-reduced-motion: reduce) {
   .list-glow-white,
-  .list-glow-red {
+  .list-glow-red,
+  .entry-tab.list-glow-white,
+  .entry-tab.list-glow-yellow,
+  .entry-tab.list-glow-red {
     animation: none;
+  }
+}
+
+/* The actively-ticking countdown (see ExpiryTimer) - reuses the same
+   list-glow-* classes as the panel border above for its own small pulsing
+   halo, plus its own text-color rules here since a white glow's box-shadow
+   alone doesn't read as "white" against plain text. */
+.expiry-timer {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  align-self: flex-start;
+  margin-bottom: 0.65rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.expiry-timer-countdown {
+  font-weight: 700;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.expiry-timer-message {
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.expiry-timer.list-glow-yellow .expiry-timer-countdown {
+  color: #f39c12;
+}
+
+.expiry-timer.list-glow-red .expiry-timer-countdown {
+  color: #e74c3c;
+}
+
+/* The tab itself flashes the same colour as its panel/timer (per the
+   request) - every expiry list's own tab, active or not, so the urgency is
+   visible even when you're looking at a different tab. */
+.entry-tab.list-glow-white {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+  animation: list-glow-pulse-white 3.2s ease-in-out infinite;
+}
+
+.entry-tab.list-glow-yellow {
+  box-shadow: inset 0 0 0 2px #f39c12;
+}
+
+.entry-tab.list-glow-red {
+  box-shadow: inset 0 0 0 2px #e74c3c;
+  animation: entry-tab-glow-pulse-red 1.6s ease-in-out infinite;
+}
+
+@keyframes entry-tab-glow-pulse-red {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 2px rgba(231, 76, 60, 0.55);
+  }
+  50% {
+    box-shadow: inset 0 0 0 4px rgba(231, 76, 60, 0.9);
   }
 }
 
