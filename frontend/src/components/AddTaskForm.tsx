@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ASSESSMENT_CATEGORY, CATEGORIES, CAT_KEYS, PRIORITIES, PRI_KEYS, SHOPPING_CATEGORY } from '../constants'
 import { computeDueDate, DUE_PRESET_ORDER, type DuePreset } from '../utils/dueDatePresets'
 import { isTypingElement } from '../utils/isTypingElement'
-import { useAddTask } from '../hooks/useTasks'
+import { useAddTask, useTasks } from '../hooks/useTasks'
 import { useDraftText } from '../hooks/useDraftText'
 import { DateInput } from './DateInput'
 import { VignetteOverlay } from './VignetteOverlay'
@@ -36,6 +36,19 @@ interface Props {
 }
 
 export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
+  // Every mutation hook in this app (see useTasks.ts's own comment) assumes
+  // TASKS_KEY already holds real data by the time it fires an optimistic
+  // write - its cache-patch helpers silently no-op against an undefined
+  // cache rather than crash. On a slow connection there's a real window,
+  // right after this page mounts, where the user can type and submit a
+  // task before that first GET /api/tasks has resolved at all - the
+  // optimistic add then has nothing to patch into, and the task never
+  // appears, with no error to explain why. Gating submission on this
+  // (rather than patching the cache helpers to invent an empty base) means
+  // nothing here ever has to guess at pre-existing tasks it hasn't seen
+  // yet.
+  const { data: tasksData } = useTasks()
+  const tasksReady = tasksData !== undefined
   // Mirrored to localStorage (see useDraftText) so text you're mid-typing
   // survives an accidental reload or a dropped connection instead of just
   // vanishing - restored automatically the next time this form mounts.
@@ -371,11 +384,17 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
       <div className="task-entry-row">
         <input
           className="task-text-input"
-          placeholder={listId !== null ? 'Add an item to this list...' : 'E.g., Review Big O time complexity'}
+          placeholder={
+            !tasksReady
+              ? 'Loading your tasks…'
+              : listId !== null
+                ? 'Add an item to this list...'
+                : 'E.g., Review Big O time complexity'
+          }
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
           onKeyDown={handleTextKeyDown}
-          disabled={textLocked}
+          disabled={textLocked || !tasksReady}
         />
         {/* The physical-Enter-key equivalent, as an actual button - mainly
             for touch/mobile, where there's no keyboard "Enter" to press
@@ -384,7 +403,7 @@ export function AddTaskForm({ onAdded, hasTasks, listId = null }: Props) {
           type="button"
           className="task-entry-enter-btn"
           title="Enter"
-          disabled={text.trim() === '' || textLocked}
+          disabled={text.trim() === '' || textLocked || !tasksReady}
           onClick={lockText}
         >
           ➤

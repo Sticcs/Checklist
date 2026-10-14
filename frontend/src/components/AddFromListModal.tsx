@@ -40,37 +40,47 @@ export function AddFromListModal({ targetListId, onClose }: Props) {
     window.setTimeout(() => setJustAddedKey((k) => (k === key ? null : k)), 1200)
   }
 
-  const copyTask = (task: Task) => {
+  const copyTask = async (task: Task) => {
     const key = `task-${task.id}`
-    addTask.mutate(
-      {
+    try {
+      await addTask.mutateAsync({
         text: task.text,
         priority: 'Medium',
         category: 'General',
         dueDate: null,
         listId: targetListId,
         linkedTaskId: task.id,
-      },
-      { onSuccess: () => flashAdded(key) }
-    )
+      })
+      flashAdded(key)
+    } catch {
+      // Already surfaced via the hook's own onError toast.
+    }
   }
 
-  const copySubtask = (parentTask: Task, subtask: Subtask) => {
+  const copySubtask = async (parentTask: Task, subtask: Subtask) => {
     const key = `subtask-${subtask.id}`
-    // The subtask needs a real task id to attach to, so the parent copy has
-    // to land first - chained through this call-level onSuccess rather than
-    // fired in parallel.
-    addTask.mutate(
-      { text: parentTask.text, priority: 'Medium', category: 'General', dueDate: null, listId: targetListId },
-      {
-        onSuccess: (newTask) => {
-          addSubtask.mutate(
-            { taskId: newTask.id, text: subtask.text, linkedSubtaskId: subtask.id },
-            { onSuccess: () => flashAdded(key) }
-          )
-        },
-      }
-    )
+    try {
+      // The subtask needs a real task id to attach to, so the parent copy
+      // has to land first. Chained via mutateAsync/await rather than a
+      // call-level onSuccess callback - this component (and its onClose,
+      // see the "Done" button below) can unmount the instant the first
+      // part lands, since nothing here blocks that. A callback chained
+      // through .mutate()'s options silently never fired once that
+      // happened, dropping the subtask entirely; a plain awaited promise
+      // chain keeps running regardless of whether this component is still
+      // mounted to see it finish.
+      const newTask = await addTask.mutateAsync({
+        text: parentTask.text,
+        priority: 'Medium',
+        category: 'General',
+        dueDate: null,
+        listId: targetListId,
+      })
+      await addSubtask.mutateAsync({ taskId: newTask.id, text: subtask.text, linkedSubtaskId: subtask.id })
+      flashAdded(key)
+    } catch {
+      // Already surfaced via the hooks' own onError toasts.
+    }
   }
 
   return (

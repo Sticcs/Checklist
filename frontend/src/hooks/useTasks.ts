@@ -26,8 +26,17 @@ export const SHARED_KEY = ['shared-with-me']
 // side undo/redo stack (see undoRedoStack.ts) - every mutation here calls
 // the backend's save_snapshot() first too, so this stays in lockstep with
 // the server's own history.
-async function beginOptimisticUpdate(queryClient: QueryClient) {
-  await queryClient.cancelQueries({ queryKey: TASKS_KEY })
+//
+// Deliberately synchronous, not `await`-ing cancelQueries - this runs
+// inside onMutate, and an await here (even just one microtask's worth)
+// opens a window where a second mutation fired in the same tick (e.g. two
+// checkboxes ticked back-to-back) reads `previous` before the first one's
+// optimistic write has landed, then overwrites it when it writes its own -
+// silently losing the first toggle. cancelQueries' own cancellation still
+// happens (its promise just isn't awaited), only the read-then-write below
+// needs to be atomic with respect to the click that triggered it.
+function beginOptimisticUpdate(queryClient: QueryClient) {
+  void queryClient.cancelQueries({ queryKey: TASKS_KEY })
   const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
   if (previous) pushUndoSnapshot(previous)
   return previous
@@ -57,9 +66,10 @@ export function isOwnedTask(queryClient: QueryClient, taskId: number): boolean {
 // above - deliberately lighter: no pushUndoSnapshot, since a collaborator's
 // edits to someone else's assignment have nothing to do with the owner's own
 // undo/redo stack (which is fetched from the owner's own /api/tasks and
-// isn't even visible to a collaborator).
-export async function beginSharedOptimisticUpdate(queryClient: QueryClient) {
-  await queryClient.cancelQueries({ queryKey: SHARED_KEY })
+// isn't even visible to a collaborator). Synchronous for the same reason as
+// beginOptimisticUpdate above - see its comment.
+export function beginSharedOptimisticUpdate(queryClient: QueryClient) {
+  void queryClient.cancelQueries({ queryKey: SHARED_KEY })
   return queryClient.getQueryData<Task[]>(SHARED_KEY)
 }
 
@@ -113,7 +123,7 @@ export function useAddTask() {
     // fail for real, so the outbox actually gets a chance to catch it.
     networkMode: 'always',
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       const tempId = -Date.now()
       const clientKey = `temp-task-${tempId}`
       const positions = previous?.tasks.map((t) => t.position) ?? []
@@ -196,7 +206,7 @@ export function useEditTask() {
       dueDate: string | null
     }) => tasksApi.update(id, text, priority, category, dueDate),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) =>
           t.id === vars.id
@@ -267,7 +277,7 @@ export function useToggleDone() {
           : 'Task unmarked'
       toast.success(message)
       if (isOwnedTask(queryClient, vars.id)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         setTasksData(queryClient, (old) => ({
           tasks: applyLinkedToggleDone(old.tasks, vars.id, vars.done),
           can_undo: true,
@@ -275,7 +285,7 @@ export function useToggleDone() {
         }))
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => (t.id === vars.id ? applyToggleDone(t, vars.done) : t)))
       return { previous, shared: true }
     },
@@ -300,7 +310,7 @@ export function useSetPinned() {
   return useMutation({
     mutationFn: ({ id, pinned }: { id: number; pinned: boolean }) => tasksApi.setPinned(id, pinned),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, pinned: vars.pinned } : t)),
         can_undo: true,
@@ -321,7 +331,7 @@ export function useSetPosition() {
   return useMutation({
     mutationFn: ({ id, position }: { id: number; position: number }) => tasksApi.setPosition(id, position),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, position: vars.position } : t)),
         can_undo: true,
@@ -341,7 +351,7 @@ export function useSetTaskUrgent() {
   return useMutation({
     mutationFn: ({ id, urgent }: { id: number; urgent: boolean }) => tasksApi.setUrgent(id, urgent),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, urgent: vars.urgent } : t)),
         can_undo: true,
@@ -362,7 +372,7 @@ export function useSetTaskInProgress() {
     mutationFn: ({ id, inProgress }: { id: number; inProgress: boolean }) =>
       tasksApi.setInProgress(id, inProgress),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, in_progress: vars.inProgress } : t)),
         can_undo: true,
@@ -383,7 +393,7 @@ export function useSetTaskLinks() {
     mutationFn: ({ id, links }: { id: number; links: LinkItem[] }) => tasksApi.setLinks(id, links),
     onMutate: async (vars) => {
       if (isOwnedTask(queryClient, vars.id)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         setTasksData(queryClient, (old) => ({
           tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, links: vars.links } : t)),
           can_undo: true,
@@ -391,7 +401,7 @@ export function useSetTaskLinks() {
         }))
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => (t.id === vars.id ? { ...t, links: vars.links } : t)))
       return { previous, shared: true }
     },
@@ -423,7 +433,7 @@ export function useSetLinkHidden() {
       tasksApi.setLinkHidden(id, linkId, hidden),
     onMutate: async (vars) => {
       if (isOwnedTask(queryClient, vars.id)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         setTasksData(queryClient, (old) => ({
           tasks: old.tasks.map((t) => (t.id === vars.id ? applyLinkHidden(t, vars.linkId, vars.hidden) : t)),
           can_undo: true,
@@ -431,7 +441,7 @@ export function useSetLinkHidden() {
         }))
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) =>
         old.map((t) => (t.id === vars.id ? applyLinkHidden(t, vars.linkId, vars.hidden) : t))
       )
@@ -469,7 +479,7 @@ export function useSetTaskPages() {
         }))
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => (t.id === vars.id ? { ...t, pages: vars.pages } : t)))
       return { previous, shared: true }
     },
@@ -518,17 +528,15 @@ function applyOptimisticPageChange(
   queryClient: QueryClient,
   taskId: number,
   apply: (t: Task) => Task
-): Promise<{ previous: TasksResponse | Task[] | undefined; shared: boolean }> {
+): { previous: TasksResponse | Task[] | undefined; shared: boolean } {
   if (isOwnedTask(queryClient, taskId)) {
-    return beginOptimisticUpdate(queryClient).then((previous) => {
-      setTasksData(queryClient, (old) => ({ ...old, tasks: old.tasks.map((t) => (t.id === taskId ? apply(t) : t)) }))
-      return { previous, shared: false }
-    })
+    const previous = beginOptimisticUpdate(queryClient)
+    setTasksData(queryClient, (old) => ({ ...old, tasks: old.tasks.map((t) => (t.id === taskId ? apply(t) : t)) }))
+    return { previous, shared: false }
   }
-  return beginSharedOptimisticUpdate(queryClient).then((previous) => {
-    setSharedData(queryClient, (old) => old.map((t) => (t.id === taskId ? apply(t) : t)))
-    return { previous, shared: true }
-  })
+  const previous = beginSharedOptimisticUpdate(queryClient)
+  setSharedData(queryClient, (old) => old.map((t) => (t.id === taskId ? apply(t) : t)))
+  return { previous, shared: true }
 }
 
 export function useAddPage() {
@@ -608,8 +616,8 @@ export function useRestorePageVersion() {
     mutationFn: ({ id, pageId, versionId }: { id: number; pageId: string; versionId: number }) =>
       tasksApi.restorePageVersion(id, pageId, versionId),
     onMutate: async (vars) => {
-      if (isOwnedTask(queryClient, vars.id)) return { previous: await beginOptimisticUpdate(queryClient), shared: false }
-      return { previous: await beginSharedOptimisticUpdate(queryClient), shared: true }
+      if (isOwnedTask(queryClient, vars.id)) return { previous: beginOptimisticUpdate(queryClient), shared: false }
+      return { previous: beginSharedOptimisticUpdate(queryClient), shared: true }
     },
     onSuccess: (task) => applyServerTask(queryClient, task),
     onError: (_err, _vars, ctx) => {
@@ -626,7 +634,7 @@ export function useAssignTask() {
     mutationFn: ({ id, assignedTaskId }: { id: number; assignedTaskId: number | null }) =>
       tasksApi.assign(id, assignedTaskId),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, assigned_task_id: vars.assignedTaskId } : t)),
         can_undo: true,
@@ -646,7 +654,7 @@ export function useSetDueDate() {
   return useMutation({
     mutationFn: ({ id, dueDate }: { id: number; dueDate: string | null }) => tasksApi.setDueDate(id, dueDate),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, due_date: vars.dueDate } : t)),
         can_undo: true,
@@ -667,7 +675,7 @@ export function useMoveTask() {
   return useMutation({
     mutationFn: ({ id, listId }: { id: number; listId: number }) => tasksApi.setListId(id, listId),
     onMutate: async (vars) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => (t.id === vars.id ? { ...t, list_id: vars.listId } : t)),
         can_undo: true,
@@ -719,7 +727,7 @@ export function useDeleteTask() {
   return useMutation({
     mutationFn: (id: number) => tasksApi.remove(id),
     onMutate: async (id) => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.filter((t) => t.id !== id),
         can_undo: true,
@@ -754,7 +762,7 @@ export function useMarkAllCompleted() {
   return useMutation({
     mutationFn: () => tasksApi.markAllCompleted(),
     onMutate: async () => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.map((t) => ({
           ...t,
@@ -780,7 +788,7 @@ export function useClearCompleted() {
   return useMutation({
     mutationFn: () => tasksApi.clearCompleted(),
     onMutate: async () => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, (old) => ({
         tasks: old.tasks.filter((t) => !t.done),
         can_undo: true,
@@ -801,7 +809,7 @@ export function useClearAll() {
   return useMutation({
     mutationFn: () => tasksApi.clearAll(),
     onMutate: async () => {
-      const previous = await beginOptimisticUpdate(queryClient)
+      const previous = beginOptimisticUpdate(queryClient)
       setTasksData(queryClient, () => ({ tasks: [], can_undo: true, can_redo: false }))
       toast('🗑️ Cleared all tasks')
       return { previous }

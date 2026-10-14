@@ -8,8 +8,12 @@ import { markDirty } from './saveState'
 import { addToOutbox } from '../lib/offlineOutbox'
 import type { Task, TasksResponse } from '../types'
 
-async function beginOptimisticUpdate(queryClient: ReturnType<typeof useQueryClient>) {
-  await queryClient.cancelQueries({ queryKey: TASKS_KEY })
+// Synchronous, not `await`-ing cancelQueries - see the matching comment on
+// useTasks.ts's own beginOptimisticUpdate for why: an await here opens a
+// race window where two subtask mutations fired in the same tick (e.g. two
+// checkboxes ticked back-to-back) can silently lose one of them.
+function beginOptimisticUpdate(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.cancelQueries({ queryKey: TASKS_KEY })
   const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
   if (previous) pushUndoSnapshot(previous)
   return previous
@@ -62,7 +66,7 @@ export function useAddSubtask() {
       }
       toast('➕ Subtask added')
       if (isOwnedTask(queryClient, vars.taskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? {
@@ -76,7 +80,7 @@ export function useAddSubtask() {
         )
         return { previous, shared: false, tempId, clientKey }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) =>
         old.map((t) => (t.id === vars.taskId ? { ...t, done: false, subtasks: [...t.subtasks, optimisticSubtask] } : t))
       )
@@ -152,7 +156,7 @@ export function useToggleSubtask() {
       subtasksApi.setDone(subtaskId, done),
     onMutate: async (vars) => {
       if (isSubtaskOwned(queryClient, vars.subtaskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? {
@@ -164,7 +168,7 @@ export function useToggleSubtask() {
         )
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => applyLinkedSubtaskDone(old, vars.subtaskId, vars.done))
       return { previous, shared: true }
     },
@@ -195,13 +199,13 @@ export function useSetSubtaskAssignee() {
             }
           : t
       if (isSubtaskOwned(queryClient, vars.subtaskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old ? { tasks: old.tasks.map(apply), can_undo: true, can_redo: false } : old
         )
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map(apply))
       return { previous, shared: true }
     },
@@ -230,7 +234,7 @@ export function useSetSubtaskUrgent() {
       subtasksApi.setUrgent(subtaskId, urgent),
     onMutate: async (vars) => {
       if (isSubtaskOwned(queryClient, vars.subtaskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? {
@@ -242,7 +246,7 @@ export function useSetSubtaskUrgent() {
         )
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => applySubtaskUrgent(t, vars.subtaskId, vars.urgent)))
       return { previous, shared: true }
     },
@@ -266,7 +270,7 @@ export function useSetSubtaskDueDate() {
       subtasksApi.setDueDate(subtaskId, dueDate),
     onMutate: async (vars) => {
       if (isSubtaskOwned(queryClient, vars.subtaskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? {
@@ -278,7 +282,7 @@ export function useSetSubtaskDueDate() {
         )
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => applySubtaskDueDate(t, vars.subtaskId, vars.dueDate)))
       return { previous, shared: true }
     },
@@ -302,7 +306,7 @@ export function useSetSubtaskText() {
       subtasksApi.setText(subtaskId, text),
     onMutate: async (vars) => {
       if (isSubtaskOwned(queryClient, vars.subtaskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? {
@@ -314,7 +318,7 @@ export function useSetSubtaskText() {
         )
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => applySubtaskText(t, vars.subtaskId, vars.text)))
       return { previous, shared: true }
     },
@@ -388,7 +392,7 @@ export function useDeleteSubtask() {
     onMutate: async (subtaskId) => {
       toast('🗑️ Subtask deleted')
       if (isSubtaskOwned(queryClient, subtaskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? { tasks: old.tasks.map((t) => applySubtaskDelete(t, subtaskId)), can_undo: true, can_redo: false }
@@ -396,7 +400,7 @@ export function useDeleteSubtask() {
         )
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => applySubtaskDelete(t, subtaskId)))
       return { previous, shared: true }
     },
@@ -433,7 +437,7 @@ export function useClearCompletedSubtasks() {
     onMutate: async (taskId) => {
       toast('🧹 Cleared completed subtasks')
       if (isOwnedTask(queryClient, taskId)) {
-        const previous = await beginOptimisticUpdate(queryClient)
+        const previous = beginOptimisticUpdate(queryClient)
         queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
           old
             ? { tasks: old.tasks.map((t) => applyClearCompletedSubtasks(t, taskId)), can_undo: true, can_redo: false }
@@ -441,7 +445,7 @@ export function useClearCompletedSubtasks() {
         )
         return { previous, shared: false }
       }
-      const previous = await beginSharedOptimisticUpdate(queryClient)
+      const previous = beginSharedOptimisticUpdate(queryClient)
       setSharedData(queryClient, (old) => old.map((t) => applyClearCompletedSubtasks(t, taskId)))
       return { previous, shared: true }
     },

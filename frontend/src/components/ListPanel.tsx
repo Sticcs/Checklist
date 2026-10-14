@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import type { ListEntry, Task } from '../types'
-import { useAddTask, useDeleteTask, useToggleDone } from '../hooks/useTasks'
+import { useAddTask, useDeleteTask, useTasks, useToggleDone } from '../hooks/useTasks'
 import { LIST_ITEM_CATEGORY, SHOPPING_CATEGORY } from '../constants'
 import { useDraftText } from '../hooks/useDraftText'
 import { ListMenu } from './ListMenu'
@@ -19,6 +19,11 @@ export function ListPanel({ list, items }: Props) {
   const toggleDone = useToggleDone()
   const deleteTask = useDeleteTask()
   const addTask = useAddTask()
+  // See AddTaskForm's matching comment - submitting before TASKS_KEY has
+  // ever resolved once leaves the optimistic add with no cache to patch
+  // into, so it silently never appears.
+  const { data: tasksData } = useTasks()
+  const tasksReady = tasksData !== undefined
 
   // Keyed per-list so a draft in one list's add-item box doesn't bleed into
   // another's, and survives a reload the same way the main quick-add does.
@@ -27,7 +32,7 @@ export function ListPanel({ list, items }: Props) {
   const submitItem = (e: React.FormEvent) => {
     e.preventDefault()
     const text = newItemText.trim()
-    if (!text) return
+    if (!text || !tasksReady) return
     setNewItemText('')
     if (list.kind === 'shopping') {
       addTask.mutate({ text, priority: 'Medium', category: SHOPPING_CATEGORY, dueDate: null })
@@ -42,9 +47,10 @@ export function ListPanel({ list, items }: Props) {
 
       <form className="assignment-task-add-form" onSubmit={submitItem}>
         <input
-          placeholder="Add an item..."
+          placeholder={tasksReady ? 'Add an item...' : 'Loading your tasks…'}
           value={newItemText}
           onChange={(e) => setNewItemText(e.target.value)}
+          disabled={!tasksReady}
         />
       </form>
 

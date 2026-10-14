@@ -57,7 +57,27 @@ if (listMatch) {
     window.history.replaceState(null, '', '/')
   }
 
-  const queryClient = new QueryClient()
+  // Every mutation in this app manages its own query cache entirely by
+  // hand - onMutate applies the exact change the server will make, onError
+  // rolls it back, nothing ever refetches on settle (see useTasks.ts's own
+  // comment on that). TanStack's *default* QueryClient contradicts that
+  // design: refetchOnWindowFocus/refetchOnReconnect are both true out of
+  // the box, so simply alt-tabbing away and back (or a flaky connection
+  // reconnecting) fires a silent background GET /api/tasks whose response
+  // can land a moment after an optimistic write and overwrite it with
+  // pre-mutation data - a task (or a just-ticked checkbox) visibly
+  // reverting a second or two after the action, for no reason the user did
+  // anything wrong. Disabling both here is what actually makes the
+  // "nothing refetches on settle" comment true app-wide, not just within
+  // each mutation's own onSuccess.
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+      },
+    },
+  })
 
   root.render(
     <StrictMode>
