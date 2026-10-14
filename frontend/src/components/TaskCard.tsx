@@ -949,7 +949,7 @@ export function TaskCard({
     </>
   )
 
-  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}${compact ? ' compact' : ''}${highlighted ? ' highlighted' : ''}`
+  const className = `task-card${task.done ? ' done' : ''}${focused ? ' focused' : ''}${justCompleted ? ' just-completed' : ''}${compact ? ' compact' : ''}${highlighted ? ' highlighted' : ''}${task.carried_over ? ' carried-over' : ''}`
 
   if (draggable) {
     return (

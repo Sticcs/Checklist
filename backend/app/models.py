@@ -269,6 +269,10 @@ class Task(BaseModel):
     last_edited_by: str | None = None
     last_edited_at: str | None = None
     linked_task_id: int | None = None
+    # Set when an expiry checklist expired, got "Continued", and this task
+    # was still incomplete at that moment - see lists_table's own comment
+    # and crud.continue_expiry_list. Shown with a light red background.
+    carried_over: bool = False
 
 
 class TasksResponse(BaseModel):
@@ -372,6 +376,10 @@ class ListEntry(BaseModel):
     # Only ever set for kind='expiry' - see lists_table's own comment on
     # the column for why this is a naive local string, not a UTC one.
     expires_at: str | None = None
+    # Only ever set for kind='expiry' - the countdown's actual "start" (see
+    # lists_table's own comment on the column for why this differs from
+    # created_at once a list has been "Continued").
+    cycle_started_at: str | None = None
 
 
 class ListsResponse(BaseModel):

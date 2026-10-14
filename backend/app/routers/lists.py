@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app import crud
 from app.config import settings
 from app.models import (
+    ClearResponse,
     ListCreate,
     ListEntry,
     ListExpiresAtUpdate,
@@ -37,6 +38,7 @@ def _entry(row: dict) -> ListEntry:
         is_simple=bool(row.get("is_simple")),
         created_at=row["created_at"],
         expires_at=row.get("expires_at"),
+        cycle_started_at=row.get("cycle_started_at"),
     )
 
 
@@ -63,6 +65,29 @@ def set_list_expires_at(
     list_id: int, body: ListExpiresAtUpdate, current_user: CurrentUser = Depends(get_current_user)
 ) -> ListEntry:
     row = crud.set_list_expires_at(list_id, current_user.username, body.expires_at)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
+    return _entry(row)
+
+
+@router.post("/{list_id}/clear-completed", response_model=ClearResponse)
+def clear_completed_in_list(
+    list_id: int, current_user: CurrentUser = Depends(get_current_user)
+) -> ClearResponse:
+    # Fired automatically by the frontend's ExpiryTimer the moment a list's
+    # countdown hits zero - not a user-facing button of its own. No 404 on
+    # an unknown/foreign list_id: crud.clear_completed_in_list's DELETE is
+    # username-scoped, so it's simply a no-op (0 deleted) rather than an
+    # error either way.
+    count = crud.clear_completed_in_list(list_id, current_user.username)
+    return ClearResponse(deleted_count=count)
+
+
+@router.post("/{list_id}/continue", response_model=ListEntry)
+def continue_expiry_list(
+    list_id: int, body: ListExpiresAtUpdate, current_user: CurrentUser = Depends(get_current_user)
+) -> ListEntry:
+    row = crud.continue_expiry_list(list_id, current_user.username, body.expires_at)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "List not found")
     return _entry(row)

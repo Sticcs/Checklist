@@ -92,6 +92,14 @@ tasks_table = Table(
     # done-state change across this link in both directions so the two
     # stay in sync.
     Column("linked_task_id", Integer, nullable=True),
+    # Set when an expiry checklist expired, got "Continued" (see
+    # crud.continue_expiry_list), and this task was still incomplete at
+    # that moment - shown with a light red background in the UI as a "this
+    # has been hanging around since before" flag. Never cleared back to
+    # false automatically; it rides along until the task is completed (and
+    # eventually swept by the next expiry's clear_completed_in_list) or
+    # deleted outright.
+    Column("carried_over", Integer, nullable=False, server_default=text("0")),
 )
 
 subtasks_table = Table(
@@ -222,6 +230,17 @@ lists_table = Table(
     # same local-wall-clock convention as tasks.due_date, not a logged
     # event, so it's excluded from the "+00:00" UTC-backfill loop below.
     Column("expires_at", String, nullable=True),
+    # Only meaningful for kind='expiry'. The countdown's actual "start" for
+    # expiryProgressPct's percentage-remaining math - set to created_at's
+    # own value when the list is first created, then reset to "now" each
+    # time its "Continue" option is used (see crud.continue_expiry_list).
+    # Deliberately separate from created_at (which stays the list's true,
+    # original creation time forever) - if the glow/countdown used
+    # created_at directly, continuing a list that's existed for days with a
+    # fresh one-day extension would compute its percentage-remaining against
+    # that whole multi-day span instead of the new cycle's actual length,
+    # showing it as almost-expired (red) the instant it's continued.
+    Column("cycle_started_at", String, nullable=True),
 )
 
 activity_log_table = Table(
@@ -391,6 +410,10 @@ def init_db() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN linked_task_id INTEGER"))
 
+    if "carried_over" not in existing_task_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN carried_over INTEGER NOT NULL DEFAULT 0"))
+
     existing_subtask_columns = {c["name"] for c in inspector.get_columns("subtasks")}
     if "urgent" not in existing_subtask_columns:
         with engine.begin() as conn:
@@ -426,6 +449,15 @@ def init_db() -> None:
     if "expires_at" not in existing_list_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE lists ADD COLUMN expires_at TEXT"))
+
+    if "cycle_started_at" not in existing_list_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE lists ADD COLUMN cycle_started_at TEXT"))
+            # Backfill so an existing expiry list's glow/countdown keeps
+            # computing against its original creation time, same as before
+            # this column existed, rather than suddenly having no "start"
+            # at all.
+            conn.execute(text("UPDATE lists SET cycle_started_at = created_at WHERE kind = 'expiry'"))
 
     existing_activity_columns = {c["name"] for c in inspector.get_columns("activity_log")}
     if "task_id" not in existing_activity_columns:

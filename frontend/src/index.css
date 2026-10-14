@@ -1845,6 +1845,17 @@ body[data-theme='dark'] .entry-hint-step {
   }
 }
 
+/* Wraps the countdown pill and (once expired) the Continue button on one
+   row - see ExpiryTimer. */
+.expiry-timer-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-self: flex-start;
+  margin-bottom: 0.65rem;
+}
+
 /* The actively-ticking countdown (see ExpiryTimer) - reuses the same
    list-glow-* classes as the panel border above for its own small pulsing
    halo, plus its own text-color rules here since a white glow's box-shadow
@@ -1853,8 +1864,6 @@ body[data-theme='dark'] .entry-hint-step {
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
-  align-self: flex-start;
-  margin-bottom: 0.65rem;
   padding: 0.4rem 0.8rem;
   border-radius: 999px;
   background: rgba(128, 128, 128, 0.12);
@@ -1877,6 +1886,33 @@ body[data-theme='dark'] .entry-hint-step {
 
 .expiry-timer.list-glow-red .expiry-timer-countdown {
   color: #e74c3c;
+}
+
+/* The "Continue" button + its two popovers (see ContinueExpiryButton) -
+   relative so the popovers (position: absolute via .compact-menu-popover/
+   .assignment-share-popover) anchor to the button, not the page. */
+.continue-expiry {
+  position: relative;
+}
+
+.btn-continue-expiry {
+  border: none;
+  border-radius: 8px;
+  background: #3498db;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+}
+
+.btn-continue-expiry:hover:not(:disabled) {
+  background: #2980b9;
+}
+
+.btn-continue-expiry:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* The tab itself flashes the same colour as its panel/timer (per the
@@ -2071,6 +2107,20 @@ body[data-theme='dark'] .entry-hint-step {
 body[data-theme='dark'] .task-card.done {
   background: rgba(29, 131, 72, 1) !important;
   border-color: rgba(20, 90, 50, 1) !important;
+}
+
+/* Left over from an expiry checklist's previous (expired) cycle - see
+   ContinueExpiryButton/useContinueExpiryList. Deliberately not !important,
+   unlike .task-card.done above - completing one of these should still show
+   the normal solid-green done state, not fight with this tint. */
+.task-card.carried-over {
+  background: rgba(231, 76, 60, 0.12);
+  border-color: rgba(231, 76, 60, 0.35);
+}
+
+body[data-theme='dark'] .task-card.carried-over {
+  background: rgba(231, 76, 60, 0.18);
+  border-color: rgba(231, 76, 60, 0.4);
 }
 
 @keyframes focus-flash {

@@ -1,13 +1,20 @@
 import type { ListEntry } from '../types'
 
-// created_at is a UTC-offset ISO string, expires_at a naive local
+// cycle_started_at is a UTC-offset ISO string, expires_at a naive local
 // "YYYY-MM-DDTHH:MM" string (see lists_table's column comments for why they
 // differ) - new Date(...) parses both into correct, directly-comparable
 // absolute instants despite the differing conventions, so don't "fix" this
 // into using the same format for both.
+//
+// Uses cycle_started_at, not created_at - the countdown's "start" resets
+// every time the list is "Continued" (see ContinueExpiryButton), so a list
+// that's existed for days but was just continued with a fresh one-day
+// extension reads as freshly-started (white), not nearly-expired (red)
+// against its whole multi-day history. Falls back to created_at for any
+// list fetched before that column existed server-side.
 export function expiryProgressPct(list: ListEntry, nowMs: number): number | null {
   if (list.kind !== 'expiry' || !list.expires_at) return null
-  const created = new Date(list.created_at).getTime()
+  const created = new Date(list.cycle_started_at ?? list.created_at).getTime()
   const expires = new Date(list.expires_at).getTime()
   if (!(expires > created)) return 0
   return Math.max(0, Math.min(100, ((expires - nowMs) / (expires - created)) * 100))

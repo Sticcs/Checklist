@@ -171,6 +171,7 @@ def _task_dict(row) -> dict:
     d["pinned"] = bool(d["pinned"])
     d["urgent"] = bool(d["urgent"])
     d["in_progress"] = bool(d["in_progress"])
+    d["carried_over"] = bool(d["carried_over"])
     d["links"] = _backfill_links(json.loads(d["links"]) if d.get("links") else [], d["username"])
     d["pages"] = json.loads(d["pages"]) if d.get("pages") else []
     return d
@@ -1738,18 +1739,20 @@ def create_list(username: str, *, kind: str = "custom", expires_at: str | None =
             text("SELECT COUNT(*) FROM lists WHERE username = :username AND kind IN ('custom', 'expiry')"),
             {"username": username},
         ).scalar_one()
+        created_at = utc_now_iso()
         new_id = conn.execute(
             text(
-                "INSERT INTO lists (username, name, created_at, position, kind, expires_at) "
-                "VALUES (:username, :name, :created_at, :position, :kind, :expires_at) RETURNING id"
+                "INSERT INTO lists (username, name, created_at, position, kind, expires_at, cycle_started_at) "
+                "VALUES (:username, :name, :created_at, :position, :kind, :expires_at, :cycle_started_at) RETURNING id"
             ),
             {
                 "username": username,
                 "name": f"List {count + 2}",
-                "created_at": utc_now_iso(),
+                "created_at": created_at,
                 "position": count + 1,
                 "kind": kind,
                 "expires_at": expires_at,
+                "cycle_started_at": created_at,
             },
         ).scalar_one()
         row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": new_id}).mappings().fetchone()
@@ -1799,6 +1802,90 @@ def set_list_expires_at(list_id: int, username: str, expires_at: str) -> dict | 
         result = conn.execute(
             text("UPDATE lists SET expires_at = :expires_at WHERE id = :id AND username = :username"),
             {"expires_at": expires_at, "id": list_id, "username": username},
+        )
+        if result.rowcount == 0:
+            return None
+        row = conn.execute(text("SELECT * FROM lists WHERE id = :id"), {"id": list_id}).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def clear_completed_in_list(list_id: int, username: str) -> int:
+    """Same cascade as the account-wide clear_completed (crud.py's Tasks
+    section) - every WHERE clause there just gains list_id here, so this is
+    scoped to one list instead of every task the user owns. Fired
+    automatically the moment an expiry checklist's countdown hits zero (see
+    the frontend's ExpiryTimer), not something the user triggers by hand."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        done_ids = [
+            r["id"]
+            for r in conn.execute(
+                text("SELECT id FROM tasks WHERE done = 1 AND list_id = :list_id AND username = :username"),
+                {"list_id": list_id, "username": username},
+            ).mappings().all()
+        ]
+        if done_ids:
+            stmt = text("DELETE FROM subtasks WHERE task_id IN :task_ids").bindparams(
+                bindparam("task_ids", expanding=True)
+            )
+            conn.execute(stmt, {"task_ids": done_ids})
+            unassign_stmt = text(
+                "UPDATE tasks SET assigned_task_id = NULL WHERE assigned_task_id IN :task_ids AND username = :username"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(unassign_stmt, {"task_ids": done_ids, "username": username})
+            collab_stmt = text(
+                "DELETE FROM assignment_collaborators WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(collab_stmt, {"task_ids": done_ids})
+            messages_stmt = text(
+                "DELETE FROM assignment_messages WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(messages_stmt, {"task_ids": done_ids})
+            reads_stmt = text(
+                "DELETE FROM assignment_message_reads WHERE task_id IN :task_ids"
+            ).bindparams(bindparam("task_ids", expanding=True))
+            conn.execute(reads_stmt, {"task_ids": done_ids})
+            conn.execute(
+                text("DELETE FROM tasks WHERE done = 1 AND list_id = :list_id AND username = :username"),
+                {"list_id": list_id, "username": username},
+            )
+    if done_ids:
+        log_activity(username, "cleared_completed", f"{len(done_ids)} task{'s' if len(done_ids) != 1 else ''}")
+    return len(done_ids)
+
+
+def continue_expiry_list(list_id: int, username: str, expires_at: str) -> dict | None:
+    """The "Continue" flow (see the frontend's ContinueExpiryButton): sets a
+    fresh deadline and restarts the countdown's own clock (cycle_started_at
+    - see lists_table's comment on it), and flags every task still
+    incomplete in this list as carried_over so the UI can call them out
+    (light red background) as left over from the expired cycle. Whatever
+    was done got swept already by clear_completed_in_list when the
+    countdown first hit zero, so "still incomplete" here just means
+    whatever's left in the list at the moment Continue is pressed,
+    including anything added after it expired but before being continued."""
+    undo.save_snapshot(username)
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE tasks SET carried_over = 1 "
+                "WHERE list_id = :list_id AND username = :username AND done = 0"
+            ),
+            {"list_id": list_id, "username": username},
+        )
+        result = conn.execute(
+            text(
+                "UPDATE lists SET expires_at = :expires_at, cycle_started_at = :cycle_started_at "
+                "WHERE id = :id AND username = :username"
+            ),
+            {
+                "expires_at": expires_at,
+                "cycle_started_at": utc_now_iso(),
+                "id": list_id,
+                "username": username,
+            },
         )
         if result.rowcount == 0:
             return None

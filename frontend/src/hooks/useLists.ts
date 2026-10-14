@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { listsApi } from '../api/lists'
-import type { ListEntry } from '../types'
+import { TASKS_KEY } from './useTasks'
+import { pushUndoSnapshot } from './undoRedoStack'
+import type { ListEntry, TasksResponse } from '../types'
 
 export const LISTS_KEY = ['lists']
 
@@ -41,6 +43,71 @@ export function useSetListExpiresAt() {
       setListsData(queryClient, (old) => old.map((l) => (l.id === list.id ? list : l)))
     },
     onError: () => toast.error('Failed to update expiry time'),
+  })
+}
+
+// Fired automatically the moment an expiry checklist's countdown hits zero
+// (see ExpiryTimer), not from a button of its own - mirrors the backend's
+// clear_completed_in_list, scoped to one list rather than the account-wide
+// "Clear completed" in the sidebar (useClearCompleted in useTasks.ts).
+export function useClearCompletedInList() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (listId: number) => listsApi.clearCompleted(listId),
+    onMutate: async (listId) => {
+      const previous = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+      if (previous) pushUndoSnapshot(previous)
+      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+        old ? { ...old, tasks: old.tasks.filter((t) => !(t.list_id === listId && t.done)) } : old
+      )
+      return { previous }
+    },
+    onError: (_err, _listId, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(TASKS_KEY, ctx.previous)
+    },
+    onSuccess: (res) => {
+      if (res.deleted_count > 0) {
+        toast(`🧹 Cleared ${res.deleted_count} completed task${res.deleted_count === 1 ? '' : 's'}`)
+      }
+    },
+  })
+}
+
+// The "Continue" flow (see ContinueExpiryButton): sets a fresh deadline,
+// restarts the countdown's own clock, and flags whatever's still
+// incomplete in the list (carried over from the expired cycle) so TaskCard
+// can give it a light red background - mirrors the backend's
+// continue_expiry_list exactly.
+export function useContinueExpiryList() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, expiresAt }: { id: number; expiresAt: string }) => listsApi.continueList(id, expiresAt),
+    onMutate: async ({ id, expiresAt }) => {
+      const previousLists = queryClient.getQueryData<{ lists: ListEntry[] }>(LISTS_KEY)
+      const previousTasks = queryClient.getQueryData<TasksResponse>(TASKS_KEY)
+      if (previousTasks) pushUndoSnapshot(previousTasks)
+      setListsData(queryClient, (old) =>
+        old.map((l) => (l.id === id ? { ...l, expires_at: expiresAt, cycle_started_at: new Date().toISOString() } : l))
+      )
+      queryClient.setQueryData<TasksResponse>(TASKS_KEY, (old) =>
+        old
+          ? { ...old, tasks: old.tasks.map((t) => (t.list_id === id && !t.done ? { ...t, carried_over: true } : t)) }
+          : old
+      )
+      return { previousLists, previousTasks }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previousLists) queryClient.setQueryData(LISTS_KEY, ctx.previousLists)
+      if (ctx?.previousTasks) queryClient.setQueryData(TASKS_KEY, ctx.previousTasks)
+      toast.error('Failed to continue checklist')
+    },
+    onSuccess: (list) => {
+      // Reconciles cycle_started_at with the server's own clock - our
+      // optimistic guess above used the browser's, which can drift
+      // slightly.
+      setListsData(queryClient, (old) => old.map((l) => (l.id === list.id ? list : l)))
+      toast('🔁 Checklist continued')
+    },
   })
 }
 

@@ -149,6 +149,7 @@ export function useAddTask() {
         last_edited_by: null,
         last_edited_at: null,
         linked_task_id: vars.linkedTaskId ?? null,
+        carried_over: false,
         clientKey,
       }
       setTasksData(queryClient, (old) => ({

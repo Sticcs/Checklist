@@ -93,6 +93,10 @@ export interface Task {
   // source task. Toggling either one's done-state propagates to the other
   // (see backend's set_done).
   linked_task_id: number | null
+  // Set when an expiry checklist expired, got "Continued" (see
+  // ContinueExpiryButton), and this task was still incomplete at that
+  // moment - shown with a light red background.
+  carried_over: boolean
   clientKey?: string
 }
 
@@ -234,6 +238,11 @@ export interface ListEntry {
   // string straight out of an <input type="datetime-local">, not a UTC
   // one (see backend's lists_table column comment for why).
   expires_at: string | null
+  // Only ever set for kind='expiry' - the countdown's actual "start" for
+  // the glow/timer's percentage-remaining math (see backend's lists_table
+  // column comment for why this differs from created_at once a list has
+  // been "Continued").
+  cycle_started_at: string | null
 }
 
 // The bare item shape served by the public, no-login list endpoints -
