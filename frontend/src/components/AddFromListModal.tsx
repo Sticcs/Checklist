@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useLists } from '../hooks/useLists'
 import { useAddTask, useTasks } from '../hooks/useTasks'
 import { useAddSubtask } from '../hooks/useSubtasks'
@@ -25,6 +25,17 @@ export function AddFromListModal({ targetListId, onClose }: Props) {
   const addSubtask = useAddSubtask()
   const [sourceListId, setSourceListId] = useState<number | null>(null)
   const [justAddedKey, setJustAddedKey] = useState<string | null>(null)
+  // Keyed by the *source* parent task's id, so copying several subtasks of
+  // the same task (one click at a time) land under one shared copy instead
+  // of a fresh "parent" per subtask. A ref, not state: the very first thing
+  // copySubtask does is check-then-claim this entry, and that has to be
+  // atomic with respect to a second subtask click arriving before the
+  // first's addTask call has resolved - state wouldn't commit in time to
+  // stop both calls from seeing "nothing there yet" and each creating their
+  // own copy. Storing the in-flight *promise* (not just the eventual id)
+  // means a second, concurrent call awaits the same creation instead of
+  // starting a redundant one.
+  const parentCopyPromises = useRef(new Map<number, Promise<number>>())
 
   // Shopping/Assessments have different item shapes and panels, and other
   // expiry lists are excluded too (this picker is for pulling from "my
@@ -57,6 +68,45 @@ export function AddFromListModal({ targetListId, onClose }: Props) {
     }
   }
 
+  // Returns the target-list copy's task id for this source parent,
+  // creating it (once) the first time any of its subtasks gets copied.
+  // Synchronous up to the point the promise is claimed in the map - no
+  // await before that - so two subtask clicks from the same parent, fired
+  // before the first copy has resolved, still only create one.
+  const getOrCreateParentCopy = (parentTask: Task): Promise<number> => {
+    const existing = parentCopyPromises.current.get(parentTask.id)
+    if (existing) return existing
+
+    // Also covers a copy made in an *earlier* modal session (or before a
+    // reload) - a target-list task already holding a subtask linked back
+    // to one of this parent's own subtasks is that earlier copy. Without
+    // this, closing and reopening the picker (or just reselecting the
+    // source list) would forget what was already copied and start a
+    // second parent, since parentCopyPromises itself only lives as long as
+    // this component instance.
+    const sourceSubtaskIds = new Set(parentTask.subtasks.map((s) => s.id))
+    const existingCopy = (tasksData?.tasks ?? []).find(
+      (t) =>
+        t.list_id === targetListId &&
+        t.subtasks.some((s) => s.linked_subtask_id !== null && sourceSubtaskIds.has(s.linked_subtask_id))
+    )
+    if (existingCopy) {
+      const promise = Promise.resolve(existingCopy.id)
+      parentCopyPromises.current.set(parentTask.id, promise)
+      return promise
+    }
+
+    const promise = addTask
+      .mutateAsync({ text: parentTask.text, priority: 'Medium', category: 'General', dueDate: null, listId: targetListId })
+      .then((newTask) => newTask.id)
+    parentCopyPromises.current.set(parentTask.id, promise)
+    // If creating the parent copy itself fails, forget it so a retry (e.g.
+    // clicking another of its subtasks) can try again instead of being
+    // permanently stuck on a rejected promise.
+    promise.catch(() => parentCopyPromises.current.delete(parentTask.id))
+    return promise
+  }
+
   const copySubtask = async (parentTask: Task, subtask: Subtask) => {
     const key = `subtask-${subtask.id}`
     try {
@@ -69,14 +119,8 @@ export function AddFromListModal({ targetListId, onClose }: Props) {
       // happened, dropping the subtask entirely; a plain awaited promise
       // chain keeps running regardless of whether this component is still
       // mounted to see it finish.
-      const newTask = await addTask.mutateAsync({
-        text: parentTask.text,
-        priority: 'Medium',
-        category: 'General',
-        dueDate: null,
-        listId: targetListId,
-      })
-      await addSubtask.mutateAsync({ taskId: newTask.id, text: subtask.text, linkedSubtaskId: subtask.id })
+      const taskId = await getOrCreateParentCopy(parentTask)
+      await addSubtask.mutateAsync({ taskId, text: subtask.text, linkedSubtaskId: subtask.id })
       flashAdded(key)
     } catch {
       // Already surfaced via the hooks' own onError toasts.
