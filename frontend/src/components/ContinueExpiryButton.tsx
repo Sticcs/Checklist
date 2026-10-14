@@ -55,10 +55,14 @@ export function ContinueExpiryButton({ list }: Props) {
     setCustomOpen(false)
   }
 
+  // End of today, not "+24h" or "+1 calendar day then end of day" - the
+  // latter landed as far as ~2 days out when pressed just after midnight
+  // (tomorrow's 23:59 is nearly 48h away at that point). This matches
+  // CreateListModal's own "by default it's the end of the day" default for
+  // a brand new expiry checklist - "Another day" just re-applies that same
+  // default to the existing list.
   const handleAnotherDay = () => {
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    continueWith(`${toISODate(tomorrow)}T23:59`)
+    continueWith(`${toISODate(new Date())}T23:59`)
   }
 
   const openCustom = () => {
